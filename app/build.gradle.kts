@@ -42,6 +42,15 @@ android {
         buildConfigField("String", "APP_ATTESTATION_PSK", "\"${config("APP_ATTESTATION_PSK", "")}\"")
         buildConfigField("long", "ATTESTATION_TOKEN_TTL_SECONDS", config("ATTESTATION_TOKEN_TTL_SECONDS", "60") + "L")
         buildConfigField("long", "NETWORK_TIMEOUT_MS", config("NETWORK_TIMEOUT_MS", "15000") + "L")
+
+        // `mock` = JWT firmado con la PSK compartida; `play_integrity` = veredicto real
+        // de Google. El Gateway tiene que estar preparado para el modo elegido.
+        buildConfigField("String", "ATTESTATION_MODE", "\"${config("ATTESTATION_MODE", "mock")}\"")
+        buildConfigField(
+            "long",
+            "PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER",
+            config("PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER", "0") + "L",
+        )
     }
 
     buildTypes {
@@ -114,6 +123,9 @@ dependencies {
     implementation(libs.jjwt.api)
     runtimeOnly(libs.jjwt.impl)
     runtimeOnly(libs.jjwt.orgjson)
+
+    implementation(libs.play.integrity)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

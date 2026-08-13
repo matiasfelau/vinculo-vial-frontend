@@ -13,6 +13,8 @@ class SignUpErrorPresentationTest {
         SignUpError.DniMismatch,
         SignUpError.InvalidData,
         SignUpError.AttestationRejected,
+        SignUpError.DeviceNotTrusted,
+        SignUpError.AttestationUnavailable,
         SignUpError.AlreadyRegistered,
         SignUpError.Network,
         SignUpError.Configuration,

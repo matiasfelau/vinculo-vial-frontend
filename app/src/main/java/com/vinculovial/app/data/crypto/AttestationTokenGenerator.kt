@@ -25,7 +25,11 @@ class AttestationTokenGenerator(
 
     private val signingKey: SecretKey = buildKey(psk)
 
-    fun generate(): String {
+    /**
+     * @param requestHash digest del cuerpo que se va a enviar. Liga el token a esa
+     * request concreta, igual que hace el `requestHash` de Play Integrity.
+     */
+    fun generate(requestHash: String): String {
         val issuedAt = clock.instant()
         val expiresAt = issuedAt.plusSeconds(ttlSeconds)
 
@@ -52,6 +56,7 @@ class AttestationTokenGenerator(
                 CLAIM_REQUEST_DETAILS,
                 mapOf(
                     "requestPackageName" to packageName,
+                    "requestHash" to requestHash,
                     "timestampMillis" to issuedAt.toEpochMilli().toString(),
                 ),
             )

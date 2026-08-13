@@ -14,8 +14,21 @@ API_BASE_URL=http://10.0.2.2:8080/
 #   private: wdLs3faGgrCj4K9qTTi44p/vaafkCRXK0bQwsxJyVd0=   <- va en Identity, NO en la app
 IDENTITY_HPKE_PUBLIC_KEY=vqY0RUzHxXbMXIDaHErJhtrf6Yo/wcnUAq52OE5Ti3c=
 
-# PSK de desarrollo compartida con vinculo-vial-gateway (HMAC-SHA256 del mock de Play Integrity)
-APP_ATTESTATION_PSK=dev-shared-attestation-psk-change-me
+# Modo de attestation: `mock` o `play_integrity`.
+# IMPORTANTE: el Gateway tiene que validar de la misma forma que la app.
+#   mock            -> el Gateway verifica el HMAC con APP_ATTESTATION_PSK.
+#   play_integrity  -> el token lo emite Google y el Gateway lo decodifica llamando a la
+#                      Play Integrity API con una cuenta de servicio del mismo proyecto.
+ATTESTATION_MODE=mock
 
+# Sólo para ATTESTATION_MODE=mock.
+# PSK de desarrollo compartida con vinculo-vial-gateway (mínimo 32 bytes).
+APP_ATTESTATION_PSK=dev-shared-attestation-psk-change-me
 ATTESTATION_TOKEN_TTL_SECONDS=60
+
+# Sólo para ATTESTATION_MODE=play_integrity.
+# Número de proyecto de Google Cloud vinculado a la app en Play Console
+# (Play Console > Configuración > Integridad de la app; es un número, no el project ID).
+PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER=0
+
 NETWORK_TIMEOUT_MS=15000

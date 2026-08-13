@@ -62,6 +62,20 @@ fun SignUpError.presentation(): SignUpErrorPresentation = when (this) {
         action = SignUpErrorAction.DISMISS,
     )
 
+    SignUpError.DeviceNotTrusted -> SignUpErrorPresentation(
+        title = "No pudimos validar tu dispositivo",
+        message = "Instalá ViVi desde Google Play en un dispositivo sin modificar. Reintentar " +
+            "no va a cambiar el resultado.",
+        action = SignUpErrorAction.DISMISS,
+    )
+
+    SignUpError.AttestationUnavailable -> SignUpErrorPresentation(
+        title = "No pudimos verificar tu dispositivo",
+        message = "Necesitamos Google Play activo y conexión a internet para completar el " +
+            "registro. Revisalos e intentá de nuevo.",
+        action = SignUpErrorAction.RETRY_CAPTURE,
+    )
+
     // Sin detalle: no se le informa al usuario qué dato ya existe.
     SignUpError.AlreadyRegistered -> SignUpErrorPresentation(
         title = "No pudimos crear la cuenta",

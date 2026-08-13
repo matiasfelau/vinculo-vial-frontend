@@ -7,8 +7,11 @@ import com.google.crypto.tink.RegistryConfiguration
 import com.google.crypto.tink.hybrid.HpkePublicKey
 import com.google.crypto.tink.hybrid.HybridConfig
 import com.squareup.moshi.Moshi
+import com.vinculovial.app.data.crypto.AttestationProvider
 import com.vinculovial.app.data.crypto.AttestationTokenGenerator
+import com.vinculovial.app.data.crypto.AttestationUnavailableException
 import com.vinculovial.app.data.crypto.HpkeEncryptor
+import com.vinculovial.app.data.crypto.MockAttestationProvider
 import com.vinculovial.app.data.remote.AttestationInterceptor
 import com.vinculovial.app.data.remote.AuthApiService
 import com.vinculovial.app.data.signup.dto.SignUpRequestDto
@@ -55,6 +58,15 @@ class SignUpRepositoryImplTest {
         password = "Password123!",
     )
 
+    /** Por defecto el modo mock; los tests que necesitan fallar lo reemplazan. */
+    private var attestationProvider: AttestationProvider = MockAttestationProvider(
+        AttestationTokenGenerator(
+            psk = "psk-de-desarrollo-de-al-menos-32-bytes",
+            ttlSeconds = 60,
+            packageName = "com.vinculovial.app",
+        ),
+    )
+
     @Before
     fun setUp() {
         HybridConfig.register()
@@ -68,14 +80,15 @@ class SignUpRepositoryImplTest {
         server = MockWebServer()
         server.start()
 
+        // Delega en el campo para que un test pueda sustituir el proveedor después
+        // de que el cliente ya esté construido.
         val client = OkHttpClient.Builder()
             .addInterceptor(
                 AttestationInterceptor(
-                    AttestationTokenGenerator(
-                        psk = "psk-de-desarrollo-de-al-menos-32-bytes",
-                        ttlSeconds = 60,
-                        packageName = "com.vinculovial.app",
-                    ),
+                    object : AttestationProvider {
+                        override suspend fun tokenFor(requestBody: ByteArray): String =
+                            attestationProvider.tokenFor(requestBody)
+                    },
                 ),
             )
             .build()
@@ -215,6 +228,63 @@ class SignUpRepositoryImplTest {
 
         assertEquals(SignUpResult.Failed(SignUpError.Configuration), result)
         assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `el token de attestation se liga al cuerpo enviado`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201))
+
+        repository().signUp(credentials)
+
+        val request = server.takeRequest()
+        val enviado = request.body.readByteArray()
+        val esperado = Base64.getUrlEncoder().withoutPadding().encodeToString(
+            java.security.MessageDigest.getInstance("SHA-256").digest(enviado),
+        )
+
+        val claims = String(
+            Base64.getUrlDecoder().decode(
+                request.getHeader(AttestationInterceptor.HEADER)!!.split(".")[1],
+            ),
+        )
+        assertTrue("el token no está ligado al cuerpo", claims.contains(esperado))
+    }
+
+    /** Proveedor que siempre falla, para cubrir el mapeo de causas a errores de dominio. */
+    private fun failingProvider(reason: AttestationUnavailableException.Reason) =
+        object : AttestationProvider {
+            override suspend fun tokenFor(requestBody: ByteArray): String =
+                throw AttestationUnavailableException("attestation falló", reason)
+        }
+
+    @Test
+    fun `un dispositivo no confiable no se confunde con un fallo de red`() = runTest {
+        attestationProvider = failingProvider(AttestationUnavailableException.Reason.DEVICE_NOT_TRUSTED)
+
+        val result = repository().signUp(credentials)
+
+        assertEquals(SignUpResult.Failed(SignUpError.DeviceNotTrusted), result)
+        assertEquals("no debió salir a la red", 0, server.requestCount)
+    }
+
+    @Test
+    fun `sin play store el error invita a reintentar`() = runTest {
+        attestationProvider = failingProvider(AttestationUnavailableException.Reason.PLAY_UNAVAILABLE)
+
+        assertEquals(
+            SignUpResult.Failed(SignUpError.AttestationUnavailable),
+            repository().signUp(credentials),
+        )
+    }
+
+    @Test
+    fun `attestation mal configurada es error de configuracion`() = runTest {
+        attestationProvider = failingProvider(AttestationUnavailableException.Reason.MISCONFIGURED)
+
+        assertEquals(
+            SignUpResult.Failed(SignUpError.Configuration),
+            repository().signUp(credentials),
+        )
     }
 
     @Test

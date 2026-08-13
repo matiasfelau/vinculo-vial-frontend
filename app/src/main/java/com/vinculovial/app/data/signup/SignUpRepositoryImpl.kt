@@ -3,6 +3,7 @@ package com.vinculovial.app.data.signup
 import com.squareup.moshi.JsonAdapter
 import com.squareup.moshi.JsonWriter
 import com.squareup.moshi.Moshi
+import com.vinculovial.app.data.crypto.AttestationUnavailableException
 import com.vinculovial.app.data.crypto.CryptoConfigurationException
 import com.vinculovial.app.data.crypto.CryptoOperationException
 import com.vinculovial.app.data.crypto.HpkeEncryptor
@@ -66,6 +67,10 @@ class SignUpRepositoryImpl @Inject constructor(
             // El usuario abandonó la pantalla: cancelar no es un fallo del registro.
             // Va antes que RuntimeException porque hereda de IllegalStateException.
             throw e
+        } catch (e: AttestationUnavailableException) {
+            // Falló en el dispositivo, antes de salir a la red. Va antes que IOException
+            // porque hereda de ella (se lanza desde un interceptor de OkHttp).
+            SignUpResult.Failed(e.reason.toSignUpError())
         } catch (e: IOException) {
             // Sin conexión, DNS, timeout, TLS.
             SignUpResult.Failed(SignUpError.Network)
@@ -108,6 +113,14 @@ class SignUpRepositoryImpl @Inject constructor(
         HTTP_FORBIDDEN -> SignUpError.AttestationRejected
         HTTP_CONFLICT -> SignUpError.AlreadyRegistered
         else -> SignUpError.Unexpected
+    }
+
+    private fun AttestationUnavailableException.Reason.toSignUpError(): SignUpError = when (this) {
+        AttestationUnavailableException.Reason.MISCONFIGURED -> SignUpError.Configuration
+        AttestationUnavailableException.Reason.DEVICE_NOT_TRUSTED -> SignUpError.DeviceNotTrusted
+        AttestationUnavailableException.Reason.PLAY_UNAVAILABLE,
+        AttestationUnavailableException.Reason.TRANSIENT,
+        -> SignUpError.AttestationUnavailable
     }
 
     private companion object {

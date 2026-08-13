@@ -30,6 +30,18 @@ sealed interface SignUpError {
     data object AttestationRejected : SignUpError
 
     /**
+     * El dispositivo no pasó la verificación de integridad local: la app no es una
+     * instalación reconocida por Play o el dispositivo está comprometido.
+     */
+    data object DeviceNotTrusted : SignUpError
+
+    /**
+     * No se pudo obtener el veredicto de integridad (sin Play Store, sin red, cuota
+     * agotada). A diferencia de [DeviceNotTrusted], reintentar puede funcionar.
+     */
+    data object AttestationUnavailable : SignUpError
+
+    /**
      * 409: ya existe una cuenta. Deliberadamente sin detalle: no se le informa al
      * usuario si colisionó el DNI o el email (evita enumeración de cuentas).
      */

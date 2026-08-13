@@ -23,6 +23,7 @@ class AttestationTokenGeneratorTest {
     private val packageName = "com.vinculovial.app"
     private val now = Instant.parse("2026-08-12T10:00:00Z")
     private val ttlSeconds = 60L
+    private val requestHash = "Zm9vYmFyLWhhc2gtZGUtcHJ1ZWJh"
 
     private fun generator(
         psk: String = this.psk,
@@ -47,7 +48,7 @@ class AttestationTokenGeneratorTest {
 
     @Test
     fun `el gateway puede validar firma emisor y audiencia`() {
-        val claims = parse(generator().generate())
+        val claims = parse(generator().generate(requestHash))
 
         assertEquals(AttestationTokenGenerator.ISSUER, claims.issuer)
         assertTrue(claims.audience.contains(AttestationTokenGenerator.AUDIENCE))
@@ -55,7 +56,7 @@ class AttestationTokenGeneratorTest {
 
     @Test
     fun `incluye los veredictos de integridad esperados`() {
-        val claims = parse(generator().generate())
+        val claims = parse(generator().generate(requestHash))
 
         @Suppress("UNCHECKED_CAST")
         val appIntegrity = claims[AttestationTokenGenerator.CLAIM_APP_INTEGRITY] as Map<String, Any>
@@ -75,7 +76,7 @@ class AttestationTokenGeneratorTest {
 
     @Test
     fun `expira exactamente al cabo del ttl configurado`() {
-        val claims = parse(generator().generate())
+        val claims = parse(generator().generate(requestHash))
 
         assertEquals(now.epochSecond, claims.issuedAt.toInstant().epochSecond)
         assertEquals(now.plusSeconds(ttlSeconds).epochSecond, claims.expiration.toInstant().epochSecond)
@@ -83,7 +84,7 @@ class AttestationTokenGeneratorTest {
 
     @Test
     fun `un token vencido es rechazado`() {
-        val token = generator().generate()
+        val token = generator().generate(requestHash)
 
         assertThrows(ExpiredJwtException::class.java) {
             parse(token, at = now.plus(Duration.ofSeconds(ttlSeconds + 5)))
@@ -92,7 +93,7 @@ class AttestationTokenGeneratorTest {
 
     @Test
     fun `una psk distinta invalida la firma`() {
-        val token = generator().generate()
+        val token = generator().generate(requestHash)
 
         assertThrows(SignatureException::class.java) {
             parse(token, psk = "otra-psk-de-desarrollo-de-32-bytes-o-mas")
@@ -103,10 +104,20 @@ class AttestationTokenGeneratorTest {
     fun `cada token es unico`() {
         val generator = generator()
 
-        val primero = parse(generator.generate())
-        val segundo = parse(generator.generate())
+        val primero = parse(generator.generate(requestHash))
+        val segundo = parse(generator.generate(requestHash))
 
         assertNotEquals(primero.id, segundo.id)
+    }
+
+    @Test
+    fun `el token queda ligado al cuerpo de la request`() {
+        val claims = parse(generator().generate(requestHash))
+
+        @Suppress("UNCHECKED_CAST")
+        val requestDetails = claims[AttestationTokenGenerator.CLAIM_REQUEST_DETAILS] as Map<String, Any>
+
+        assertEquals(requestHash, requestDetails["requestHash"])
     }
 
     @Test
@@ -121,7 +132,7 @@ class AttestationTokenGeneratorTest {
 
     @Test
     fun `el token no lleva datos personales`() {
-        val token = generator().generate()
+        val token = generator().generate(requestHash)
 
         val payload = String(java.util.Base64.getUrlDecoder().decode(token.split(".")[1]))
         listOf("dni", "email", "password").forEach {
