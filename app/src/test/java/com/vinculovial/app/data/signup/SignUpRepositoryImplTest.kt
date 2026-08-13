@@ -1,0 +1,214 @@
+package com.vinculovial.app.data.signup
+
+import com.google.crypto.tink.HybridDecrypt
+import com.google.crypto.tink.KeyTemplates
+import com.google.crypto.tink.KeysetHandle
+import com.google.crypto.tink.RegistryConfiguration
+import com.google.crypto.tink.hybrid.HpkePublicKey
+import com.google.crypto.tink.hybrid.HybridConfig
+import com.squareup.moshi.Moshi
+import com.vinculovial.app.data.crypto.AttestationTokenGenerator
+import com.vinculovial.app.data.crypto.HpkeEncryptor
+import com.vinculovial.app.data.remote.AttestationInterceptor
+import com.vinculovial.app.data.remote.AuthApiService
+import com.vinculovial.app.domain.signup.SignUpError
+import com.vinculovial.app.domain.signup.SignUpResult
+import com.vinculovial.app.domain.signup.model.Credentials
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
+import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import org.json.JSONObject
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import retrofit2.Retrofit
+import retrofit2.converter.moshi.MoshiConverterFactory
+import java.util.Base64
+
+/**
+ * Test de contrato contra el Gateway simulado: verifica el endpoint, el header de
+ * attestation, la forma del payload externo y que Identity pueda descifrar el interno.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class SignUpRepositoryImplTest {
+
+    private lateinit var server: MockWebServer
+    private lateinit var api: AuthApiService
+    private lateinit var identityKeyset: KeysetHandle
+    private lateinit var identityPublicKeyBase64: String
+
+    private val credentials = Credentials(
+        dni = "12345678",
+        email = "usuario@ejemplo.com",
+        password = "Password123!",
+    )
+
+    @Before
+    fun setUp() {
+        HybridConfig.register()
+        identityKeyset = KeysetHandle.generateNew(
+            KeyTemplates.get("DHKEM_X25519_HKDF_SHA256_HKDF_SHA256_AES_256_GCM_RAW"),
+        )
+        identityPublicKeyBase64 = Base64.getEncoder().encodeToString(
+            (identityKeyset.publicKeysetHandle.primary.key as HpkePublicKey).publicKeyBytes.toByteArray(),
+        )
+
+        server = MockWebServer()
+        server.start()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                AttestationInterceptor(
+                    AttestationTokenGenerator(
+                        psk = "psk-de-desarrollo-de-al-menos-32-bytes",
+                        ttlSeconds = 60,
+                        packageName = "com.vinculovial.app",
+                    ),
+                ),
+            )
+            .build()
+
+        api = Retrofit.Builder()
+            .baseUrl(server.url("/"))
+            .client(client)
+            .addConverterFactory(MoshiConverterFactory.create(Moshi.Builder().build()))
+            .build()
+            .create(AuthApiService::class.java)
+    }
+
+    @After
+    fun tearDown() {
+        server.shutdown()
+    }
+
+    private fun TestScope.repository(publicKey: String = identityPublicKeyBase64) = SignUpRepositoryImpl(
+        api = api,
+        encryptor = HpkeEncryptor(publicKey),
+        moshi = Moshi.Builder().build(),
+        dispatcher = UnconfinedTestDispatcher(testScheduler),
+    )
+
+    @Test
+    fun `201 registra al usuario`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201))
+
+        val result = repository().signUp(credentials)
+
+        assertEquals(SignUpResult.Registered, result)
+    }
+
+    @Test
+    fun `publica en el endpoint y con el header del contrato`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201))
+
+        repository().signUp(credentials)
+
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/auth/signup", request.path)
+        assertNotNull(
+            "falta el header de attestation",
+            request.getHeader(AttestationInterceptor.HEADER),
+        )
+    }
+
+    @Test
+    fun `el cuerpo es el payload externo hpke`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201))
+
+        repository().signUp(credentials)
+
+        val body = JSONObject(server.takeRequest().body.readUtf8())
+        assertTrue(body.has("ephemeral_public_key"))
+        assertTrue(body.has("ciphertext"))
+        assertEquals(2, body.length())
+        assertEquals(32, Base64.getDecoder().decode(body.getString("ephemeral_public_key")).size)
+    }
+
+    @Test
+    fun `identity puede descifrar el payload interno`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201))
+
+        repository().signUp(credentials)
+
+        val body = JSONObject(server.takeRequest().body.readUtf8())
+        val enc = Base64.getDecoder().decode(body.getString("ephemeral_public_key"))
+        val ciphertext = Base64.getDecoder().decode(body.getString("ciphertext"))
+        val plaintext = identityKeyset
+            .getPrimitive(RegistryConfiguration.get(), HybridDecrypt::class.java)
+            .decrypt(enc + ciphertext, ByteArray(0))
+
+        val payload = JSONObject(String(plaintext))
+        assertEquals(credentials.dni, payload.getString("dni"))
+        assertEquals(credentials.email, payload.getString("email"))
+        assertEquals(credentials.password, payload.getString("password"))
+    }
+
+    @Test
+    fun `el cuerpo no viaja en claro`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201))
+
+        repository().signUp(credentials)
+
+        val raw = server.takeRequest().body.readUtf8()
+        listOf(credentials.dni, credentials.email, credentials.password).forEach {
+            assertTrue("el cuerpo filtró '$it'", !raw.contains(it))
+        }
+    }
+
+    @Test
+    fun `400 es dato invalido`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(400))
+
+        assertEquals(SignUpResult.Failed(SignUpError.InvalidData), repository().signUp(credentials))
+    }
+
+    @Test
+    fun `403 es attestation rechazada`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(403))
+
+        assertEquals(
+            SignUpResult.Failed(SignUpError.AttestationRejected),
+            repository().signUp(credentials),
+        )
+    }
+
+    @Test
+    fun `409 es cuenta ya registrada`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(409))
+
+        assertEquals(
+            SignUpResult.Failed(SignUpError.AlreadyRegistered),
+            repository().signUp(credentials),
+        )
+    }
+
+    @Test
+    fun `500 cae en inesperado`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(500))
+
+        assertEquals(SignUpResult.Failed(SignUpError.Unexpected), repository().signUp(credentials))
+    }
+
+    @Test
+    fun `servidor caido es error de red`() = runTest {
+        server.shutdown()
+
+        assertEquals(SignUpResult.Failed(SignUpError.Network), repository().signUp(credentials))
+    }
+
+    @Test
+    fun `sin clave de identity no se hace la request`() = runTest {
+        val result = repository(publicKey = "").signUp(credentials)
+
+        assertEquals(SignUpResult.Failed(SignUpError.Configuration), result)
+        assertEquals(0, server.requestCount)
+    }
+}
