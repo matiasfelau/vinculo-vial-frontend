@@ -10,6 +10,7 @@ import com.vinculovial.app.domain.signup.model.CredentialField
 import com.vinculovial.app.domain.signup.model.CredentialRules
 import com.vinculovial.app.domain.signup.model.SignUpForm
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -116,12 +117,18 @@ class SignUpViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(capturing = target, status = SignUpStatus.Idle) }
 
-            val captured = runCatching {
+            val captured = try {
                 when (target) {
                     CaptureTarget.DNI -> identityVerification.captureDniFront(state.form.dni)
                     CaptureTarget.SELFIE -> identityVerification.captureSelfie()
                 }
-            }.isSuccess
+                true
+            } catch (e: CancellationException) {
+                // La pantalla se fue: no es un fallo de captura, hay que dejar propagar.
+                throw e
+            } catch (e: Exception) {
+                false
+            }
 
             _uiState.update {
                 when {

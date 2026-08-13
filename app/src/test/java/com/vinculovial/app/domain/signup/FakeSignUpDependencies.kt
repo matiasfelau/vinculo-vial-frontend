@@ -12,15 +12,17 @@ class FakeIdentityVerificationService(
     var selfieCaptures = 0
     var verifications = 0
     var discards = 0
-    var failOnCapture = false
+
+    /** Si no es `null`, la captura falla con esta excepción. */
+    var captureFailure: Exception? = null
 
     override suspend fun captureDniFront(claimedDni: String) {
-        if (failOnCapture) error("cámara no disponible")
+        captureFailure?.let { throw it }
         capturedDniClaims += claimedDni
     }
 
     override suspend fun captureSelfie() {
-        if (failOnCapture) error("cámara no disponible")
+        captureFailure?.let { throw it }
         selfieCaptures++
     }
 

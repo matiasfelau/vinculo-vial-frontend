@@ -11,10 +11,13 @@ import com.vinculovial.app.data.crypto.AttestationTokenGenerator
 import com.vinculovial.app.data.crypto.HpkeEncryptor
 import com.vinculovial.app.data.remote.AttestationInterceptor
 import com.vinculovial.app.data.remote.AuthApiService
+import com.vinculovial.app.data.signup.dto.SignUpRequestDto
 import com.vinculovial.app.domain.signup.SignUpError
 import com.vinculovial.app.domain.signup.SignUpResult
 import com.vinculovial.app.domain.signup.model.Credentials
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -25,9 +28,11 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import java.util.Base64
@@ -210,5 +215,26 @@ class SignUpRepositoryImplTest {
 
         assertEquals(SignUpResult.Failed(SignUpError.Configuration), result)
         assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `cancelar la request no se convierte en un error de registro`() = runTest {
+        // CancellationException hereda de IllegalStateException y por lo tanto de
+        // RuntimeException: si se la captura junto al resto, abandonar la pantalla
+        // termina mostrando "algo salió mal" en vez de cancelar en silencio.
+        val cancelada = object : AuthApiService {
+            override suspend fun signUp(body: SignUpRequestDto): Response<Unit> =
+                throw CancellationException("pantalla abandonada")
+        }
+        val repository = SignUpRepositoryImpl(
+            api = cancelada,
+            encryptor = HpkeEncryptor(identityPublicKeyBase64),
+            moshi = Moshi.Builder().build(),
+            dispatcher = UnconfinedTestDispatcher(testScheduler),
+        )
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking { repository.signUp(credentials) }
+        }
     }
 }

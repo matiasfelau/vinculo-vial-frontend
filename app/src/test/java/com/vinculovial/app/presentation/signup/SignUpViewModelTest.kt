@@ -9,6 +9,7 @@ import com.vinculovial.app.domain.signup.model.CredentialField
 import com.vinculovial.app.domain.signup.model.CredentialProblem
 import com.vinculovial.app.domain.signup.model.EdgeResult
 import com.vinculovial.app.util.MainDispatcherRule
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -166,7 +167,7 @@ class SignUpViewModelTest {
 
     @Test
     fun `si la captura falla se informa sin dejar la pantalla trabada`() = runTest {
-        verification.failOnCapture = true
+        verification.captureFailure = IllegalStateException("cámara no disponible")
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
@@ -176,5 +177,18 @@ class SignUpViewModelTest {
         assertEquals(SignUpError.DocumentUnreadable, state.error)
         assertFalse(state.dniImageCaptured)
         assertEquals(null, state.capturing)
+    }
+
+    @Test
+    fun `cancelar la captura no se muestra como error al usuario`() = runTest {
+        // CancellationException hereda de IllegalStateException: si se la trata como
+        // un fallo cualquiera, salir de la pantalla dispara un diálogo de error.
+        verification.captureFailure = CancellationException("pantalla abandonada")
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+
+        viewModel.onCaptureDni()
+
+        assertEquals(null, viewModel.uiState.value.error)
     }
 }

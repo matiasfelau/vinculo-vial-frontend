@@ -1,10 +1,12 @@
 package com.vinculovial.app.data.signup
 
 import com.squareup.moshi.JsonAdapter
+import com.squareup.moshi.JsonWriter
 import com.squareup.moshi.Moshi
 import com.vinculovial.app.data.crypto.CryptoConfigurationException
 import com.vinculovial.app.data.crypto.CryptoOperationException
 import com.vinculovial.app.data.crypto.HpkeEncryptor
+import com.vinculovial.app.data.crypto.HpkeMessage
 import com.vinculovial.app.data.remote.AuthApiService
 import com.vinculovial.app.data.signup.dto.SignUpPayloadDto
 import com.vinculovial.app.data.signup.dto.SignUpRequestDto
@@ -13,8 +15,10 @@ import com.vinculovial.app.domain.signup.SignUpError
 import com.vinculovial.app.domain.signup.SignUpRepository
 import com.vinculovial.app.domain.signup.SignUpResult
 import com.vinculovial.app.domain.signup.model.Credentials
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
+import okio.Buffer
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,16 +41,7 @@ class SignUpRepositoryImpl @Inject constructor(
 
     override suspend fun signUp(credentials: Credentials): SignUpResult = withContext(dispatcher) {
         val encrypted = try {
-            // El JSON en claro vive sólo dentro de este bloque; lo que sale ya está cifrado.
-            val plaintext = payloadAdapter.toJson(
-                SignUpPayloadDto(
-                    dni = credentials.dni,
-                    email = credentials.email,
-                    password = credentials.password,
-                ),
-            ).toByteArray(Charsets.UTF_8)
-
-            encryptor.encrypt(plaintext).also { plaintext.fill(0) }
+            serializeAndEncrypt(credentials)
         } catch (e: CryptoConfigurationException) {
             return@withContext SignUpResult.Failed(SignUpError.Configuration)
         } catch (e: CryptoOperationException) {
@@ -67,12 +62,44 @@ class SignUpRepositoryImpl @Inject constructor(
             } else {
                 SignUpResult.Failed(response.code().toSignUpError())
             }
+        } catch (e: CancellationException) {
+            // El usuario abandonó la pantalla: cancelar no es un fallo del registro.
+            // Va antes que RuntimeException porque hereda de IllegalStateException.
+            throw e
         } catch (e: IOException) {
             // Sin conexión, DNS, timeout, TLS.
             SignUpResult.Failed(SignUpError.Network)
         } catch (e: RuntimeException) {
             // Respuesta ilegible o cualquier fallo inesperado del stack HTTP.
             SignUpResult.Failed(SignUpError.Unexpected)
+        }
+    }
+
+    /**
+     * Serializa el payload interno y lo cifra sin que el JSON en claro llegue a existir
+     * como `String`: se escribe directo a un buffer de bytes que se puede sobreescribir.
+     *
+     * Límite conocido: la contraseña sigue viva como `String` dentro de [Credentials]
+     * hasta que pase el GC. Eliminarlo exigiría `CharArray` desde el propio TextField
+     * de Compose, que no expone esa API.
+     */
+    private fun serializeAndEncrypt(credentials: Credentials): HpkeMessage {
+        val buffer = Buffer()
+        var plaintext = ByteArray(0)
+        return try {
+            payloadAdapter.toJson(
+                JsonWriter.of(buffer),
+                SignUpPayloadDto(
+                    dni = credentials.dni,
+                    email = credentials.email,
+                    password = credentials.password,
+                ),
+            )
+            plaintext = buffer.readByteArray()
+            encryptor.encrypt(plaintext)
+        } finally {
+            plaintext.fill(0)
+            buffer.clear()
         }
     }
 
