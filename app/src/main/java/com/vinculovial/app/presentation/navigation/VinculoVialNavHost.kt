@@ -2,6 +2,7 @@ package com.vinculovial.app.presentation.navigation
 
 import android.widget.Toast
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -16,6 +17,8 @@ import androidx.compose.ui.platform.LocalContext
 import com.vinculovial.app.presentation.signup.SignUpCaptureScreen
 import com.vinculovial.app.presentation.signup.SignUpConsentScreen
 import com.vinculovial.app.presentation.signup.SignUpFormScreen
+import com.vinculovial.app.presentation.signup.SignUpStatus
+import com.vinculovial.app.presentation.signup.SignUpSuccessScreen
 import com.vinculovial.app.presentation.signup.SignUpViewModel
 import com.vinculovial.app.presentation.splash.SplashScreen
 
@@ -25,6 +28,7 @@ object Route {
     const val SIGN_UP_FORM = "signup/form"
     const val SIGN_UP_CONSENT = "signup/consent"
     const val SIGN_UP_CAPTURE = "signup/capture"
+    const val SIGN_UP_SUCCESS = "signup/success"
 }
 
 @Composable
@@ -76,16 +80,35 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                 val viewModel = entry.sharedSignUpViewModel(navController)
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
 
+                // El registro terminó: se sale de la captura sin dejarla en el back stack.
+                LaunchedEffect(state.status) {
+                    if (state.status is SignUpStatus.Registered) {
+                        navController.navigate(Route.SIGN_UP_SUCCESS) {
+                            popUpTo(Route.SIGN_UP_CAPTURE) { inclusive = true }
+                        }
+                    }
+                }
+
                 SignUpCaptureScreen(
                     state = state,
                     onBack = {
                         viewModel.onCaptureRestarted()
                         navController.popBackStack()
                     },
-                    onCaptureDni = viewModel::onDniImageCaptured,
-                    onCaptureSelfie = viewModel::onSelfieCaptured,
-                    // El envío se conecta en feature/signup-usecase-integration.
-                    onSubmit = {},
+                    onCaptureDni = viewModel::onCaptureDni,
+                    onCaptureSelfie = viewModel::onCaptureSelfie,
+                    onSubmit = viewModel::submit,
+                )
+            }
+
+            composable(Route.SIGN_UP_SUCCESS) {
+                SignUpSuccessScreen(
+                    onFinish = {
+                        // Vuelve al formulario limpio: US-01 no deja sesión iniciada.
+                        navController.navigate(Route.SIGN_UP_GRAPH) {
+                            popUpTo(Route.SIGN_UP_GRAPH) { inclusive = true }
+                        }
+                    },
                 )
             }
         }

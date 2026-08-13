@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -64,7 +65,7 @@ fun SignUpCaptureScreen(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Volver",
                 onClick = onBack,
-                enabled = !state.isSubmitting,
+                enabled = !state.isBusy,
             )
 
             Text(
@@ -79,7 +80,8 @@ fun SignUpCaptureScreen(
                 title = "Frente del DNI",
                 icon = Icons.Filled.Badge,
                 captured = state.dniImageCaptured,
-                enabled = !state.isSubmitting,
+                capturing = state.capturing == CaptureTarget.DNI,
+                enabled = !state.isBusy,
                 onClick = onCaptureDni,
             )
 
@@ -87,7 +89,8 @@ fun SignUpCaptureScreen(
                 title = "Selfie",
                 icon = Icons.Filled.Face,
                 captured = state.selfieCaptured,
-                enabled = !state.isSubmitting,
+                capturing = state.capturing == CaptureTarget.SELFIE,
+                enabled = !state.isBusy,
                 onClick = onCaptureSelfie,
             )
 
@@ -126,6 +129,7 @@ private fun CaptureTile(
     title: String,
     icon: ImageVector,
     captured: Boolean,
+    capturing: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
@@ -143,12 +147,20 @@ private fun CaptureTile(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Icon(
-                imageVector = if (captured) Icons.Filled.CheckCircle else icon,
-                contentDescription = null,
-                tint = if (captured) VvGreen else VvNavy,
-                modifier = Modifier.size(34.dp),
-            )
+            if (capturing) {
+                CircularProgressIndicator(
+                    color = VvNavy,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(28.dp),
+                )
+            } else {
+                Icon(
+                    imageVector = if (captured) Icons.Filled.CheckCircle else icon,
+                    contentDescription = null,
+                    tint = if (captured) VvGreen else VvNavy,
+                    modifier = Modifier.size(34.dp),
+                )
+            }
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = title,
@@ -156,7 +168,11 @@ private fun CaptureTile(
                     color = VvNavy,
                 )
                 Text(
-                    text = if (captured) "Imagen lista" else "Tocá para capturar",
+                    text = when {
+                        capturing -> "Capturando…"
+                        captured -> "Imagen lista"
+                        else -> "Tocá para capturar"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = VvMuted,
                 )
