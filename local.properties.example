@@ -1,0 +1,21 @@
+# Copiar a `local.properties` (gitignored) y completar.
+# Gradle lo consume en app/build.gradle.kts y lo expone via BuildConfig.
+# En CI, las mismas claves pueden inyectarse como variables de entorno.
+
+sdk.dir=C:\\Users\\<usuario>\\AppData\\Local\\Android\\Sdk
+
+# Base URL del Gateway (emulador Android -> host local = 10.0.2.2)
+API_BASE_URL=http://10.0.2.2:8080/
+
+# Public Key X25519 (raw, base64) de vinculo-vial-identity.
+# Debe ser el par de IDENTITY_HPKE_PRIVATE_KEY en el repo de Identity.
+# Par de desarrollo generado para este proyecto:
+#   public : vqY0RUzHxXbMXIDaHErJhtrf6Yo/wcnUAq52OE5Ti3c=
+#   private: wdLs3faGgrCj4K9qTTi44p/vaafkCRXK0bQwsxJyVd0=   <- va en Identity, NO en la app
+IDENTITY_HPKE_PUBLIC_KEY=vqY0RUzHxXbMXIDaHErJhtrf6Yo/wcnUAq52OE5Ti3c=
+
+# PSK de desarrollo compartida con vinculo-vial-gateway (HMAC-SHA256 del mock de Play Integrity)
+APP_ATTESTATION_PSK=dev-shared-attestation-psk-change-me
+
+ATTESTATION_TOKEN_TTL_SECONDS=60
+NETWORK_TIMEOUT_MS=15000
