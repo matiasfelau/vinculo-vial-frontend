@@ -98,6 +98,11 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                     onCaptureDni = viewModel::onCaptureDni,
                     onCaptureSelfie = viewModel::onCaptureSelfie,
                     onSubmit = viewModel::submit,
+                    onErrorDismissed = viewModel::onErrorDismissed,
+                    onEditForm = {
+                        viewModel.onErrorDismissed()
+                        navController.popBackStack(Route.SIGN_UP_FORM, inclusive = false)
+                    },
                 )
             }
 

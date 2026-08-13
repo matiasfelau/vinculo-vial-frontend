@@ -49,7 +49,17 @@ fun SignUpCaptureScreen(
     onCaptureDni: () -> Unit,
     onCaptureSelfie: () -> Unit,
     onSubmit: () -> Unit,
+    onErrorDismissed: () -> Unit = {},
+    onEditForm: () -> Unit = {},
 ) {
+    state.error?.let { error ->
+        SignUpErrorDialog(
+            error = error,
+            onDismiss = onErrorDismissed,
+            onEditForm = onEditForm,
+        )
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = { VvBottomBar() },
