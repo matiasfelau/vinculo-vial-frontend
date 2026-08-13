@@ -1,8 +1,8 @@
 package com.vinculovial.app.data.edge
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -12,16 +12,20 @@ class MockEdgeEnginesTest {
     private val ocr = MockOcrEngine()
     private val liveness = MockLivenessDetector()
 
+    private fun dniImage(dni: String = "12345678") =
+        MockImageCodec.encode(MockImageCodec.KIND_DNI_FRONT, dni)
+
+    private fun selfieImage(payload: String = MockImageCodec.FACE_SIGNATURE) =
+        MockImageCodec.encode(MockImageCodec.KIND_SELFIE, payload)
+
     @Test
     fun `ocr extrae el dni del frente capturado`() {
-        val image = camera.captureDniFront("12345678")
-
-        assertEquals("12345678", ocr.extractDni(image))
+        assertEquals("12345678", ocr.extractDni(dniImage()))
     }
 
     @Test
     fun `ocr no lee un dni de la selfie`() {
-        assertNull(ocr.extractDni(camera.captureSelfie()))
+        assertNull(ocr.extractDni(selfieImage()))
     }
 
     @Test
@@ -32,34 +36,32 @@ class MockEdgeEnginesTest {
 
     @Test
     fun `ocr rechaza un documento ilegible`() {
-        val borroso = MockImageCodec.encode(MockImageCodec.KIND_DNI_FRONT, "ilegible")
-
-        assertNull(ocr.extractDni(borroso))
+        assertNull(ocr.extractDni(dniImage("ilegible")))
     }
 
     @Test
     fun `liveness acepta dni legible mas selfie con rostro`() {
-        assertTrue(liveness.isLive(camera.captureDniFront("12345678"), camera.captureSelfie()))
+        assertTrue(liveness.isLive(dniImage(), selfieImage()))
     }
 
     @Test
     fun `liveness rechaza si no se detecta rostro en la selfie`() {
-        val sinRostro = MockImageCodec.encode(MockImageCodec.KIND_SELFIE, "NO_FACE")
-
-        assertFalse(liveness.isLive(camera.captureDniFront("12345678"), sinRostro))
+        assertFalse(liveness.isLive(dniImage(), selfieImage(payload = "NO_FACE")))
     }
 
     @Test
     fun `liveness rechaza imagenes invertidas`() {
-        assertFalse(liveness.isLive(camera.captureSelfie(), camera.captureDniFront("12345678")))
+        assertFalse(liveness.isLive(selfieImage(), dniImage()))
     }
 
     @Test
-    fun `la imagen sintetica no expone el dni en texto plano fuera de la cabecera`() {
-        val image = camera.captureDniFront("12345678")
-        val header = MockImageCodec.decode(image)
+    fun `la camara mock entrega buffers seguros ya cargados`() {
+        val buffer = camera.captureDniFront("12345678")
 
-        assertEquals(MockImageCodec.KIND_DNI_FRONT, header?.kind)
-        assertEquals("12345678", header?.payload)
+        val decoded = buffer.read { MockImageCodec.decode(it) }
+
+        assertEquals(MockImageCodec.KIND_DNI_FRONT, decoded?.kind)
+        assertEquals("12345678", decoded?.payload)
+        assertFalse(buffer.isCleared)
     }
 }
