@@ -23,7 +23,9 @@ class AttestationTokenGeneratorTest {
     private val packageName = "com.vinculovial.app"
     private val now = Instant.parse("2026-08-12T10:00:00Z")
     private val ttlSeconds = 60L
-    private val requestHash = "Zm9vYmFyLWhhc2gtZGUtcHJ1ZWJh"
+    // Con la forma real del contrato (hex de SHA-256): 64 caracteres [0-9a-f]. El
+    // generador no valida el formato, pero mantenerlo realista evita confusiones.
+    private val requestHash = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a1"
 
     private fun generator(
         psk: String = this.psk,

@@ -45,8 +45,9 @@ configurado en el mismo modo que la app**:
 Cualquier valor de `ATTESTATION_MODE` que no sea exactamente `mock` se interpreta como
 `play_integrity`: un typo no debe degradar la seguridad en silencio.
 
-En ambos modos el token se liga al cuerpo enviado con `base64url(SHA-256(body))`
-(claim `requestHash` en el mock, `requestHash` nativo en Play Integrity), así un token
+En ambos modos el token se liga al cuerpo enviado con `hex(SHA-256(body))` — hexadecimal
+minúscula, 64 caracteres, no base64: es el formato que espera el Gateway (claim
+`requestHash` en el mock, `requestHash` nativo en Play Integrity), así un token
 capturado no sirve para firmar otro registro. El Gateway debe recalcularlo y rechazar si
 no coincide.
 

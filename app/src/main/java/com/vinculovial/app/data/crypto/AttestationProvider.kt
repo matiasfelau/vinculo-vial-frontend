@@ -2,7 +2,6 @@ package com.vinculovial.app.data.crypto
 
 import java.io.IOException
 import java.security.MessageDigest
-import java.util.Base64
 
 /**
  * Produce el valor del header `X-App-Attestation`.
@@ -80,11 +79,22 @@ class AttestationUnavailableException(
 /**
  * Liga el token al cuerpo de la request.
  *
- * Play Integrity acepta hasta 500 bytes de `requestHash`; SHA-256 en base64url sin
- * relleno son 43 caracteres. El mock usa el mismo valor como claim para que ambos
- * modos se validen igual del lado del Gateway.
+ * Formato: SHA-256 del cuerpo, en hexadecimal minúscula (64 caracteres) — así lo espera
+ * `vinculo-vial-gateway`, bien dentro del límite de 500 bytes que acepta `requestHash`
+ * en Play Integrity. El mock usa el mismo valor como claim para que ambos modos se
+ * validen igual del lado del Gateway.
  */
 internal fun requestHashOf(requestBody: ByteArray): String =
-    Base64.getUrlEncoder().withoutPadding().encodeToString(
-        MessageDigest.getInstance("SHA-256").digest(requestBody),
-    )
+    MessageDigest.getInstance("SHA-256").digest(requestBody).toHex()
+
+private val HEX_DIGITS = "0123456789abcdef".toCharArray()
+
+private fun ByteArray.toHex(): String {
+    val chars = CharArray(size * 2)
+    forEachIndexed { index, byte ->
+        val value = byte.toInt() and 0xFF
+        chars[index * 2] = HEX_DIGITS[value ushr 4]
+        chars[index * 2 + 1] = HEX_DIGITS[value and 0x0F]
+    }
+    return String(chars)
+}

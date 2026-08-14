@@ -262,9 +262,11 @@ class SignUpRepositoryImplTest {
 
         val request = server.takeRequest()
         val enviado = request.body.readByteArray()
-        val esperado = Base64.getUrlEncoder().withoutPadding().encodeToString(
-            java.security.MessageDigest.getInstance("SHA-256").digest(enviado),
-        )
+        // El Gateway espera el hash en hex, no en base64: si el formato no calza acá,
+        // el 403 de attestation nunca se explica solo.
+        val esperado = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(enviado)
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xFF) }
 
         val claims = String(
             Base64.getUrlDecoder().decode(
@@ -272,6 +274,7 @@ class SignUpRepositoryImplTest {
             ),
         )
         assertTrue("el token no está ligado al cuerpo", claims.contains(esperado))
+        assertTrue("el hash no está en hexadecimal", esperado.matches(Regex("^[0-9a-f]{64}$")))
     }
 
     /** Proveedor que siempre falla, para cubrir el mapeo de causas a errores de dominio. */
