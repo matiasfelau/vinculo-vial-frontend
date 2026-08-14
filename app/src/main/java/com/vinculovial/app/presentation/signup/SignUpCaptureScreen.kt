@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,15 +42,14 @@ import com.vinculovial.app.presentation.theme.VvMuted
 import com.vinculovial.app.presentation.theme.VvNavy
 
 /**
- * Captura de las dos imágenes que alimentan el Edge (OCR + Liveness).
- * La captura real de cámara está fuera de alcance de US-01: acá se simula.
+ * Las tres capturas del onboarding biométrico. Todo el análisis ocurre después, en el
+ * dispositivo, al tocar "Verificar y registrarme".
  */
 @Composable
 fun SignUpCaptureScreen(
     state: SignUpUiState,
     onBack: () -> Unit,
-    onCaptureDni: () -> Unit,
-    onCaptureSelfie: () -> Unit,
+    onCapture: (CaptureTarget) -> Unit,
     onSubmit: () -> Unit,
     onErrorDismissed: () -> Unit = {},
     onEditForm: () -> Unit = {},
@@ -68,8 +70,9 @@ fun SignUpCaptureScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 28.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             VvCircleIconButton(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
@@ -86,23 +89,15 @@ fun SignUpCaptureScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            CaptureTile(
-                title = "Frente del DNI",
-                icon = Icons.Filled.Badge,
-                captured = state.dniImageCaptured,
-                capturing = state.capturing == CaptureTarget.DNI,
-                enabled = !state.isBusy,
-                onClick = onCaptureDni,
-            )
-
-            CaptureTile(
-                title = "Selfie",
-                icon = Icons.Filled.Face,
-                captured = state.selfieCaptured,
-                capturing = state.capturing == CaptureTarget.SELFIE,
-                enabled = !state.isBusy,
-                onClick = onCaptureSelfie,
-            )
+            CaptureTarget.entries.forEach { target ->
+                CaptureTile(
+                    target = target,
+                    captured = state.isCaptured(target),
+                    capturing = state.capturing == target,
+                    enabled = !state.isBusy,
+                    onClick = { onCapture(target) },
+                )
+            }
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -115,17 +110,17 @@ fun SignUpCaptureScreen(
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    text = "Las fotos se analizan en tu dispositivo y se descartan al instante: " +
-                        "no se guardan en el teléfono ni viajan a nuestros servidores.",
+                    text = "Comparamos tu cara con la foto del documento acá mismo, en tu " +
+                        "teléfono. Las fotos se borran al terminar: nunca salen del dispositivo.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = VvMuted,
                 )
             }
 
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(8.dp))
 
             VvPrimaryButton(
-                text = "Enviar registro",
+                text = "Verificar y registrarme",
                 onClick = onSubmit,
                 enabled = state.canSubmitCapture,
                 loading = state.isSubmitting,
@@ -136,8 +131,7 @@ fun SignUpCaptureScreen(
 
 @Composable
 private fun CaptureTile(
-    title: String,
-    icon: ImageVector,
+    target: CaptureTarget,
     captured: Boolean,
     capturing: Boolean,
     enabled: Boolean,
@@ -150,7 +144,7 @@ private fun CaptureTile(
         color = VvMint,
         modifier = Modifier
             .fillMaxWidth()
-            .height(96.dp),
+            .height(92.dp),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 20.dp),
@@ -165,23 +159,23 @@ private fun CaptureTile(
                 )
             } else {
                 Icon(
-                    imageVector = if (captured) Icons.Filled.CheckCircle else icon,
+                    imageVector = if (captured) Icons.Filled.CheckCircle else target.icon(),
                     contentDescription = null,
                     tint = if (captured) VvGreen else VvNavy,
-                    modifier = Modifier.size(34.dp),
+                    modifier = Modifier.size(32.dp),
                 )
             }
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text = title,
+                    text = target.title(),
                     style = MaterialTheme.typography.labelLarge,
                     color = VvNavy,
                 )
                 Text(
                     text = when {
-                        capturing -> "Capturando…"
-                        captured -> "Imagen lista"
-                        else -> "Tocá para capturar"
+                        capturing -> "Procesando…"
+                        captured -> "Listo"
+                        else -> target.hint()
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = VvMuted,
@@ -191,15 +185,32 @@ private fun CaptureTile(
     }
 }
 
+private fun CaptureTarget.icon(): ImageVector = when (this) {
+    CaptureTarget.DNI_BACK -> Icons.Filled.CreditCard
+    CaptureTarget.DNI_FRONT -> Icons.Filled.Badge
+    CaptureTarget.SELFIE -> Icons.Filled.Face
+}
+
+private fun CaptureTarget.title(): String = when (this) {
+    CaptureTarget.DNI_BACK -> "Reverso del DNI"
+    CaptureTarget.DNI_FRONT -> "Frente del DNI"
+    CaptureTarget.SELFIE -> "Selfie"
+}
+
+private fun CaptureTarget.hint(): String = when (this) {
+    CaptureTarget.DNI_BACK -> "Tocá para escanear el código de barras"
+    CaptureTarget.DNI_FRONT -> "Tocá para fotografiar tu foto del documento"
+    CaptureTarget.SELFIE -> "Tocá y seguí la indicación en pantalla"
+}
+
 @Preview(showBackground = true, showSystemUi = true)
 @Composable
 private fun SignUpCapturePreview() {
     VinculoVialTheme {
         SignUpCaptureScreen(
-            state = SignUpUiState(dniImageCaptured = true),
+            state = SignUpUiState(completedCaptures = setOf(CaptureTarget.DNI_BACK)),
             onBack = {},
-            onCaptureDni = {},
-            onCaptureSelfie = {},
+            onCapture = {},
             onSubmit = {},
         )
     }

@@ -15,12 +15,16 @@ data class SignUpRequestDto(
 
 /**
  * Payload interno: se serializa, se cifra y nunca sale de la app en claro.
+ *
+ * [biometricVerified] es el único rastro del onboarding biométrico que llega al backend:
+ * ni las imágenes ni los embeddings salen del dispositivo.
  */
 @JsonClass(generateAdapter = true)
 data class SignUpPayloadDto(
     @Json(name = "dni") val dni: String,
     @Json(name = "email") val email: String,
     @Json(name = "password") val password: String,
+    @Json(name = "biometric_verified") val biometricVerified: Boolean,
 ) {
     override fun toString(): String = "SignUpPayloadDto(***)"
 }

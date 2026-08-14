@@ -98,6 +98,7 @@ class SignUpRepositoryImpl @Inject constructor(
                     dni = credentials.dni,
                     email = credentials.email,
                     password = credentials.password,
+                    biometricVerified = credentials.biometricVerified,
                 ),
             )
             plaintext = buffer.readByteArray()

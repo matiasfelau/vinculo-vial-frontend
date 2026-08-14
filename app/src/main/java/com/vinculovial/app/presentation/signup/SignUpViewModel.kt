@@ -3,6 +3,7 @@ package com.vinculovial.app.presentation.signup
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vinculovial.app.domain.signup.IdentityVerificationService
+import com.vinculovial.app.domain.signup.LivenessSession
 import com.vinculovial.app.domain.signup.RegisterUserUseCase
 import com.vinculovial.app.domain.signup.SignUpError
 import com.vinculovial.app.domain.signup.SignUpResult
@@ -29,6 +30,11 @@ import javax.inject.Inject
 class SignUpViewModel @Inject constructor(
     private val registerUser: RegisterUserUseCase,
     private val identityVerification: IdentityVerificationService,
+    /**
+     * La pantalla de selfie la consume directamente: es una sesión con estado sobre el
+     * stream de la cámara, no una operación puntual que el ViewModel pueda envolver.
+     */
+    val livenessSession: LivenessSession,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SignUpUiState())
@@ -61,17 +67,18 @@ class SignUpViewModel @Inject constructor(
      * Recibe la foto que tomó la cámara y la entrega al Edge, que se queda con los bytes.
      *
      * El ViewModel **no** guarda la imagen: la pasa y suelta la referencia en el acto.
+     *
+     * @param livenessPassed sólo aplica a la selfie; para el documento se ignora.
      */
-    fun onImageCaptured(target: CaptureTarget, image: ByteArray) {
-        val declaredDni = _uiState.value.form.dni
-
+    fun onImageCaptured(target: CaptureTarget, image: ByteArray, livenessPassed: Boolean = false) {
         viewModelScope.launch {
             _uiState.update { it.copy(capturing = target, status = SignUpStatus.Idle) }
 
             val accepted = try {
                 when (target) {
-                    CaptureTarget.DNI -> identityVerification.acceptDniFront(image, declaredDni)
-                    CaptureTarget.SELFIE -> identityVerification.acceptSelfie(image)
+                    CaptureTarget.DNI_BACK -> identityVerification.acceptDniBack(image)
+                    CaptureTarget.DNI_FRONT -> identityVerification.acceptDniFront(image)
+                    CaptureTarget.SELFIE -> identityVerification.acceptSelfie(image, livenessPassed)
                 }
                 true
             } catch (e: CancellationException) {
@@ -81,15 +88,17 @@ class SignUpViewModel @Inject constructor(
                 false
             }
 
-            _uiState.update {
-                when {
-                    !accepted -> it.copy(
+            _uiState.update { state ->
+                if (accepted) {
+                    state.copy(
+                        capturing = null,
+                        completedCaptures = state.completedCaptures + target,
+                    )
+                } else {
+                    state.copy(
                         capturing = null,
                         status = SignUpStatus.Failed(SignUpError.DocumentUnreadable),
                     )
-
-                    target == CaptureTarget.DNI -> it.copy(capturing = null, dniImageCaptured = true)
-                    else -> it.copy(capturing = null, selfieCaptured = true)
                 }
             }
         }
@@ -100,8 +109,7 @@ class SignUpViewModel @Inject constructor(
         identityVerification.discardCaptures()
         _uiState.update {
             it.copy(
-                dniImageCaptured = false,
-                selfieCaptured = false,
+                completedCaptures = emptySet(),
                 capturing = null,
                 status = SignUpStatus.Idle,
             )
@@ -122,15 +130,13 @@ class SignUpViewModel @Inject constructor(
                     is SignUpResult.Registered -> it.copy(
                         status = SignUpStatus.Registered,
                         // El Edge ya descartó las imágenes al verificar.
-                        dniImageCaptured = false,
-                        selfieCaptured = false,
+                        completedCaptures = emptySet(),
                     )
 
                     is SignUpResult.Failed -> it.copy(
                         status = SignUpStatus.Failed(result.error),
-                        // Los errores de verificación obligan a capturar de nuevo.
-                        dniImageCaptured = false,
-                        selfieCaptured = false,
+                        // Las imágenes ya no existen: cualquier reintento vuelve a capturar.
+                        completedCaptures = emptySet(),
                     )
                 }
             }

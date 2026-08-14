@@ -9,7 +9,11 @@ class SignUpErrorPresentationTest {
 
     private val todosLosErrores = listOf(
         SignUpError.DocumentUnreadable,
+        SignUpError.DocumentNotRecognized,
+        SignUpError.FaceNotDetected,
         SignUpError.LivenessFailed,
+        SignUpError.FaceMismatch,
+        SignUpError.BiometricsUnavailable,
         SignUpError.DniMismatch,
         SignUpError.InvalidData,
         SignUpError.AttestationRejected,
@@ -42,14 +46,29 @@ class SignUpErrorPresentationTest {
 
     @Test
     fun `los errores de verificacion invitan a repetir la captura`() {
-        assertEquals(
-            SignUpErrorAction.RETRY_CAPTURE,
-            SignUpError.DocumentUnreadable.presentation().action,
-        )
-        assertEquals(
-            SignUpErrorAction.RETRY_CAPTURE,
-            SignUpError.LivenessFailed.presentation().action,
-        )
+        listOf(
+            SignUpError.DocumentUnreadable,
+            SignUpError.DocumentNotRecognized,
+            SignUpError.FaceNotDetected,
+            SignUpError.LivenessFailed,
+            SignUpError.FaceMismatch,
+        ).forEach { error ->
+            assertEquals(
+                "$error debería invitar a recapturar",
+                SignUpErrorAction.RETRY_CAPTURE,
+                error.presentation().action,
+            )
+        }
+    }
+
+    @Test
+    fun `ningun mensaje culpa al usuario de fraude`() {
+        // Un falso positivo del match facial es esperable; el mensaje no puede acusar.
+        val texto = SignUpError.FaceMismatch.presentation().message.lowercase()
+
+        listOf("fraude", "falsific", "impostor", "mentir").forEach {
+            assertTrue("el mensaje de match facial usa '$it'", !texto.contains(it))
+        }
     }
 
     @Test

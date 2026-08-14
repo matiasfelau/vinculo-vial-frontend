@@ -1,11 +1,8 @@
 package com.vinculovial.app.presentation.camera
 
 import android.content.Context
-import android.graphics.ImageFormat
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -48,13 +45,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.vinculovial.app.presentation.components.VvCircleIconButton
 import com.vinculovial.app.presentation.theme.VvOrange
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
  * Captura una foto con la cámara del dispositivo y la entrega **en memoria**.
@@ -244,58 +237,11 @@ private fun CaptureGuideOverlay(guide: CaptureGuide) {
     }
 }
 
-/**
- * Toma la foto y devuelve el JPEG. El [ImageProxy] se cierra siempre, así el buffer
- * nativo de la cámara se libera aunque falle la conversión.
- */
 private fun ImageCapture.captureJpeg(
     context: Context,
     onJpeg: (ByteArray) -> Unit,
     onFailure: (Throwable) -> Unit,
-) {
-    takePicture(
-        ContextCompat.getMainExecutor(context),
-        object : ImageCapture.OnImageCapturedCallback() {
+) = captureJpegInternal(context, onJpeg, onFailure)
 
-            override fun onCaptureSuccess(image: ImageProxy) {
-                try {
-                    image.use { proxy ->
-                        if (proxy.format != ImageFormat.JPEG) {
-                            onFailure(IllegalStateException("Formato inesperado: ${proxy.format}"))
-                        } else {
-                            onJpeg(proxy.readJpegBytes())
-                        }
-                    }
-                } catch (e: Exception) {
-                    onFailure(e)
-                }
-            }
-
-            override fun onError(exception: ImageCaptureException) {
-                onFailure(exception)
-            }
-        },
-    )
-}
-
-/** Para un JPEG, el primer plano contiene la imagen completa ya comprimida. */
-private fun ImageProxy.readJpegBytes(): ByteArray {
-    val buffer = planes[0].buffer
-    return ByteArray(buffer.remaining()).also(buffer::get)
-}
-
-/** `ProcessCameraProvider.getInstance` expone un `ListenableFuture`; acá se espera sin bloquear. */
 private suspend fun Context.awaitCameraProvider(): ProcessCameraProvider =
-    suspendCancellableCoroutine { continuation ->
-        val future = ProcessCameraProvider.getInstance(this)
-        future.addListener(
-            {
-                try {
-                    continuation.resume(future.get())
-                } catch (e: Exception) {
-                    continuation.resumeWithException(e)
-                }
-            },
-            ContextCompat.getMainExecutor(this),
-        )
-    }
+    awaitCameraProviderInternal()

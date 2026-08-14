@@ -2,28 +2,41 @@ package com.vinculovial.app.domain.signup
 
 import com.vinculovial.app.domain.signup.model.Credentials
 import com.vinculovial.app.domain.signup.model.EdgeResult
+import com.vinculovial.app.domain.signup.model.LivenessChallenge
+import com.vinculovial.app.domain.signup.model.LivenessFrame
+import com.vinculovial.app.domain.signup.model.LivenessProgress
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
-/** Edge falso: devuelve el resultado programado y registra qué se le pidió. */
+/** Edge falso: devuelve el resultado programado y registra qué se le entregó. */
 class FakeIdentityVerificationService(
-    var result: EdgeResult = EdgeResult(dni = "12345678", isLive = true),
+    var result: EdgeResult = EdgeResult.Verified(dni = "12345678", faceSimilarity = 0.9f),
 ) : IdentityVerificationService {
 
-    var capturedDniClaims = mutableListOf<String>()
+    var dniBackCaptures = 0
+    var dniFrontCaptures = 0
     var selfieCaptures = 0
+    var lastLivenessPassed: Boolean? = null
     var verifications = 0
     var discards = 0
 
     /** Si no es `null`, aceptar una captura falla con esta excepción. */
     var captureFailure: Exception? = null
 
-    override suspend fun acceptDniFront(image: ByteArray, declaredDni: String) {
+    override suspend fun acceptDniBack(image: ByteArray) {
         captureFailure?.let { throw it }
-        capturedDniClaims += declaredDni
+        dniBackCaptures++
     }
 
-    override suspend fun acceptSelfie(image: ByteArray) {
+    override suspend fun acceptDniFront(image: ByteArray) {
+        captureFailure?.let { throw it }
+        dniFrontCaptures++
+    }
+
+    override suspend fun acceptSelfie(image: ByteArray, livenessPassed: Boolean) {
         captureFailure?.let { throw it }
         selfieCaptures++
+        lastLivenessPassed = livenessPassed
     }
 
     override suspend fun verifyAndDiscard(): EdgeResult {
@@ -46,5 +59,25 @@ class FakeSignUpRepository(
     override suspend fun signUp(credentials: Credentials): SignUpResult {
         received += credentials
         return result
+    }
+}
+
+/** Sesión de liveness inerte: el ViewModel sólo la expone hacia la pantalla de selfie. */
+class FakeLivenessSession : LivenessSession {
+
+    private val _progress = MutableStateFlow(LivenessProgress(challenge = LivenessChallenge.SMILE))
+    override val progress: StateFlow<LivenessProgress> = _progress
+
+    var starts = 0
+    var closes = 0
+
+    override fun start() {
+        starts++
+    }
+
+    override suspend fun submitFrame(frame: LivenessFrame) = Unit
+
+    override fun close() {
+        closes++
     }
 }

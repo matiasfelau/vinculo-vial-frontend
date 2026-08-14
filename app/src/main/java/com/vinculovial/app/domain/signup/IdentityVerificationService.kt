@@ -5,29 +5,34 @@ import com.vinculovial.app.domain.signup.model.EdgeResult
 /**
  * Puerto hacia el pipeline Edge. Se define acá para que `domain` no dependa de `data`.
  *
- * La captura no la dispara el dominio: la cámara la maneja `presentation` (necesita
- * ciclo de vida, preview y una acción del usuario) y acá se entregan los bytes ya
- * obtenidos. El servicio **toma posesión** de esos bytes: quien los pasa no debe
- * conservar la referencia.
+ * El onboarding biométrico necesita tres capturas:
+ * 1. reverso del DNI, de donde se lee el número por PDF417;
+ * 2. frente del DNI, de donde se extrae la foto impresa del titular;
+ * 3. selfie, tomada recién después de superar la prueba de vida.
  *
- * Contrato de Zero Retention: ninguna implementación puede exponer las imágenes hacia
- * afuera, y [verifyAndDiscard] debe liberarlas incluso si falla.
+ * El servicio **toma posesión** de los bytes que recibe: quien los pasa no debe conservar
+ * la referencia. Ninguna implementación puede exponer las imágenes hacia afuera, y
+ * [verifyAndDiscard] debe liberarlas incluso si falla.
  */
 interface IdentityVerificationService {
 
+    /** @param image JPEG del reverso del documento, donde está el código PDF417. */
+    suspend fun acceptDniBack(image: ByteArray)
+
+    /** @param image JPEG del frente del documento, con la foto impresa del titular. */
+    suspend fun acceptDniFront(image: ByteArray)
+
     /**
-     * Entrega la foto del frente del DNI.
-     *
-     * @param image bytes JPEG. El servicio toma posesión de ellos.
-     * @param declaredDni número que tipeó el usuario. Sólo lo consume el motor de OCR
-     * simulado; el motor real lee el documento y lo ignora.
+     * @param image JPEG de la selfie.
+     * @param livenessPassed si la prueba de vida se superó en el preview. Se pasa
+     * explícitamente para que el resultado del desafío no se pierda entre pantallas.
      */
-    suspend fun acceptDniFront(image: ByteArray, declaredDni: String)
+    suspend fun acceptSelfie(image: ByteArray, livenessPassed: Boolean)
 
-    /** @param image bytes JPEG de la selfie. El servicio toma posesión de ellos. */
-    suspend fun acceptSelfie(image: ByteArray)
-
-    /** Corre OCR + Liveness y descarta las imágenes, pase lo que pase. */
+    /**
+     * Corre lectura de PDF417 y comparación facial, y descarta las imágenes pase lo
+     * que pase.
+     */
     suspend fun verifyAndDiscard(): EdgeResult
 
     /** Descarta cualquier captura pendiente (cancelación, back, error). */

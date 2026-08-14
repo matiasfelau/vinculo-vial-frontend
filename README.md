@@ -1,9 +1,10 @@
 # vinculo-vial-frontend
 
-App Android de **ViVi (Vínculo Vial)**. Esta entrega implementa **US-01 — Registro de usuario**:
-captura real de DNI y selfie con la cámara, análisis en el dispositivo (Edge), descarte inmediato
-de las imágenes (Zero Retention), cifrado HPKE del payload contra Identity y publicación en el
-Gateway con App Attestation de Google Play Integrity.
+App Android de **ViVi (Vínculo Vial)**. Esta entrega implementa **US-01 — Registro de usuario**
+con onboarding biométrico 100 % local: lectura del PDF417 del DNI, prueba de vida activa y
+comparación facial en el dispositivo, descarte inmediato de las imágenes (Zero Retention),
+cifrado HPKE del payload contra Identity y publicación en el Gateway con App Attestation de
+Google Play Integrity.
 
 El contrato compartido con `vinculo-vial-gateway` e `vinculo-vial-identity` está en
 [CLAUDE.md](CLAUDE.md), que es la fuente única de verdad.
@@ -11,7 +12,8 @@ El contrato compartido con `vinculo-vial-gateway` e `vinculo-vial-identity` est�
 ## Stack
 
 Kotlin · Jetpack Compose (Material 3) · MVVM + Clean layers · Hilt · CameraX ·
-Retrofit/OkHttp/Moshi · Google Tink (HPKE) · Play Integrity.
+ML Kit (Barcode + Face Detection) · TensorFlow Lite · Retrofit/OkHttp/Moshi ·
+Google Tink (HPKE) · Play Integrity.
 
 ## Puesta en marcha
 
@@ -73,7 +75,10 @@ app/
     signup/       RegisterUserUseCase, SignUpRepository, IdentityVerificationService,
                   SignUpResult/SignUpError, CredentialRules, EdgeResult
   data/
-    edge/         SecureImageBuffer, CaptureQuality/JpegImage, OCR y Liveness simulados
+    edge/         SecureImageBuffer, SecureBitmap
+      document/   PDF417 con ML Kit + parser del DNI argentino
+      face/       recorte con ML Kit, embedder TFLite, similitud coseno
+      liveness/   desafío de vida sobre el stream de cámara
     crypto/       HpkeEncryptor (Tink), AttestationProvider (Play Integrity | mock JWT)
     remote/       AuthApiService (Retrofit), AttestationInterceptor
     signup/       SignUpRepositoryImpl, DTOs del contrato
@@ -85,11 +90,14 @@ app/
 1. El usuario completa DNI, email y contraseña; la UI valida con `CredentialRules` (dominio).
 2. Consentimiento explícito antes de pedir cámara; el permiso `CAMERA` se solicita en
    runtime recién al abrir la captura.
-3. Captura del frente del DNI (cámara trasera) y la selfie (frontal) con CameraX. Los bytes
-   salen del buffer de la cámara y entran directo a un `SecureImageBuffer`, sin tocar disco.
-4. `RegisterUserUseCase` corre el Edge: OCR + Liveness y **descarte de las imágenes en `finally`**.
-5. Si el DNI leído no coincide con el tipeado, o Liveness falla, **nada sale del dispositivo**.
-6. `SignUpRepositoryImpl` cifra `{dni,email,password}` con HPKE y publica
+3. Tres capturas con CameraX (reverso y frente del DNI con la cámara trasera, selfie con la
+   frontal). Los bytes salen del buffer de la cámara y entran directo a un `SecureImageBuffer`,
+   sin tocar disco.
+4. `RegisterUserUseCase` corre el Edge: PDF417, prueba de vida, match facial y **descarte de
+   imágenes, bitmaps y embeddings en `finally`**.
+5. Si el documento no se lee, la prueba de vida falla, las caras no coinciden o el DNI leído no
+   coincide con el tipeado, **nada sale del dispositivo**.
+6. `SignUpRepositoryImpl` cifra `{dni,email,password,biometric_verified}` con HPKE y publica
    `POST /api/v1/auth/signup` con el header `X-App-Attestation`, ligado al cuerpo.
 7. `201/400/403/409`, los fallos de red y los de attestation se traducen a `SignUpError`
    y a un mensaje genérico.
@@ -115,23 +123,47 @@ app/
 - **Simulaciones aisladas detrás de puertos** (`OcrEngine`, `LivenessDetector`): reemplazarlas
   no toca `domain` ni `presentation`. Cámara y attestation ya son reales.
 
-## Estado del Edge
+## Onboarding biométrico
 
-La captura es real; el análisis todavía no. Conviene tenerlo claro antes de demostrarlo:
+Corre entero en el dispositivo. Al backend sólo llegan el número de documento y un booleano.
 
-- **Real**: el rechazo de capturas inservibles. `CaptureQuality` valida que el JPEG esté
-  íntegro y tenga resolución suficiente (≥0.9 MP para el documento, ≥0.3 MP para la selfie);
-  una foto vacía, truncada o chica corta el registro con "no pudimos leer tu DNI".
-- **Simulado**: la extracción y la comparación. `SimulatedOcrEngine` da por leído el DNI que
-  tipeó el usuario en lugar de reconocer el texto, y `SimulatedLivenessDetector` da por válida
-  la correspondencia entre las dos fotos. **Consecuencia concreta: `DniMismatch` no puede
-  dispararse hoy.**
-- Para cerrarlo: ML Kit para el texto — o mejor, el PDF417 del reverso del DNI argentino, que
-  trae los datos estructurados — y face match + anti-spoofing on-device.
+| Paso | Qué se captura | Motor | Qué produce |
+|---|---|---|---|
+| 1 | Reverso del DNI | ML Kit Barcode (PDF417) | número de documento |
+| 2 | Frente del DNI | ML Kit Face Detection + TFLite | embedding A |
+| 3 | Selfie | ML Kit Face Detection (liveness) + TFLite | embedding B |
+
+Verificado si `coseno(A, B) ≥ FACE_MATCH_THRESHOLD`.
+
+**Por qué PDF417 y no OCR de texto**: el código decodifica o no decodifica. No hay margen de
+interpretación ni dependencia de la tipografía o el desgaste del plástico.
+
+**Prueba de vida**: se exige una *transición* observada en vivo — de cara neutra a sonrisa, o
+de ojos abiertos a cerrados — y no un gesto aislado. Comprobar sólo "está sonriendo" lo pasaría
+una foto impresa de alguien sonriendo. El gesto se sortea en cada intento, así no alcanza con
+grabar un video una vez. La foto se dispara sola al completar el gesto, para que corresponda al
+momento en que se probó la presencia.
+
+**Qué se borra**: los JPEG (`SecureImageBuffer`), los bitmaps que necesitan ML Kit y TFLite
+(`SecureBitmap`) y los embeddings. Un vector facial es un dato biométrico: tratarlo como
+inocuo sería tan grave como mandar la foto.
+
+### Falta el modelo de reconocimiento facial
+
+ML Kit hace *detección* de caras, no *reconocimiento*: no existe un modelo de embeddings
+faciales distribuible por Maven. Hay que colocar un `.tflite` tipo MobileFaceNet en
+`app/src/main/assets/` — ver [assets/README.md](app/src/main/assets/README.md) para la forma
+esperada y las consideraciones de licencia.
+
+Sin ese archivo la app compila y corre, pero el registro falla con "no podemos validar tu
+identidad". **Nunca se da por válido un match que no se pudo calcular.**
+
+El umbral `FACE_MATCH_THRESHOLD` (hoy `0.62`) es un punto de partida sin calibrar. Comparar una
+foto impresa contra una selfie es más ruidoso que comparar dos selfies.
 
 ## Fuera de alcance de esta entrega
 
-iOS, login/sesión (US-02), recuperación o verificación de email, y OCR/Liveness reales.
+iOS, login/sesión (US-02) y recuperación o verificación de email.
 
 ## Pendiente en otros repos
 

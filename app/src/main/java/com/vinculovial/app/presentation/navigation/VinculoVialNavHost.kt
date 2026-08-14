@@ -20,6 +20,7 @@ import com.vinculovial.app.presentation.camera.CameraCaptureScreen
 import com.vinculovial.app.presentation.camera.CameraCaptureSpec
 import com.vinculovial.app.presentation.camera.CameraPermissionGate
 import com.vinculovial.app.presentation.camera.CaptureGuide
+import com.vinculovial.app.presentation.camera.LivenessCaptureScreen
 import com.vinculovial.app.presentation.signup.CaptureTarget
 import com.vinculovial.app.presentation.signup.SignUpCaptureScreen
 import com.vinculovial.app.presentation.signup.SignUpConsentScreen
@@ -39,6 +40,7 @@ object Route {
 
     const val CAMERA_TARGET_ARG = "target"
     const val SIGN_UP_CAMERA = "signup/camera"
+    const val SIGN_UP_LIVENESS = "signup/liveness"
 
     fun camera(target: CaptureTarget) = "$SIGN_UP_CAMERA/${target.name}"
 }
@@ -107,8 +109,14 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                         viewModel.onCaptureRestarted()
                         navController.popBackStack()
                     },
-                    onCaptureDni = { navController.navigate(Route.camera(CaptureTarget.DNI)) },
-                    onCaptureSelfie = { navController.navigate(Route.camera(CaptureTarget.SELFIE)) },
+                    onCapture = { target ->
+                        // La selfie no tiene obturador: va a la pantalla de prueba de vida.
+                        if (target == CaptureTarget.SELFIE) {
+                            navController.navigate(Route.SIGN_UP_LIVENESS)
+                        } else {
+                            navController.navigate(Route.camera(target))
+                        }
+                    },
                     onSubmit = viewModel::submit,
                     onErrorDismissed = viewModel::onErrorDismissed,
                     onEditForm = {
@@ -125,7 +133,7 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                 val viewModel = entry.sharedSignUpViewModel(navController)
                 val target = remember(entry) {
                     CaptureTarget.valueOf(
-                        entry.arguments?.getString(Route.CAMERA_TARGET_ARG) ?: CaptureTarget.DNI.name,
+                        entry.arguments?.getString(Route.CAMERA_TARGET_ARG) ?: CaptureTarget.DNI_BACK.name,
                     )
                 }
 
@@ -134,6 +142,21 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                         spec = target.toCaptureSpec(),
                         onCaptured = { image ->
                             viewModel.onImageCaptured(target, image)
+                            navController.popBackStack()
+                        },
+                        onCancel = { navController.popBackStack() },
+                    )
+                }
+            }
+
+            composable(Route.SIGN_UP_LIVENESS) { entry ->
+                val viewModel = entry.sharedSignUpViewModel(navController)
+
+                CameraPermissionGate(onDenied = { navController.popBackStack() }) {
+                    LivenessCaptureScreen(
+                        livenessSession = viewModel.livenessSession,
+                        onCaptured = { image, livenessPassed ->
+                            viewModel.onImageCaptured(CaptureTarget.SELFIE, image, livenessPassed)
                             navController.popBackStack()
                         },
                         onCancel = { navController.popBackStack() },
@@ -155,18 +178,29 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
     }
 }
 
-/** Cómo se le pide cada foto al usuario. */
+/**
+ * Cómo se le pide cada foto de documento al usuario.
+ *
+ * La selfie no pasa por acá: tiene su propia pantalla con prueba de vida.
+ */
 private fun CaptureTarget.toCaptureSpec(): CameraCaptureSpec = when (this) {
-    CaptureTarget.DNI -> CameraCaptureSpec(
+    CaptureTarget.DNI_BACK -> CameraCaptureSpec(
+        title = "Reverso del DNI",
+        instruction = "Encuadrá el reverso del documento: necesitamos leer el código de barras.",
+        useFrontLens = false,
+        guide = CaptureGuide.DOCUMENT,
+    )
+
+    CaptureTarget.DNI_FRONT -> CameraCaptureSpec(
         title = "Frente del DNI",
-        instruction = "Encuadrá el frente del documento dentro del recuadro, con buena luz y sin reflejos.",
+        instruction = "Encuadrá el frente del documento, con buena luz y sin reflejos sobre tu foto.",
         useFrontLens = false,
         guide = CaptureGuide.DOCUMENT,
     )
 
     CaptureTarget.SELFIE -> CameraCaptureSpec(
         title = "Selfie",
-        instruction = "Mirá de frente a la cámara, sin anteojos de sol ni gorra.",
+        instruction = "Mirá de frente a la cámara.",
         useFrontLens = true,
         guide = CaptureGuide.FACE,
     )

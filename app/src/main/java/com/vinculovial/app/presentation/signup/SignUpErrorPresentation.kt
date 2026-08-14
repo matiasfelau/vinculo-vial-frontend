@@ -31,15 +31,44 @@ data class SignUpErrorPresentation(
 fun SignUpError.presentation(): SignUpErrorPresentation = when (this) {
     SignUpError.DocumentUnreadable -> SignUpErrorPresentation(
         title = "No pudimos leer tu DNI",
-        message = "Sacá la foto del frente con buena luz, sin reflejos y con el documento " +
-            "completo dentro del recuadro.",
+        message = "Fotografiá el reverso del documento con buena luz y sin reflejos, de modo " +
+            "que el código de barras entre completo en el recuadro.",
+        action = SignUpErrorAction.RETRY_CAPTURE,
+    )
+
+    SignUpError.DocumentNotRecognized -> SignUpErrorPresentation(
+        title = "El documento no es válido",
+        message = "Sólo podemos validar un DNI argentino vigente. Revisá que estés " +
+            "fotografiando el documento correcto.",
+        action = SignUpErrorAction.RETRY_CAPTURE,
+    )
+
+    SignUpError.FaceNotDetected -> SignUpErrorPresentation(
+        title = "No encontramos una cara",
+        message = "Asegurate de que tu foto del documento se vea completa y sin reflejos, y de " +
+            "que tu cara entre entera en la selfie.",
         action = SignUpErrorAction.RETRY_CAPTURE,
     )
 
     SignUpError.LivenessFailed -> SignUpErrorPresentation(
         title = "No pudimos confirmar que seas vos",
-        message = "Repetí la selfie mirando de frente a la cámara, sin anteojos de sol ni gorra.",
+        message = "Repetí la selfie siguiendo la indicación en pantalla, mirando de frente a la " +
+            "cámara y sin anteojos de sol ni gorra.",
         action = SignUpErrorAction.RETRY_CAPTURE,
+    )
+
+    SignUpError.FaceMismatch -> SignUpErrorPresentation(
+        title = "Tu cara no coincide con el documento",
+        message = "Repetí las dos fotos con buena luz y de frente. Si el problema sigue, puede " +
+            "que el documento no sea tuyo.",
+        action = SignUpErrorAction.RETRY_CAPTURE,
+    )
+
+    SignUpError.BiometricsUnavailable -> SignUpErrorPresentation(
+        title = "No podemos validar tu identidad",
+        message = "La verificación biométrica no está disponible en esta versión de la app. " +
+            "Probá actualizarla desde Google Play.",
+        action = SignUpErrorAction.DISMISS,
     )
 
     SignUpError.DniMismatch -> SignUpErrorPresentation(

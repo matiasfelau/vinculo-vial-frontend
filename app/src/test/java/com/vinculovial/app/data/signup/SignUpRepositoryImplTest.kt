@@ -56,6 +56,7 @@ class SignUpRepositoryImplTest {
         dni = "12345678",
         email = "usuario@ejemplo.com",
         password = "Password123!",
+        biometricVerified = true,
     )
 
     /** Por defecto el modo mock; los tests que necesitan fallar lo reemplazan. */
@@ -167,6 +168,29 @@ class SignUpRepositoryImplTest {
         assertEquals(credentials.dni, payload.getString("dni"))
         assertEquals(credentials.email, payload.getString("email"))
         assertEquals(credentials.password, payload.getString("password"))
+        assertTrue(payload.getBoolean("biometric_verified"))
+    }
+
+    @Test
+    fun `el payload cifrado no lleva datos biometricos`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201))
+
+        repository().signUp(credentials)
+
+        val body = JSONObject(server.takeRequest().body.readUtf8())
+        val enc = Base64.getDecoder().decode(body.getString("ephemeral_public_key"))
+        val ciphertext = Base64.getDecoder().decode(body.getString("ciphertext"))
+        val plaintext = identityKeyset
+            .getPrimitive(RegistryConfiguration.get(), HybridDecrypt::class.java)
+            .decrypt(enc + ciphertext, ByteArray(0))
+
+        // De toda la verificación biométrica sólo puede viajar el booleano: ni imágenes,
+        // ni embeddings, ni el puntaje de similitud.
+        val payload = JSONObject(String(plaintext))
+        assertEquals(
+            setOf("dni", "email", "password", "biometric_verified"),
+            payload.keys().asSequence().toSet(),
+        )
     }
 
     @Test

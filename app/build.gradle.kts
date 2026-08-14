@@ -52,6 +52,16 @@ android {
         buildConfigField("long", "ATTESTATION_TOKEN_TTL_SECONDS", config("ATTESTATION_TOKEN_TTL_SECONDS", "60") + "L")
         buildConfigField("long", "NETWORK_TIMEOUT_MS", config("NETWORK_TIMEOUT_MS", "15000") + "L")
 
+        // Umbral de similitud coseno para dar por válido el match facial.
+        // Comparar una foto impresa de DNI contra una selfie es más ruidoso que
+        // comparar dos selfies: calibrar con datos reales antes de mover este valor.
+        buildConfigField("float", "FACE_MATCH_THRESHOLD", config("FACE_MATCH_THRESHOLD", "0.62") + "f")
+        buildConfigField(
+            "String",
+            "FACE_EMBEDDER_MODEL_ASSET",
+            "\"${config("FACE_EMBEDDER_MODEL_ASSET", "face_embedder.tflite")}\"",
+        )
+
         // `play_integrity` = veredicto real de Google (default); `mock` = JWT firmado con
         // la PSK compartida, para emuladores y CI. El Gateway tiene que estar preparado
         // para el modo elegido.
@@ -90,6 +100,11 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+    }
+
+    androidResources {
+        // TFLite mapea el modelo directo desde el APK; comprimirlo rompe ese mapeo.
+        noCompress += "tflite"
     }
 
     packaging {
@@ -141,6 +156,10 @@ dependencies {
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
+
+    implementation(libs.mlkit.barcode.scanning)
+    implementation(libs.mlkit.face.detection)
+    implementation(libs.tensorflow.lite)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

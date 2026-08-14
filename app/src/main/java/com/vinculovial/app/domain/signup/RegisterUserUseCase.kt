@@ -2,13 +2,14 @@ package com.vinculovial.app.domain.signup
 
 import com.vinculovial.app.domain.signup.model.CredentialRules
 import com.vinculovial.app.domain.signup.model.Credentials
+import com.vinculovial.app.domain.signup.model.EdgeResult
 import com.vinculovial.app.domain.signup.model.SignUpForm
 import javax.inject.Inject
 
 /**
- * Orquesta US-01 completo: valida el formulario, corre el Edge (que descarta las
- * imágenes al terminar), contrasta el DNI leído con el tipeado y recién ahí manda
- * el registro cifrado.
+ * Orquesta US-01 completo: valida el formulario, corre el onboarding biométrico (que
+ * descarta las imágenes al terminar), contrasta el DNI leído del documento con el
+ * tipeado y recién ahí manda el registro cifrado.
  *
  * El orden importa: nada sale del dispositivo si la verificación local no cierra.
  */
@@ -23,26 +24,40 @@ class RegisterUserUseCase @Inject constructor(
             return SignUpResult.Failed(SignUpError.InvalidData)
         }
 
-        val edgeResult = identityVerification.verifyAndDiscard()
+        return when (val edgeResult = identityVerification.verifyAndDiscard()) {
+            is EdgeResult.Rejected -> SignUpResult.Failed(edgeResult.reason.toSignUpError())
 
-        val documentDni = edgeResult.dni
-            ?: return SignUpResult.Failed(SignUpError.DocumentUnreadable)
+            is EdgeResult.Verified -> {
+                if (!edgeResult.dni.matches(form.dni)) {
+                    return SignUpResult.Failed(SignUpError.DniMismatch)
+                }
 
-        if (!edgeResult.isLive) {
-            return SignUpResult.Failed(SignUpError.LivenessFailed)
+                // Viaja el DNI que se leyó del documento, no el que se tipeó. De toda la
+                // verificación biométrica sólo sale el booleano.
+                repository.signUp(
+                    Credentials(
+                        dni = edgeResult.dni,
+                        email = form.email.trim(),
+                        password = form.password,
+                        biometricVerified = true,
+                    ),
+                )
+            }
         }
+    }
 
-        if (documentDni != form.dni) {
-            return SignUpResult.Failed(SignUpError.DniMismatch)
-        }
+    private fun String.matches(declared: String): Boolean =
+        CredentialRules.normalizeDni(this) == CredentialRules.normalizeDni(declared)
 
-        // Viaja el DNI que leyó el documento, no el que se tipeó.
-        return repository.signUp(
-            Credentials(
-                dni = documentDni,
-                email = form.email.trim(),
-                password = form.password,
-            ),
-        )
+    private fun EdgeResult.Reason.toSignUpError(): SignUpError = when (this) {
+        EdgeResult.Reason.BARCODE_NOT_FOUND -> SignUpError.DocumentUnreadable
+        EdgeResult.Reason.BARCODE_NOT_A_DNI -> SignUpError.DocumentNotRecognized
+        EdgeResult.Reason.NO_FACE_IN_DOCUMENT,
+        EdgeResult.Reason.NO_FACE_IN_SELFIE,
+        -> SignUpError.FaceNotDetected
+        EdgeResult.Reason.LIVENESS_FAILED -> SignUpError.LivenessFailed
+        EdgeResult.Reason.FACE_MISMATCH -> SignUpError.FaceMismatch
+        EdgeResult.Reason.BIOMETRICS_UNAVAILABLE -> SignUpError.BiometricsUnavailable
+        EdgeResult.Reason.INCOMPLETE_CAPTURE -> SignUpError.DocumentUnreadable
     }
 }

@@ -1,6 +1,7 @@
 package com.vinculovial.app.presentation.signup
 
 import com.vinculovial.app.domain.signup.FakeIdentityVerificationService
+import com.vinculovial.app.domain.signup.FakeLivenessSession
 import com.vinculovial.app.domain.signup.FakeSignUpRepository
 import com.vinculovial.app.domain.signup.RegisterUserUseCase
 import com.vinculovial.app.domain.signup.SignUpError
@@ -24,10 +25,12 @@ class SignUpViewModelTest {
 
     private val verification = FakeIdentityVerificationService()
     private val repository = FakeSignUpRepository()
+    private val livenessSession = FakeLivenessSession()
 
     private fun viewModel() = SignUpViewModel(
         registerUser = RegisterUserUseCase(verification, repository),
         identityVerification = verification,
+        livenessSession = livenessSession,
     )
 
     private fun SignUpViewModel.completarFormulario() {
@@ -40,9 +43,10 @@ class SignUpViewModelTest {
     /** La cámara real entrega bytes; en los tests alcanza con cualquier contenido. */
     private fun foto() = ByteArray(64) { it.toByte() }
 
-    private fun SignUpViewModel.capturarTodo() {
-        onImageCaptured(CaptureTarget.DNI, foto())
-        onImageCaptured(CaptureTarget.SELFIE, foto())
+    private fun SignUpViewModel.capturarTodo(livenessPassed: Boolean = true) {
+        onImageCaptured(CaptureTarget.DNI_BACK, foto())
+        onImageCaptured(CaptureTarget.DNI_FRONT, foto())
+        onImageCaptured(CaptureTarget.SELFIE, foto(), livenessPassed)
     }
 
     @Test
@@ -78,27 +82,49 @@ class SignUpViewModelTest {
     }
 
     @Test
-    fun `capturar el dni le pasa al edge el numero tipeado`() = runTest {
+    fun `cada captura se entrega a su paso del pipeline`() = runTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onImageCaptured(CaptureTarget.DNI, foto())
+        viewModel.capturarTodo()
 
-        assertEquals(listOf("12345678"), verification.capturedDniClaims)
-        assertTrue(viewModel.uiState.value.dniImageCaptured)
+        assertEquals(1, verification.dniBackCaptures)
+        assertEquals(1, verification.dniFrontCaptures)
+        assertEquals(1, verification.selfieCaptures)
         assertEquals(null, viewModel.uiState.value.capturing)
     }
 
     @Test
-    fun `no se puede enviar sin las dos capturas`() = runTest {
+    fun `el veredicto de vida viaja junto a la selfie`() = runTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
-        viewModel.onImageCaptured(CaptureTarget.DNI, foto())
+
+        viewModel.onImageCaptured(CaptureTarget.SELFIE, foto(), livenessPassed = false)
+
+        assertEquals(false, verification.lastLivenessPassed)
+    }
+
+    @Test
+    fun `no se puede enviar hasta tener las tres capturas`() = runTest {
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+        viewModel.onImageCaptured(CaptureTarget.DNI_BACK, foto())
+        viewModel.onImageCaptured(CaptureTarget.DNI_FRONT, foto())
 
         viewModel.submit()
 
         assertTrue(repository.received.isEmpty())
         assertEquals(SignUpStatus.Idle, viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `con las tres capturas se habilita el envio`() = runTest {
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+
+        viewModel.capturarTodo()
+
+        assertTrue(viewModel.uiState.value.canSubmitCapture)
     }
 
     @Test
@@ -111,8 +137,7 @@ class SignUpViewModelTest {
 
         val state = viewModel.uiState.value
         assertEquals(SignUpStatus.Registered, state.status)
-        assertFalse(state.dniImageCaptured)
-        assertFalse(state.selfieCaptured)
+        assertTrue(state.completedCaptures.isEmpty())
     }
 
     @Test
@@ -128,8 +153,8 @@ class SignUpViewModelTest {
     }
 
     @Test
-    fun `un liveness negativo obliga a capturar de nuevo`() = runTest {
-        verification.result = EdgeResult(dni = "12345678", isLive = false)
+    fun `un match facial negativo obliga a capturar de nuevo`() = runTest {
+        verification.result = EdgeResult.Rejected(EdgeResult.Reason.FACE_MISMATCH)
         val viewModel = viewModel()
         viewModel.completarFormulario()
         viewModel.capturarTodo()
@@ -137,9 +162,8 @@ class SignUpViewModelTest {
         viewModel.submit()
 
         val state = viewModel.uiState.value
-        assertEquals(SignUpError.LivenessFailed, state.error)
-        assertFalse(state.dniImageCaptured)
-        assertFalse(state.selfieCaptured)
+        assertEquals(SignUpError.FaceMismatch, state.error)
+        assertTrue("las capturas ya no existen en el Edge", state.completedCaptures.isEmpty())
     }
 
     @Test
@@ -164,8 +188,7 @@ class SignUpViewModelTest {
         viewModel.onCaptureRestarted()
 
         assertEquals(1, verification.discards)
-        assertFalse(viewModel.uiState.value.dniImageCaptured)
-        assertFalse(viewModel.uiState.value.selfieCaptured)
+        assertTrue(viewModel.uiState.value.completedCaptures.isEmpty())
     }
 
     @Test
@@ -174,11 +197,11 @@ class SignUpViewModelTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onImageCaptured(CaptureTarget.DNI, foto())
+        viewModel.onImageCaptured(CaptureTarget.DNI_BACK, foto())
 
         val state = viewModel.uiState.value
         assertEquals(SignUpError.DocumentUnreadable, state.error)
-        assertFalse(state.dniImageCaptured)
+        assertTrue(state.completedCaptures.isEmpty())
         assertEquals(null, state.capturing)
     }
 
@@ -190,7 +213,7 @@ class SignUpViewModelTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onImageCaptured(CaptureTarget.DNI, foto())
+        viewModel.onImageCaptured(CaptureTarget.DNI_BACK, foto())
 
         assertEquals(null, viewModel.uiState.value.error)
     }

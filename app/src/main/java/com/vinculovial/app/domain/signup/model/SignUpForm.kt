@@ -71,6 +71,14 @@ object CredentialRules {
             problemOf(field, form)?.let { field to it }
         }.toMap()
 
+    /**
+     * Forma canónica para comparar dos números de documento.
+     *
+     * El PDF417 a veces trae el número con ceros a la izquierda y el usuario casi nunca
+     * los tipea: sin normalizar, "01234567" y "1234567" se verían como personas distintas.
+     */
+    fun normalizeDni(raw: String): String = raw.trim().trimStart('0')
+
     private fun isStrongEnough(password: String): Boolean =
         password.any { it.isUpperCase() } &&
             password.any { it.isLowerCase() } &&

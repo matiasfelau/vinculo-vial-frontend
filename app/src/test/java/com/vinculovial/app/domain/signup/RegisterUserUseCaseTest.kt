@@ -21,15 +21,15 @@ class RegisterUserUseCaseTest {
     )
 
     @Test
-    fun `registro exitoso manda el dni leido del documento`() = runTest {
+    fun `registro exitoso manda el dni leido del documento y la marca biometrica`() = runTest {
         val result = useCase(form)
 
         assertEquals(SignUpResult.Registered, result)
-        assertEquals(1, repository.received.size)
         with(repository.received.single()) {
             assertEquals("12345678", dni)
             assertEquals("usuario@ejemplo.com", email)
             assertEquals("Password123!", password)
+            assertTrue("la verificación biométrica no se informó", biometricVerified)
         }
     }
 
@@ -43,33 +43,59 @@ class RegisterUserUseCaseTest {
     }
 
     @Test
-    fun `documento ilegible corta antes de salir del dispositivo`() = runTest {
-        verification.result = EdgeResult(dni = null, isLive = true)
+    fun `cada rechazo del edge tiene su error de dominio`() = runTest {
+        val esperados = mapOf(
+            EdgeResult.Reason.BARCODE_NOT_FOUND to SignUpError.DocumentUnreadable,
+            EdgeResult.Reason.BARCODE_NOT_A_DNI to SignUpError.DocumentNotRecognized,
+            EdgeResult.Reason.NO_FACE_IN_DOCUMENT to SignUpError.FaceNotDetected,
+            EdgeResult.Reason.NO_FACE_IN_SELFIE to SignUpError.FaceNotDetected,
+            EdgeResult.Reason.LIVENESS_FAILED to SignUpError.LivenessFailed,
+            EdgeResult.Reason.FACE_MISMATCH to SignUpError.FaceMismatch,
+            EdgeResult.Reason.BIOMETRICS_UNAVAILABLE to SignUpError.BiometricsUnavailable,
+            EdgeResult.Reason.INCOMPLETE_CAPTURE to SignUpError.DocumentUnreadable,
+        )
 
-        val result = useCase(form)
+        esperados.forEach { (reason, expectedError) ->
+            verification.result = EdgeResult.Rejected(reason)
+            repository.received.clear()
 
-        assertEquals(SignUpResult.Failed(SignUpError.DocumentUnreadable), result)
+            assertEquals(
+                "mapeo incorrecto para $reason",
+                SignUpResult.Failed(expectedError),
+                useCase(form),
+            )
+            assertTrue("$reason llegó al backend", repository.received.isEmpty())
+        }
+    }
+
+    @Test
+    fun `un rechazo biometrico nunca sale del dispositivo`() = runTest {
+        verification.result = EdgeResult.Rejected(EdgeResult.Reason.FACE_MISMATCH)
+
+        useCase(form)
+
         assertTrue(repository.received.isEmpty())
     }
 
     @Test
-    fun `liveness negativo corta antes de salir del dispositivo`() = runTest {
-        verification.result = EdgeResult(dni = "12345678", isLive = false)
-
-        val result = useCase(form)
-
-        assertEquals(SignUpResult.Failed(SignUpError.LivenessFailed), result)
-        assertTrue(repository.received.isEmpty())
-    }
-
-    @Test
-    fun `dni del documento distinto al tipeado corta el registro`() = runTest {
-        verification.result = EdgeResult(dni = "87654321", isLive = true)
+    fun `el dni del documento distinto al tipeado corta el registro`() = runTest {
+        verification.result = EdgeResult.Verified(dni = "87654321", faceSimilarity = 0.9f)
 
         val result = useCase(form)
 
         assertEquals(SignUpResult.Failed(SignUpError.DniMismatch), result)
         assertTrue(repository.received.isEmpty())
+    }
+
+    @Test
+    fun `los ceros a la izquierda no cuentan como documentos distintos`() = runTest {
+        // El PDF417 suele venir con relleno; el usuario casi nunca lo tipea.
+        verification.result = EdgeResult.Verified(dni = "01234567", faceSimilarity = 0.9f)
+
+        val result = useCase(form.copy(dni = "1234567"))
+
+        assertEquals(SignUpResult.Registered, result)
+        assertEquals("01234567", repository.received.single().dni)
     }
 
     @Test
