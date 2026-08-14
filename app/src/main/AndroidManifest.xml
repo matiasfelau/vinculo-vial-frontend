@@ -4,6 +4,23 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      La cámara es imprescindible: sin DNI ni selfie no hay validación de identidad.
+      Se pide en runtime justo antes de abrir la captura, nunca al arrancar la app.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Se necesitan las dos cámaras: trasera para el DNI, frontal para la selfie. -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="true" />
+    <uses-feature
+        android:name="android.hardware.camera.front"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.autofocus"
+        android:required="false" />
+
     <application
         android:name=".VinculoVialApplication"
         android:allowBackup="false"

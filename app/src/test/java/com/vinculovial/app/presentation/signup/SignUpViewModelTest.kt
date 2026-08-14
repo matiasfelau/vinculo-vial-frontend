@@ -37,9 +37,12 @@ class SignUpViewModelTest {
         onPasswordConfirmationChange("Password123!")
     }
 
-    private suspend fun SignUpViewModel.capturarTodo() {
-        onCaptureDni()
-        onCaptureSelfie()
+    /** La cámara real entrega bytes; en los tests alcanza con cualquier contenido. */
+    private fun foto() = ByteArray(64) { it.toByte() }
+
+    private fun SignUpViewModel.capturarTodo() {
+        onImageCaptured(CaptureTarget.DNI, foto())
+        onImageCaptured(CaptureTarget.SELFIE, foto())
     }
 
     @Test
@@ -79,7 +82,7 @@ class SignUpViewModelTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onCaptureDni()
+        viewModel.onImageCaptured(CaptureTarget.DNI, foto())
 
         assertEquals(listOf("12345678"), verification.capturedDniClaims)
         assertTrue(viewModel.uiState.value.dniImageCaptured)
@@ -90,7 +93,7 @@ class SignUpViewModelTest {
     fun `no se puede enviar sin las dos capturas`() = runTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
-        viewModel.onCaptureDni()
+        viewModel.onImageCaptured(CaptureTarget.DNI, foto())
 
         viewModel.submit()
 
@@ -171,7 +174,7 @@ class SignUpViewModelTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onCaptureDni()
+        viewModel.onImageCaptured(CaptureTarget.DNI, foto())
 
         val state = viewModel.uiState.value
         assertEquals(SignUpError.DocumentUnreadable, state.error)
@@ -187,7 +190,7 @@ class SignUpViewModelTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onCaptureDni()
+        viewModel.onImageCaptured(CaptureTarget.DNI, foto())
 
         assertEquals(null, viewModel.uiState.value.error)
     }

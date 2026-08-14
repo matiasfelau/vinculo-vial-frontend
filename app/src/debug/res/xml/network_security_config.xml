@@ -6,8 +6,15 @@
   Todo lo demás sigue exigiendo HTTPS, y esta configuración no se empaqueta
   en release: la reemplaza la de src/main.
 -->
-<network-security-config>
-    <base-config cleartextTrafficPermitted="false">
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <!--
+      `AcceptsUserCertificates` avisa por el riesgo de confiar en CAs del usuario en
+      release. Acá no aplica: este archivo vive en src/debug y la variante release usa
+      el de src/main, que sólo confía en el almacén del sistema.
+    -->
+    <base-config
+        cleartextTrafficPermitted="false"
+        tools:ignore="AcceptsUserCertificates">
         <trust-anchors>
             <certificates src="system" />
             <!-- Permite interceptar tráfico con un proxy de depuración. -->

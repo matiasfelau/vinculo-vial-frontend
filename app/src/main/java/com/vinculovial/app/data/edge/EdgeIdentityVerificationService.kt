@@ -4,7 +4,6 @@ import com.vinculovial.app.di.DefaultDispatcher
 import com.vinculovial.app.domain.signup.IdentityVerificationService
 import com.vinculovial.app.domain.signup.model.EdgeResult
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -12,15 +11,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Pipeline Edge de US-01: mantiene las dos imágenes capturadas sólo el tiempo necesario
- * para correr OCR + Liveness y las libera inmediatamente después.
+ * Pipeline Edge de US-01: recibe las fotos que tomó la cámara, las retiene sólo el
+ * tiempo necesario para correr OCR + Liveness y las libera inmediatamente después.
  *
  * Es `@Singleton` porque la sesión de captura atraviesa varias pantallas, y las imágenes
  * nunca salen de esta clase: hacia afuera sólo viaja [EdgeResult].
  */
 @Singleton
 class EdgeIdentityVerificationService @Inject constructor(
-    private val camera: CameraSource,
     private val ocrEngine: OcrEngine,
     private val livenessDetector: LivenessDetector,
     @DefaultDispatcher private val dispatcher: CoroutineDispatcher,
@@ -31,22 +29,24 @@ class EdgeIdentityVerificationService @Inject constructor(
 
     private var dniFront: SecureImageBuffer? = null
     private var selfie: SecureImageBuffer? = null
+    private var declaredDni: String = ""
 
-    override suspend fun captureDniFront(claimedDni: String) {
+    override suspend fun acceptDniFront(image: ByteArray, declaredDni: String) {
+        // wrap() toma posesión de los bytes: a partir de acá la única referencia viva
+        // está dentro del buffer, que se sabe borrar.
+        val captured = SecureImageBuffer.wrap(image)
         withContext(dispatcher) {
-            delay(CAPTURE_LATENCY_MS)
-            val captured = camera.captureDniFront(claimedDni)
             mutex.withLock {
                 dniFront?.clear()
                 dniFront = captured
+                this@EdgeIdentityVerificationService.declaredDni = declaredDni
             }
         }
     }
 
-    override suspend fun captureSelfie() {
+    override suspend fun acceptSelfie(image: ByteArray) {
+        val captured = SecureImageBuffer.wrap(image)
         withContext(dispatcher) {
-            delay(CAPTURE_LATENCY_MS)
-            val captured = camera.captureSelfie()
             mutex.withLock {
                 selfie?.clear()
                 selfie = captured
@@ -62,13 +62,12 @@ class EdgeIdentityVerificationService @Inject constructor(
                 if (dniBuffer == null || selfieBuffer == null) {
                     return@withLock EdgeResult(dni = null, isLive = false)
                 }
-                delay(ANALYSIS_LATENCY_MS)
                 // Los bytes se prestan sólo dentro de estos bloques; ni el OCR ni el
                 // Liveness reciben nada que puedan conservar.
                 dniBuffer.read { dniBytes ->
                     selfieBuffer.read { selfieBytes ->
                         EdgeResult(
-                            dni = ocrEngine.extractDni(dniBytes),
+                            dni = ocrEngine.extractDni(dniBytes, declaredDni),
                             isLive = livenessDetector.isLive(dniBytes, selfieBytes),
                         )
                     }
@@ -90,11 +89,6 @@ class EdgeIdentityVerificationService @Inject constructor(
         selfie?.clear()
         dniFront = null
         selfie = null
-    }
-
-    private companion object {
-        /** Latencias simuladas para que la UI muestre progreso como con hardware real. */
-        const val CAPTURE_LATENCY_MS = 250L
-        const val ANALYSIS_LATENCY_MS = 600L
+        declaredDni = ""
     }
 }

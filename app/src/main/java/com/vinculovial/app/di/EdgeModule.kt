@@ -1,12 +1,10 @@
 package com.vinculovial.app.di
 
-import com.vinculovial.app.data.edge.CameraSource
 import com.vinculovial.app.data.edge.EdgeIdentityVerificationService
 import com.vinculovial.app.data.edge.LivenessDetector
-import com.vinculovial.app.data.edge.MockCamera
-import com.vinculovial.app.data.edge.MockLivenessDetector
-import com.vinculovial.app.data.edge.MockOcrEngine
 import com.vinculovial.app.data.edge.OcrEngine
+import com.vinculovial.app.data.edge.SimulatedLivenessDetector
+import com.vinculovial.app.data.edge.SimulatedOcrEngine
 import com.vinculovial.app.domain.signup.IdentityVerificationService
 import dagger.Binds
 import dagger.Module
@@ -18,16 +16,12 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 abstract class EdgeModule {
 
-    /** Reemplazar por CameraX sin tocar el resto de la app. */
-    @Binds
-    abstract fun bindCameraSource(impl: MockCamera): CameraSource
-
     /** Reemplazar por el motor real (ML Kit on-device) sin tocar el resto de la app. */
     @Binds
-    abstract fun bindOcrEngine(impl: MockOcrEngine): OcrEngine
+    abstract fun bindOcrEngine(impl: SimulatedOcrEngine): OcrEngine
 
     @Binds
-    abstract fun bindLivenessDetector(impl: MockLivenessDetector): LivenessDetector
+    abstract fun bindLivenessDetector(impl: SimulatedLivenessDetector): LivenessDetector
 
     @Binds
     @Singleton

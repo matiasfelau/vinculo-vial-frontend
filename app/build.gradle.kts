@@ -17,8 +17,17 @@ val localProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
+/**
+ * Una clave presente pero vacía cuenta como ausente. Sin esto, copiar el `.example`
+ * con un valor sin completar generaría un `BuildConfig` inválido (`= L;`) y el error
+ * aparecería lejos de su causa.
+ */
 fun config(key: String, default: String): String =
-    (localProperties.getProperty(key) ?: System.getenv(key) ?: default).trim()
+    (
+        localProperties.getProperty(key)?.takeIf { it.isNotBlank() }
+            ?: System.getenv(key)?.takeIf { it.isNotBlank() }
+            ?: default
+        ).trim()
 
 android {
     namespace = "com.vinculovial.app"
@@ -43,9 +52,10 @@ android {
         buildConfigField("long", "ATTESTATION_TOKEN_TTL_SECONDS", config("ATTESTATION_TOKEN_TTL_SECONDS", "60") + "L")
         buildConfigField("long", "NETWORK_TIMEOUT_MS", config("NETWORK_TIMEOUT_MS", "15000") + "L")
 
-        // `mock` = JWT firmado con la PSK compartida; `play_integrity` = veredicto real
-        // de Google. El Gateway tiene que estar preparado para el modo elegido.
-        buildConfigField("String", "ATTESTATION_MODE", "\"${config("ATTESTATION_MODE", "mock")}\"")
+        // `play_integrity` = veredicto real de Google (default); `mock` = JWT firmado con
+        // la PSK compartida, para emuladores y CI. El Gateway tiene que estar preparado
+        // para el modo elegido.
+        buildConfigField("String", "ATTESTATION_MODE", "\"${config("ATTESTATION_MODE", "play_integrity")}\"")
         buildConfigField(
             "long",
             "PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER",
@@ -126,6 +136,11 @@ dependencies {
 
     implementation(libs.play.integrity)
     implementation(libs.kotlinx.coroutines.play.services)
+
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

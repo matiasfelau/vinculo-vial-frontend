@@ -6,8 +6,15 @@ Un ciudadano se registra en la plataforma. La app captura DNI (foto) y selfie, e
 ## Fuera de alcance
 - iOS.
 - Recuperación o verificación de email.
+- OCR y Liveness reales (siguen simulados; ver "Estado del Edge").
 
-> **Actualización:** Play Integrity real dejó de estar fuera de alcance (ya hay proyecto en Play Console). El Frontend soporta los dos modos; el mock sigue existiendo para desarrollo sin Play Store y para CI. El cambio al modo `play_integrity` requiere trabajo coordinado en `vinculo-vial-gateway`.
+> **Actualización:** Play Integrity real y captura de cámara real dejaron de estar fuera de alcance. `ATTESTATION_MODE=play_integrity` es el default; el mock queda para emuladores y CI. El modo real requiere trabajo coordinado en `vinculo-vial-gateway`.
+
+## Estado del Edge
+La captura es real (CameraX, en memoria). El análisis todavía no:
+- **Real**: el rechazo de capturas inservibles. `CaptureQuality` valida que el JPEG esté íntegro y tenga resolución suficiente; una foto vacía, truncada o chica corta el registro con `DocumentUnreadable`.
+- **Simulado**: la extracción y la comparación. `SimulatedOcrEngine` da por leído el DNI declarado en vez de reconocer texto, y `SimulatedLivenessDetector` da por válida la correspondencia entre las dos fotos. Consecuencia concreta: **`DniMismatch` no puede dispararse hoy**.
+- Para cerrarlo: ML Kit (texto, o mejor el PDF417 del reverso del DNI argentino) y face match + anti-spoofing on-device. Sólo hay que reemplazar esas dos clases: todo lo demás depende de las interfaces `OcrEngine` y `LivenessDetector`.
 
 ## Contrato compartido entre componentes (US-01 — fuente única de verdad, idéntico en los 3 repos)
 
@@ -41,6 +48,7 @@ Un ciudadano se registra en la plataforma. La app captura DNI (foto) y selfie, e
 - Kotlin + Jetpack Compose
 - MVVM + Clean layers (`presentation` / `domain` / `data`)
 - Hilt (DI)
+- CameraX — captura en memoria, sin escribir la foto a disco
 - Retrofit + OkHttp + Moshi
 - Google Tink — HPKE modo BASE, KEM X25519/HKDF-SHA256, AEAD AES-256-GCM
 - `SecureImageBuffer` propio para Zero Retention (buffer de imagen que se sobreescribe/libera explícitamente tras extraer datos)
@@ -50,18 +58,19 @@ Un ciudadano se registra en la plataforma. La app captura DNI (foto) y selfie, e
 ```
 /app
   /presentation/signup/    # SignUpScreen, SignUpViewModel, UiState
+  /presentation/camera/    # CameraCaptureScreen (CameraX), CameraPermissionGate
   /domain/signup/          # RegisterUserUseCase, modelos de dominio
   /data/signup/            # SignUpRepository, DTOs, mappers
   /data/remote/            # Retrofit ApiService, interceptors
   /data/crypto/            # HpkeEncryptor (Tink), AttestationProvider (mock JWT | Play Integrity)
-  /data/edge/              # SecureImageBuffer, mocks de OCR y Liveness
+  /data/edge/              # SecureImageBuffer, CaptureQuality, OCR y Liveness simulados
   /di/                     # módulos Hilt
 ```
 Regla dura: `domain` no importa Retrofit ni Compose. `presentation` solo llama a `domain`.
 
 ## Flujo de datos US-01
-1. `presentation/signup`: formulario captura Email, Password, foto DNI y selfie (mock de captura).
-2. `data/edge`: `SecureImageBuffer` recibe los bytes de imagen, simula OCR (extrae DNI) y Liveness (DNI vs selfie) → `EdgeResult(dni, isLive: Boolean)`. Inmediatamente después libera/sobreescribe el buffer — sin cache en disco, sin referencias vivas post-uso (verificado con test).
+1. `presentation/signup`: formulario captura Email y Password. `presentation/camera`: pide el permiso `CAMERA` en runtime y toma las dos fotos con CameraX, entregándolas **en memoria** (nunca a disco: por eso no se usa `ActivityResultContracts.TakePicture`, que exige URI de destino).
+2. `data/edge`: `SecureImageBuffer` toma posesión de los bytes, valida calidad, corre OCR (extrae DNI) y Liveness (DNI vs selfie) → `EdgeResult(dni, isLive: Boolean)`. Inmediatamente después libera/sobreescribe el buffer — sin cache en disco, sin referencias vivas post-uso (verificado con test).
 3. `domain/signup`: `RegisterUserUseCase` arma `{dni, email, password}`.
 4. `data/crypto`: `HpkeEncryptor` (Tink) cifra el payload contra `IDENTITY_HPKE_PUBLIC_KEY` → produce `{ephemeral_public_key, ciphertext}` (base64).
 5. `data/crypto`: `AttestationProvider` obtiene el veredicto de integridad ligado al hash del cuerpo — JWT firmado con la PSK en modo `mock`, token de Google en modo `play_integrity`.
@@ -91,10 +100,10 @@ Rama base `dev`. Una rama por feature, `feature/<slug>`, PR + squash merge a `de
 `.env.example` / `local.properties.example` (gitignored, consumidos por Gradle → `BuildConfig`):
 - `API_BASE_URL`
 - `IDENTITY_HPKE_PUBLIC_KEY` — Public Key X25519 (base64) de Identity.
-- `ATTESTATION_MODE` — `mock` (default) o `play_integrity`.
+- `ATTESTATION_MODE` — `play_integrity` (default) o `mock`. Falla cerrado: cualquier valor que no sea exactamente `mock` usa la verificación real.
+- `PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER` — sólo modo `play_integrity`. Número de proyecto de Cloud vinculado en Play Console.
 - `APP_ATTESTATION_PSK` — sólo modo `mock`. PSK compartida con el Gateway, mínimo 32 bytes.
 - `ATTESTATION_TOKEN_TTL_SECONDS` (default `60`) — sólo modo `mock`.
-- `PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER` — sólo modo `play_integrity`.
 - `NETWORK_TIMEOUT_MS` (default `15000`)
 
 ## Comandos

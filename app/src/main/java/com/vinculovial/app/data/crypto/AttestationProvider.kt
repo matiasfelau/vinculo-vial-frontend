@@ -30,18 +30,22 @@ interface AttestationProvider {
  * estar configurados igual.
  */
 enum class AttestationMode {
-    /** Desarrollo: JWT HMAC con `APP_ATTESTATION_PSK`. */
+    /** Sólo desarrollo: JWT HMAC con `APP_ATTESTATION_PSK`. Hay que pedirlo explícitamente. */
     MOCK,
 
-    /** Producción: token de Google, que el Gateway decodifica contra la Play Integrity API. */
+    /** Default: token de Google, que el Gateway decodifica contra la Play Integrity API. */
     PLAY_INTEGRITY,
 
     ;
 
     companion object {
+        /**
+         * Falla cerrado: cualquier valor que no sea exactamente `mock` cae en la
+         * verificación real. Un typo en la configuración no debe degradar la seguridad.
+         */
         fun from(raw: String): AttestationMode = when (raw.trim().lowercase()) {
-            "play_integrity", "play-integrity", "playintegrity" -> PLAY_INTEGRITY
-            else -> MOCK
+            "mock" -> MOCK
+            else -> PLAY_INTEGRITY
         }
     }
 }

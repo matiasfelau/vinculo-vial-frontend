@@ -57,9 +57,43 @@ class SignUpViewModel @Inject constructor(
         return problems.isEmpty()
     }
 
-    fun onCaptureDni() = capture(CaptureTarget.DNI)
+    /**
+     * Recibe la foto que tomó la cámara y la entrega al Edge, que se queda con los bytes.
+     *
+     * El ViewModel **no** guarda la imagen: la pasa y suelta la referencia en el acto.
+     */
+    fun onImageCaptured(target: CaptureTarget, image: ByteArray) {
+        val declaredDni = _uiState.value.form.dni
 
-    fun onCaptureSelfie() = capture(CaptureTarget.SELFIE)
+        viewModelScope.launch {
+            _uiState.update { it.copy(capturing = target, status = SignUpStatus.Idle) }
+
+            val accepted = try {
+                when (target) {
+                    CaptureTarget.DNI -> identityVerification.acceptDniFront(image, declaredDni)
+                    CaptureTarget.SELFIE -> identityVerification.acceptSelfie(image)
+                }
+                true
+            } catch (e: CancellationException) {
+                // La pantalla se fue: no es un fallo de captura, hay que dejar propagar.
+                throw e
+            } catch (e: Exception) {
+                false
+            }
+
+            _uiState.update {
+                when {
+                    !accepted -> it.copy(
+                        capturing = null,
+                        status = SignUpStatus.Failed(SignUpError.DocumentUnreadable),
+                    )
+
+                    target == CaptureTarget.DNI -> it.copy(capturing = null, dniImageCaptured = true)
+                    else -> it.copy(capturing = null, selfieCaptured = true)
+                }
+            }
+        }
+    }
 
     /** Vuelve a empezar la captura: las imágenes pendientes se descartan. */
     fun onCaptureRestarted() {
@@ -107,40 +141,6 @@ class SignUpViewModel @Inject constructor(
     fun onErrorDismissed() {
         if (_uiState.value.status is SignUpStatus.Failed) {
             _uiState.update { it.copy(status = SignUpStatus.Idle) }
-        }
-    }
-
-    private fun capture(target: CaptureTarget) {
-        val state = _uiState.value
-        if (state.isBusy) return
-
-        viewModelScope.launch {
-            _uiState.update { it.copy(capturing = target, status = SignUpStatus.Idle) }
-
-            val captured = try {
-                when (target) {
-                    CaptureTarget.DNI -> identityVerification.captureDniFront(state.form.dni)
-                    CaptureTarget.SELFIE -> identityVerification.captureSelfie()
-                }
-                true
-            } catch (e: CancellationException) {
-                // La pantalla se fue: no es un fallo de captura, hay que dejar propagar.
-                throw e
-            } catch (e: Exception) {
-                false
-            }
-
-            _uiState.update {
-                when {
-                    !captured -> it.copy(
-                        capturing = null,
-                        status = SignUpStatus.Failed(SignUpError.DocumentUnreadable),
-                    )
-
-                    target == CaptureTarget.DNI -> it.copy(capturing = null, dniImageCaptured = true)
-                    else -> it.copy(capturing = null, selfieCaptured = true)
-                }
-            }
         }
     }
 

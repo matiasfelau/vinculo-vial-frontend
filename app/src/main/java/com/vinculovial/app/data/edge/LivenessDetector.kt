@@ -8,16 +8,15 @@ interface LivenessDetector {
 }
 
 /**
- * Mock de Liveness: exige un frente de DNI legible y una selfie con rostro detectado.
- * En producción, acá va el modelo on-device de face match + anti-spoofing.
+ * Liveness simulado: exige que ambas capturas sean fotos utilizables de verdad y da por
+ * válida la correspondencia entre ellas.
+ *
+ * Igual que en [SimulatedOcrEngine], el rechazo es real (una captura rota o en negro no
+ * pasa) pero la comparación no: no hay face match ni anti-spoofing hasta que se integre
+ * el modelo on-device. Reemplazar esta clase alcanza; nadie más depende de ella.
  */
-class MockLivenessDetector @Inject constructor() : LivenessDetector {
+class SimulatedLivenessDetector @Inject constructor() : LivenessDetector {
 
-    override fun isLive(dniFrontImage: ByteArray, selfieImage: ByteArray): Boolean {
-        val dni = MockImageCodec.decode(dniFrontImage) ?: return false
-        val selfie = MockImageCodec.decode(selfieImage) ?: return false
-        return dni.kind == MockImageCodec.KIND_DNI_FRONT &&
-            selfie.kind == MockImageCodec.KIND_SELFIE &&
-            selfie.payload == MockImageCodec.FACE_SIGNATURE
-    }
+    override fun isLive(dniFrontImage: ByteArray, selfieImage: ByteArray): Boolean =
+        CaptureQuality.isUsableDocument(dniFrontImage) && CaptureQuality.isUsableSelfie(selfieImage)
 }

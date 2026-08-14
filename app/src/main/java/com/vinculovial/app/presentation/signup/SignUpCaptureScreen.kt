@@ -115,8 +115,8 @@ fun SignUpCaptureScreen(
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    text = "Las imágenes se analizan en tu dispositivo y se descartan al instante: " +
-                        "no se guardan ni viajan a nuestros servidores.",
+                    text = "Las fotos se analizan en tu dispositivo y se descartan al instante: " +
+                        "no se guardan en el teléfono ni viajan a nuestros servidores.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = VvMuted,
                 )

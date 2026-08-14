@@ -15,6 +15,9 @@ moshi = "1.15.2"
 tink = "1.16.0"
 jjwt = "0.12.6"
 playIntegrity = "1.6.0"
+# 1.6.x exige compileSdk 36, que a su vez obliga a subir AGP. 1.5.3 es la última que
+# funciona con compileSdk 35 / AGP 8.9.
+camerax = "1.5.3"
 junit = "4.13.2"
 coroutines = "1.10.1"
 
@@ -49,6 +52,11 @@ tink-android = { module = "com.google.crypto.tink:tink-android", version.ref = "
 jjwt-api = { module = "io.jsonwebtoken:jjwt-api", version.ref = "jjwt" }
 jjwt-impl = { module = "io.jsonwebtoken:jjwt-impl", version.ref = "jjwt" }
 jjwt-orgjson = { module = "io.jsonwebtoken:jjwt-orgjson", version.ref = "jjwt" }
+
+androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
+androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
 
 play-integrity = { module = "com.google.android.play:integrity", version.ref = "playIntegrity" }
 kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "coroutines" }

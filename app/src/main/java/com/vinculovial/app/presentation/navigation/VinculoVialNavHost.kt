@@ -9,11 +9,18 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import androidx.compose.ui.platform.LocalContext
+import com.vinculovial.app.presentation.camera.CameraCaptureScreen
+import com.vinculovial.app.presentation.camera.CameraCaptureSpec
+import com.vinculovial.app.presentation.camera.CameraPermissionGate
+import com.vinculovial.app.presentation.camera.CaptureGuide
+import com.vinculovial.app.presentation.signup.CaptureTarget
 import com.vinculovial.app.presentation.signup.SignUpCaptureScreen
 import com.vinculovial.app.presentation.signup.SignUpConsentScreen
 import com.vinculovial.app.presentation.signup.SignUpFormScreen
@@ -29,6 +36,11 @@ object Route {
     const val SIGN_UP_CONSENT = "signup/consent"
     const val SIGN_UP_CAPTURE = "signup/capture"
     const val SIGN_UP_SUCCESS = "signup/success"
+
+    const val CAMERA_TARGET_ARG = "target"
+    const val SIGN_UP_CAMERA = "signup/camera"
+
+    fun camera(target: CaptureTarget) = "$SIGN_UP_CAMERA/${target.name}"
 }
 
 @Composable
@@ -95,8 +107,8 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                         viewModel.onCaptureRestarted()
                         navController.popBackStack()
                     },
-                    onCaptureDni = viewModel::onCaptureDni,
-                    onCaptureSelfie = viewModel::onCaptureSelfie,
+                    onCaptureDni = { navController.navigate(Route.camera(CaptureTarget.DNI)) },
+                    onCaptureSelfie = { navController.navigate(Route.camera(CaptureTarget.SELFIE)) },
                     onSubmit = viewModel::submit,
                     onErrorDismissed = viewModel::onErrorDismissed,
                     onEditForm = {
@@ -104,6 +116,29 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                         navController.popBackStack(Route.SIGN_UP_FORM, inclusive = false)
                     },
                 )
+            }
+
+            composable(
+                route = "${Route.SIGN_UP_CAMERA}/{${Route.CAMERA_TARGET_ARG}}",
+                arguments = listOf(navArgument(Route.CAMERA_TARGET_ARG) { type = NavType.StringType }),
+            ) { entry ->
+                val viewModel = entry.sharedSignUpViewModel(navController)
+                val target = remember(entry) {
+                    CaptureTarget.valueOf(
+                        entry.arguments?.getString(Route.CAMERA_TARGET_ARG) ?: CaptureTarget.DNI.name,
+                    )
+                }
+
+                CameraPermissionGate(onDenied = { navController.popBackStack() }) {
+                    CameraCaptureScreen(
+                        spec = target.toCaptureSpec(),
+                        onCaptured = { image ->
+                            viewModel.onImageCaptured(target, image)
+                            navController.popBackStack()
+                        },
+                        onCancel = { navController.popBackStack() },
+                    )
+                }
             }
 
             composable(Route.SIGN_UP_SUCCESS) {
@@ -118,6 +153,23 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
             }
         }
     }
+}
+
+/** Cómo se le pide cada foto al usuario. */
+private fun CaptureTarget.toCaptureSpec(): CameraCaptureSpec = when (this) {
+    CaptureTarget.DNI -> CameraCaptureSpec(
+        title = "Frente del DNI",
+        instruction = "Encuadrá el frente del documento dentro del recuadro, con buena luz y sin reflejos.",
+        useFrontLens = false,
+        guide = CaptureGuide.DOCUMENT,
+    )
+
+    CaptureTarget.SELFIE -> CameraCaptureSpec(
+        title = "Selfie",
+        instruction = "Mirá de frente a la cámara, sin anteojos de sol ni gorra.",
+        useFrontLens = true,
+        guide = CaptureGuide.FACE,
+    )
 }
 
 /**

@@ -13,15 +13,15 @@ class FakeIdentityVerificationService(
     var verifications = 0
     var discards = 0
 
-    /** Si no es `null`, la captura falla con esta excepción. */
+    /** Si no es `null`, aceptar una captura falla con esta excepción. */
     var captureFailure: Exception? = null
 
-    override suspend fun captureDniFront(claimedDni: String) {
+    override suspend fun acceptDniFront(image: ByteArray, declaredDni: String) {
         captureFailure?.let { throw it }
-        capturedDniClaims += claimedDni
+        capturedDniClaims += declaredDni
     }
 
-    override suspend fun captureSelfie() {
+    override suspend fun acceptSelfie(image: ByteArray) {
         captureFailure?.let { throw it }
         selfieCaptures++
     }
