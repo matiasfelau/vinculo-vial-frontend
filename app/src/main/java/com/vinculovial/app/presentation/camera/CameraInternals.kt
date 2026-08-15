@@ -10,10 +10,12 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.scale
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.ByteArrayOutputStream
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.math.roundToInt
 
 /**
  * Piezas de CameraX compartidas por la captura de documento y la de selfie con liveness.
@@ -70,7 +72,13 @@ private fun ImageProxy.readJpegBytesInternal(): ByteArray {
 }
 
 /**
- * Decodifica, rota a vertical y vuelve a codificar en JPEG.
+ * Decodifica, rota a vertical, la reduce a un tamaño manejable y vuelve a codificar en JPEG.
+ *
+ * El downscale corre siempre, no sólo cuando hace falta rotar: una foto sacada a pulso, de
+ * cerca y con buena luz, tiene resolución de sobra para que las líneas de seguridad del DNI
+ * generen moiré sobre el PDF417 y lo tapen — bajar la resolución antes de pasarla a ML Kit
+ * saca ese ruido de alta frecuencia sin perder legibilidad. Ni el código de barras ni la cara
+ * necesitan más que esto: el embedding facial en sí trabaja sobre 112x112.
  *
  * Se rotan los píxeles en vez de pasarle el ángulo a `InputImage.fromBitmap(bitmap, deg)`
  * a propósito: ese parámetro tiene reportes conocidos de comportarse de forma inconsistente
@@ -79,24 +87,45 @@ private fun ImageProxy.readJpegBytesInternal(): ByteArray {
  * de esa API.
  */
 private fun ByteArray.rotatedJpeg(rotationDegrees: Int): ByteArray {
-    if (rotationDegrees == 0) return this
-
     val original = BitmapFactory.decodeByteArray(this, 0, size) ?: return this
-    val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
-    val rotated = Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
-    original.recycle()
+
+    val upright = if (rotationDegrees == 0) {
+        original
+    } else {
+        val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+        Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
+            .also { original.recycle() }
+    }
+
+    val resized = upright.downscaledInternal(MAX_DIMENSION_PX)
 
     return try {
         ByteArrayOutputStream().use { out ->
-            rotated.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+            resized.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
             out.toByteArray()
         }
     } finally {
-        rotated.recycle()
+        if (resized !== upright) resized.recycle()
+        upright.recycle()
     }
 }
 
+/** Nunca agranda: sólo achica cuando el lado más largo supera el máximo. */
+private fun Bitmap.downscaledInternal(maxDimensionPx: Int): Bitmap {
+    val largestSide = maxOf(width, height)
+    if (largestSide <= maxDimensionPx) return this
+
+    val scaleFactor = maxDimensionPx.toFloat() / largestSide
+    val targetWidth = (width * scaleFactor).roundToInt().coerceAtLeast(1)
+    val targetHeight = (height * scaleFactor).roundToInt().coerceAtLeast(1)
+    return scale(targetWidth, targetHeight)
+}
+
 private const val JPEG_QUALITY = 95
+
+// Alcanza y sobra tanto para que ML Kit lea el PDF417 como para recortar una cara: el
+// embedding en sí termina reduciendo ese recorte a 112x112 igual.
+private const val MAX_DIMENSION_PX = 1000
 
 /** `ProcessCameraProvider.getInstance` expone un `ListenableFuture`; acá se espera sin bloquear. */
 internal suspend fun Context.awaitCameraProviderInternal(): ProcessCameraProvider =

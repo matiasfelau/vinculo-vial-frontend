@@ -82,8 +82,11 @@ class TfLiteFaceEmbedder @Inject constructor(
         val interpreter = Interpreter(loadModel(), Interpreter.Options().apply { numThreads = 2 })
 
         // [1, alto, ancho, canales] y [1, dimensiones]
-        val inputShape = interpreter.getInputTensor(0).shape()
-        val outputShape = interpreter.getOutputTensor(0).shape()
+        val (inputShape, outputShape) = try {
+            interpreter.getInputTensor(0).shape() to interpreter.getOutputTensor(0).shape()
+        } catch (e: IllegalArgumentException) {
+            throw translateUnsupportedDataType(e)
+        }
 
         check(inputShape.size == 4 && inputShape[1] == inputShape[2]) {
             "Se esperaba una entrada cuadrada NHWC, y el modelo declara ${inputShape.joinToString()}"
@@ -96,6 +99,31 @@ class TfLiteFaceEmbedder @Inject constructor(
             interpreter = interpreter,
             inputSize = inputShape[1],
             embeddingSize = outputShape[1],
+        )
+    }
+
+    /**
+     * `getInputTensor`/`getOutputTensor` fallan así, con el mismo mensaje siempre, cuando el
+     * tensor de entrada o salida del modelo es float16: `DataTypeUtils.fromC` (parte de
+     * `org.tensorflow:tensorflow-lite`, sin cambios hasta la 2.17.0, la versión vigente acá)
+     * sólo reconoce FLOAT32/INT32/UINT8/INT64/STRING/BOOL/INT16/INT8 — float16 nunca se
+     * agregó a esa API, en ninguna versión publicada. Ni actualizar la dependencia ni sumar
+     * `tensorflow-lite-support` lo resuelve: esa librería reutiliza este mismo `DataType`, así
+     * que hereda la misma limitación.
+     *
+     * El único arreglo real es re-exportar el modelo con la entrada y la salida en float32
+     * (los PESOS sí pueden seguir cuantizados a float16 puertas adentro; el runtime soporta
+     * eso perfectamente. Lo que no puede ser float16 es el tensor de entrada o el de salida en
+     * sí). Detalle y un ejemplo de conversión en `app/src/main/assets/README.md`.
+     */
+    private fun translateUnsupportedDataType(cause: IllegalArgumentException): Throwable {
+        if (cause.message?.startsWith("DataType error") != true) return cause
+        return IllegalStateException(
+            "El modelo $modelAssetName tiene un tensor de entrada o salida en float16, que " +
+                "tensorflow-lite (Java) no puede leer. Hay que re-exportarlo con " +
+                "inference_input_type/inference_output_type = float32 — ver " +
+                "app/src/main/assets/README.md.",
+            cause,
         )
     }
 

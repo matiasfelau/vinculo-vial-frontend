@@ -259,9 +259,11 @@ una tercera pantalla con preview, aplicar lo mismo.
 ML Kit hace *detección* de caras, no *reconocimiento*: no existe un modelo de embeddings
 faciales distribuible por Maven. Hace falta un `.tflite` tipo MobileFaceNet (112×112 →
 512-d) en `app/src/main/assets/`, nombrado `mobilefacenet.tflite` (o lo que diga
-`FACE_EMBEDDER_MODEL_ASSET`) — ver [assets/README.md](app/src/main/assets/README.md)
-para la forma esperada, las consideraciones de licencia y qué mirar si esto vuelve a
-fallar.
+`FACE_EMBEDDER_MODEL_ASSET`) **con la entrada y la salida en float32** — un modelo con
+esos tensores en float16 falla al cargar con `"DataType error: DataType 10..."`, y no
+tiene arreglo posible del lado del código (ver por qué en
+[assets/README.md](app/src/main/assets/README.md)). Ese mismo README tiene la forma
+esperada, las consideraciones de licencia y qué mirar si esto vuelve a fallar.
 
 Sin el archivo, o con el nombre que no coincide, la app compila y corre, pero el registro
 falla con "no podemos validar tu identidad" — **nunca se da por válido un match que no se

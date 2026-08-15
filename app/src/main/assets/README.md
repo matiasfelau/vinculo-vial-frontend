@@ -33,6 +33,54 @@ causas típicas:
   cuadrada NHWC, o salida que no es `[1, N]`) — el log lo dice explícito.
 - Archivo corrupto o truncado a mitad de descarga (los primeros 4 bytes después del
   prefijo de longitud tienen que ser `TFL3`).
+- **Tensor de entrada o salida en float16** — ver la sección siguiente, es un caso
+  aparte porque no se arregla cambiando nada de este lado.
+
+## "DataType error: DataType 10 is not recognized in Java"
+
+Si el log de arriba muestra exactamente este mensaje (con cualquier número, no sólo el
+10), el modelo tiene el tensor de entrada o el de salida declarado en un tipo que la
+API Java de `tensorflow-lite` no sabe traducir — en la práctica, casi siempre float16
+(`DataType 10` es literalmente `kTfLiteFloat16` en el enum `TfLiteType` del runtime C).
+Pasa cuando el modelo se exportó con cuantización float16 *de entrada/salida*, no sólo
+de pesos.
+
+**No es un problema de versión ni de dependencias.** `DataTypeUtils.fromC` —la función
+que tira esta excepción— sólo reconoce FLOAT32/INT32/UINT8/INT64/STRING/BOOL/INT16/INT8
+en absolutamente todas las versiones publicadas de `org.tensorflow:tensorflow-lite`,
+incluida la 2.17.0 (la vigente acá, y la más nueva al momento de escribir esto).
+float16 nunca se agregó a esa API. Tampoco lo resuelve sumar
+`org.tensorflow:tensorflow-lite-support`: esa librería usa el mismo `DataType` de
+`tensorflow-lite`, así que hereda exactamente la misma limitación. Y como
+`Interpreter.getInputTensor()`/`getOutputTensor()` fallan apenas se toca el tensor —
+antes de llegar siquiera a `run()`— tampoco hay forma de esquivarlo con
+`Interpreter.Options` o delegates: el fallo ocurre en la capa Java, no en la de
+ejecución.
+
+**El único arreglo real es re-exportar el modelo** con el tensor de entrada y el de
+salida en float32. Los pesos internos sí pueden seguir en float16 (o int8): el runtime
+lo soporta perfectamente vía un `Dequantize` antes del primer nodo. Lo que no puede ser
+float16 es la entrada o la salida en sí. Si se tiene el modelo original (SavedModel,
+Keras, o las funciones concretas) a mano, alcanza con forzar el tipo del I/O al
+reconvertir:
+
+```python
+import tensorflow as tf
+
+converter = tf.lite.TFLiteConverter.from_saved_model(SAVED_MODEL_DIR)
+converter.inference_input_type = tf.float32
+converter.inference_output_type = tf.float32
+
+open("mobilefacenet.tflite", "wb").write(converter.convert())
+```
+
+Si sólo se tiene el `.tflite` ya compilado (no el modelo fuente), no hay forma
+confiable de recomprimirlo desde acá — conviene directamente buscar una build de
+MobileFaceNet con entrada/salida float32, que es lo más común (por ejemplo, la que usa
+[`shubham0204/OnDevice-Face-Recognition-Android`](https://github.com/shubham0204/OnDevice-Face-Recognition-Android),
+con el mismo contrato `[1,112,112,3]` → `[1,192]` que espera este proyecto). Igual que
+con cualquier modelo de terceros, hay que revisar la licencia antes de usarla en
+producción.
 
 ## Por qué no está versionado
 
