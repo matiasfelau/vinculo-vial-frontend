@@ -13,10 +13,10 @@ Todo el procesamiento ocurre en el dispositivo. El backend recibe el número de 
 ### Un solo paso, sólo el DNI actual (MVP)
 Por decisión explícita (YAGNI): mientras RENAPER no publique el formato del DNI electrónico (QR en el reverso), la app **sólo acepta el DNI actual** (PDF417 en el mismo frente). No hay paso de reverso.
 
-1. **Frente del DNI** → `DocumentScanSession` busca cara y PDF417 a la vez, con lectura estable durante varios frames antes de decidir:
-   - cara + código juntos → se captura y pasa a la selfie;
-   - cara sin código durante unos segundos → `NOT_FOUND_TIMEOUT`: Toast pidiendo un DNI con código de barras, y se reinicia el escaneo (no hay paso de reverso al que pasar).
-2. **Selfie** → prueba de vida activa sobre el preview (ML Kit Face Detection con clasificación); superada, se toma la foto sola.
+1. **Frente del DNI** → captura **híbrida**, dos caminos que comparten el mismo lock (`capturing`) para que nunca disparen a la vez:
+   - **Automático**: `DocumentScanSession` busca cara y PDF417 a la vez sobre el preview (`ImageAnalysis`), con lectura estable durante varios frames antes de decidir. Cara + código juntos → captura y pasa a la selfie. Cara sin código durante unos segundos → `NOT_FOUND_TIMEOUT`: Toast pidiendo un DNI con código de barras, y se reinicia el escaneo.
+   - **Manual** (obturador siempre visible, no sólo tras el timeout): toma una foto de resolución completa con `ImageCapture` y la valida en el momento con `IdentityVerificationService.canReadDniFront()` — mismo pipeline real (PDF417 + detección de cara), no la heurística del preview. Es el fallback estándar en KYC contra hardware que no autoenfoca bien, tiene preview de baja resolución o refleja el plástico del documento; ningún ajuste de la heurística en vivo puede eliminar esa fragmentación por completo.
+2. **Selfie** → prueba de vida activa sobre el preview (ML Kit Face Detection con clasificación); superada, se toma la foto sola. Este paso sigue siendo 100% automático — necesita video para detectar la transición del gesto, un obturador manual no serviría.
 
 La lectura final y determinante (no la del escaneo en vivo, que sólo decide cuándo capturar) ocurre en `EdgeIdentityVerificationService`, sobre la foto ya capturada. ML Kit Face Detection recorta la foto impresa del frente y la de la selfie; TFLite produce los dos embeddings. `coseno(A, B) ≥ FACE_MATCH_THRESHOLD` → `biometric_verified: true`.
 

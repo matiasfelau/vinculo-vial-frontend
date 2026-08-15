@@ -23,6 +23,18 @@ interface IdentityVerificationService {
     suspend fun acceptDniFront(image: ByteArray)
 
     /**
+     * Valida una foto ya tomada, sin aceptarla: ¿tiene un código PDF417 legible y una
+     * cara detectable? Es la verificación inmediata del fallback de captura manual — el
+     * escaneo en vivo puede fallar en hardware real por autoenfoque, resolución del
+     * preview o reflejos en el plástico, así que el usuario puede forzar una foto de
+     * alta resolución y saber en el momento si sirve.
+     *
+     * No tiene efecto sobre lo que ya esté aceptado: si da `true`, el llamador todavía
+     * tiene que pasar la misma imagen a [acceptDniFront] para que cuente en el registro.
+     */
+    suspend fun canReadDniFront(image: ByteArray): Boolean
+
+    /**
      * @param image JPEG de la selfie.
      * @param livenessPassed si la prueba de vida se superó en el preview. Se pasa
      * explícitamente para que el resultado del desafío no se pierda entre pantallas.

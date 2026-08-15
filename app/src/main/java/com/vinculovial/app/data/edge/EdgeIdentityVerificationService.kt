@@ -51,6 +51,22 @@ class EdgeIdentityVerificationService @Inject constructor(
         dniFront = captured
     }
 
+    override suspend fun canReadDniFront(image: ByteArray): Boolean = withContext(dispatcher) {
+        // copyOf, no wrap: a diferencia de acceptDniFront, acá NO se toma posesión de
+        // `image` — el llamador todavía necesita el array intacto para, si esto da bien,
+        // pasarlo a acceptDniFront. wrap() lo hubiera dejado en ceros al liberarlo acá.
+        val buffer = SecureImageBuffer.copyOf(image)
+        try {
+            buffer.readBitmap { bitmap ->
+                bitmap != null &&
+                    barcodeReader.readDniNumber(bitmap) != null &&
+                    hasDetectableFace(bitmap)
+            }
+        } finally {
+            buffer.clear()
+        }
+    }
+
     override suspend fun acceptSelfie(image: ByteArray, livenessPassed: Boolean) {
         store(image) { captured ->
             selfie?.clear()
@@ -120,6 +136,17 @@ class EdgeIdentityVerificationService @Inject constructor(
         } else {
             EdgeResult.Rejected(EdgeResult.Reason.FACE_MISMATCH)
         }
+    }
+
+    /**
+     * Sólo presencia, no identidad: para [canReadDniFront] alcanza con saber que hay una
+     * cara recortable. El embedding (caro, y sin nada todavía para compararlo) se calcula
+     * recién en [verify], cuando también existe la selfie.
+     */
+    private suspend fun hasDetectableFace(image: Bitmap): Boolean {
+        val crop = faceLocator.cropDominantFace(image) ?: return false
+        SecureBitmap.wipe(crop)
+        return true
     }
 
     /** `null` si no hay cara utilizable o si el motor no está disponible. */

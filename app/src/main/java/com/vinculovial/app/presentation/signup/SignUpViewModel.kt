@@ -77,6 +77,13 @@ class SignUpViewModel @Inject constructor(
         identityVerification.acceptDniFront(frontImage)
     }
 
+    /**
+     * Fallback de captura manual: valida una foto de alta resolución sin aceptarla. La
+     * pantalla decide qué hacer con el resultado — no toca `_uiState`, para no interferir
+     * con el escaneo en vivo que puede seguir corriendo en paralelo.
+     */
+    suspend fun canReadDniFront(image: ByteArray): Boolean = identityVerification.canReadDniFront(image)
+
     /** La selfie, con el veredicto de la prueba de vida ya resuelto en la pantalla. */
     fun onSelfieCaptured(image: ByteArray, livenessPassed: Boolean) = acceptCapture(CaptureTarget.SELFIE) {
         identityVerification.acceptSelfie(image, livenessPassed)

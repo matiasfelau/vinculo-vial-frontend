@@ -145,6 +145,18 @@ encontrarlo), se avisa con un Toast — *"Para esta fase de pruebas, por favor u
 tarjeta tradicional (con código de barras)"* — y se reinicia el escaneo. No hay una
 pantalla de reverso a la que pasar.
 
+**Captura híbrida en el frente**: el autoenfoque, la resolución del preview o un reflejo
+sobre el plástico pueden hacer que el escaneo automático nunca se dispare en cierto
+hardware — fragmentación de Android que ninguna heurística cubre al 100%. Por eso el
+obturador manual está siempre visible (no aparece recién tras el timeout): toma una foto
+de resolución completa con `ImageCapture` y la valida ahí mismo contra el mismo pipeline
+real (`IdentityVerificationService.canReadDniFront()` — PDF417 + detección de cara), no
+contra la heurística del preview. Si no lee, un Toast — *"No pudimos leer el DNI. Evitá
+los reflejos y asegurate de que esté nítido"* — y la cámara vuelve a estar disponible; si
+lee, sigue exactamente por el mismo camino que el automático. El escaneo en vivo sigue
+corriendo en paralelo todo el tiempo; ambos caminos comparten un único lock para que
+nunca disparen dos capturas a la vez.
+
 Verificado si `coseno(A, B) ≥ FACE_MATCH_THRESHOLD`.
 
 **Por qué PDF417 y no OCR de texto**: decodifica o no decodifica. No hay margen de

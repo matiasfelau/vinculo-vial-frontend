@@ -96,6 +96,19 @@ class SignUpViewModelTest {
     }
 
     @Test
+    fun `canReadDniFront delega en el edge sin tocar el estado`() = runTest {
+        verification.canReadDniFrontResult = false
+        val viewModel = viewModel()
+
+        val readable = viewModel.canReadDniFront(foto())
+
+        assertFalse(readable)
+        assertEquals(1, verification.canReadDniFrontCalls)
+        // Es sólo una consulta: no debe acumularse como si fuera una captura aceptada.
+        assertTrue(viewModel.uiState.value.completedCaptures.isEmpty())
+    }
+
+    @Test
     fun `el veredicto de vida viaja junto a la selfie`() = runTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()

@@ -21,8 +21,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -30,7 +33,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -54,43 +59,64 @@ import com.vinculovial.app.domain.signup.model.DocumentScanProgress
 import com.vinculovial.app.domain.signup.model.FramingHint
 import com.vinculovial.app.presentation.components.VvCircleIconButton
 import com.vinculovial.app.presentation.theme.VvGreen
+import com.vinculovial.app.presentation.theme.VvNavy
 import com.vinculovial.app.presentation.theme.VvOrange
+import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
 private const val UNSUPPORTED_DNI_MESSAGE =
     "Para esta fase de pruebas, por favor utiliza un DNI tarjeta tradicional (con código de barras)."
 
+private const val MANUAL_CAPTURE_FAILURE_MESSAGE =
+    "No pudimos leer el DNI. Evitá los reflejos y asegurate de que esté nítido."
+
 /**
- * Escaneo del frente del documento.
+ * Escaneo del frente del documento, con captura híbrida.
  *
- * Por ahora la app sólo acepta el DNI actual (PDF417 en el mismo frente): si el escaneo
- * en vivo confirma que hay cara pero nunca aparece el código, se avisa con un Toast y se
- * reinicia el escaneo — no se le pide el reverso.
+ * El escaneo en vivo (`DocumentScanSession`, sobre el stream de `ImageAnalysis`) intenta
+ * detectarlo solo y dispara la foto automáticamente. Pero el autoenfoque, la resolución
+ * del preview o un reflejo sobre el plástico pueden hacer que nunca lo logre en cierto
+ * hardware — es un problema conocido de fragmentación en Android, no algo que se pueda
+ * afinar para todos los dispositivos. Por eso hay un botón obturador manual: toma una
+ * foto de resolución completa con `ImageCapture` y la valida en el momento contra el
+ * mismo pipeline real (PDF417 + detección de cara), sin esperar al escaneo en vivo.
  *
- * @param onScanned entrega la foto del frente. Toma posesión de los bytes.
+ * Los dos caminos comparten el mismo lock (`capturing`): cualquiera que dispare primero
+ * bloquea al otro, así nunca se toman dos fotos a la vez.
+ *
+ * Por ahora la app sólo acepta el DNI actual (PDF417 en el mismo frente): si ninguno de
+ * los dos caminos encuentra el código, se avisa con un Toast y se reinicia el escaneo en
+ * vivo — no se le pide el reverso.
+ *
+ * @param onManualCapture valida una foto tomada manualmente contra el pipeline real. No
+ * la acepta: eso lo hace [onScanned] si el resultado da bien.
+ * @param onScanned entrega la foto del frente, por cualquiera de los dos caminos. Toma
+ * posesión de los bytes.
  */
 @Composable
 fun DocumentScanScreen(
     documentScanSession: DocumentScanSession,
+    onManualCapture: suspend (image: ByteArray) -> Boolean,
     onScanned: (frontImage: ByteArray) -> Unit,
     onCancel: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
     val progress by documentScanSession.progress.collectAsStateWithLifecycle()
 
+    // Compartido por el camino automático y el manual: el que dispare primero pone esto
+    // en true y bloquea al otro, así nunca se dispara una captura encima de otra.
     var capturing by remember { mutableStateOf(false) }
     var failure by remember { mutableStateOf<String?>(null) }
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
 
-    // Se calcula ni bien el escaneo decide que hay código, no recién cuando arranca la
-    // captura asíncrona: así no queda ni un frame en el que el botón de cancelar siga
-    // habilitado o el spinner tarde en aparecer.
     val locked = capturing || progress.outcome == DocumentScanOutcome.FOUND
 
-    // Atrás cancela con confirmación mientras se puede cancelar; una vez decidido el
-    // documento, se ignora — no tiene sentido interrumpir una captura que ya está en curso.
+    // Siempre intercepta (no se deshabilita el handler): mientras se puede cancelar,
+    // pide confirmación; una vez en curso la captura, directamente se ignora — no cae al
+    // back por defecto de la navegación, que saldría de la pantalla sin avisar.
     BackHandler {
         if (!locked) showCancelDialog = true
     }
@@ -155,15 +181,9 @@ fun DocumentScanScreen(
         }
     }
 
-    // La key es Unit a propósito, NO `cameraProvider`: ese estado se escribe DENTRO del
-    // LaunchedEffect de arriba, recién al terminar el bind. Si el efecto se keyea con ese
-    // mismo estado, el cambio de null -> provider hace que DisposableEffect trate ese
-    // cambio como "la key cambió": dispone el efecto anterior (ejecutando este mismo
-    // onDispose, que para entonces ya lee el provider recién bindeado) y lo desvincula
-    // in situ, un instante después de bindearlo. Eso es lo que se veía como "la pantalla
-    // se pone negra justo cuando aparece el overlay": el bind y el auto-unbind caen en la
-    // misma recomposición, y el overlay se redibuja en ese mismo momento porque toda la
-    // pantalla recompone — no porque el overlay tenga nada que ver con la cámara.
+    // La key es Unit a propósito, NO `cameraProvider`: ver el comentario equivalente en
+    // LivenessCaptureScreen — keyear con un estado que el propio efecto escribe hace que
+    // el bind se desvincule solo, un instante después de bindear.
     DisposableEffect(Unit) {
         onDispose {
             cameraProvider?.unbindAll()
@@ -172,7 +192,7 @@ fun DocumentScanScreen(
         }
     }
 
-    // El escaneo decide solo; acá sólo se reacciona a lo que ya decidió.
+    // El escaneo en vivo decide solo; acá sólo se reacciona a lo que ya decidió.
     LaunchedEffect(progress.outcome) {
         if (capturing) return@LaunchedEffect
 
@@ -192,12 +212,43 @@ fun DocumentScanScreen(
             DocumentScanOutcome.NOT_FOUND_TIMEOUT -> {
                 Toast.makeText(context, UNSUPPORTED_DNI_MESSAGE, Toast.LENGTH_LONG).show()
                 // No es un error de cámara ni del usuario: se reinicia por si cambia de
-                // documento o reacomoda el que tiene.
+                // documento o reacomoda el que tiene. El botón manual sigue disponible
+                // durante todo este tiempo, sin depender de este timeout.
                 documentScanSession.start()
             }
 
             DocumentScanOutcome.NONE -> Unit
         }
+    }
+
+    // Fallback manual: toma una foto de resolución completa y la valida en el momento
+    // contra el pipeline real, sin esperar (ni depender de) el resultado del escaneo en
+    // vivo, que puede seguir corriendo en paralelo sin interferir.
+    fun captureManually() {
+        if (capturing) return
+        capturing = true
+        imageCapture.captureJpegInternal(
+            context = context,
+            onJpeg = { bytes ->
+                coroutineScope.launch {
+                    val readable = try {
+                        onManualCapture(bytes)
+                    } catch (e: Exception) {
+                        false
+                    }
+                    if (readable) {
+                        onScanned(bytes)
+                    } else {
+                        capturing = false
+                        Toast.makeText(context, MANUAL_CAPTURE_FAILURE_MESSAGE, Toast.LENGTH_LONG).show()
+                    }
+                }
+            },
+            onFailure = {
+                capturing = false
+                failure = "No pudimos tomar la foto. Intentá de nuevo."
+            },
+        )
     }
 
     Box(
@@ -237,7 +288,7 @@ fun DocumentScanScreen(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 28.dp, vertical = 32.dp),
+                .padding(horizontal = 28.dp, vertical = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -255,6 +306,12 @@ fun DocumentScanScreen(
                 },
                 textAlign = TextAlign.Center,
             )
+
+            // Se reemplaza por el spinner de arriba ni bien hay una captura en curso,
+            // en vez de quedar deshabilitado pero visible.
+            if (!locked) {
+                ManualCaptureShutterButton(onClick = ::captureManually)
+            }
         }
 
         if (showCancelDialog) {
@@ -276,6 +333,40 @@ private fun DocumentScanProgress.instructionText(): String = when {
     hint == FramingHint.NO_FACE -> "Encuadrá el frente del documento, con tu foto visible"
     barcodeDetected -> "¡Perfecto! Mantené el documento quieto"
     else -> "Encuadrá el frente de tu DNI dentro del recuadro"
+}
+
+/**
+ * Obturador manual, estilo cámara: siempre disponible como alternativa al escaneo en
+ * vivo, no sólo tras un timeout — es el fallback estándar en flujos KYC contra la
+ * fragmentación de hardware (autoenfoque, resolución, reflejos), no un último recurso.
+ */
+@Composable
+private fun ManualCaptureShutterButton(onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Surface(
+            onClick = onClick,
+            shape = CircleShape,
+            color = Color.White,
+            modifier = Modifier.size(64.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.PhotoCamera,
+                contentDescription = "Capturar DNI",
+                tint = VvNavy,
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxSize(),
+            )
+        }
+        Text(
+            text = "Capturar DNI",
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White,
+        )
+    }
 }
 
 /** Rectángulo con proporción de tarjeta (ID-1), para encuadrar el documento. */

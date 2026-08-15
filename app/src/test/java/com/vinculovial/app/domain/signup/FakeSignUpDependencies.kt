@@ -28,6 +28,14 @@ class FakeIdentityVerificationService(
         dniFrontCaptures++
     }
 
+    var canReadDniFrontResult = true
+    var canReadDniFrontCalls = 0
+
+    override suspend fun canReadDniFront(image: ByteArray): Boolean {
+        canReadDniFrontCalls++
+        return canReadDniFrontResult
+    }
+
     override suspend fun acceptSelfie(image: ByteArray, livenessPassed: Boolean) {
         captureFailure?.let { throw it }
         selfieCaptures++
