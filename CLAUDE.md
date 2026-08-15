@@ -10,18 +10,17 @@ Un ciudadano se registra en la plataforma. La app captura DNI (foto) y selfie, e
 ## Onboarding biométrico (Edge)
 Todo el procesamiento ocurre en el dispositivo. El backend recibe el número de documento y un booleano; nada más.
 
-### Dos formatos de DNI, un solo flujo
-En Argentina conviven el DNI actual (PDF417 junto a la foto, en el mismo frente) y el DNI electrónico (tarjeta con chip, emisión desde 2026: sólo la foto en el frente, código **QR** en el reverso). La app no le pregunta al usuario cuál tiene — lo decide sola escaneando el frente en vivo:
+### Un solo paso, sólo el DNI actual (MVP)
+Por decisión explícita (YAGNI): mientras RENAPER no publique el formato del DNI electrónico (QR en el reverso), la app **sólo acepta el DNI actual** (PDF417 en el mismo frente). No hay paso de reverso.
 
-1. **Frente del DNI** → `DocumentScanSession` busca cara y código de barras (PDF417 o QR) a la vez, con lectura estable durante varios frames antes de decidir:
-   - cara + código juntos → **DNI actual**, se captura y se salta directo al paso 3;
-   - cara sin código (tras una ventana de confirmación más larga, para no confundir "código fuera de foco" con "no hay código") → **DNI electrónico**, se captura y se pide el reverso.
-2. **Reverso del DNI** (condicional) → sólo se pide si hizo falta. Se busca el QR.
-3. **Selfie** → prueba de vida activa sobre el preview (ML Kit Face Detection con clasificación); superada, se toma la foto sola.
+1. **Frente del DNI** → `DocumentScanSession` busca cara y PDF417 a la vez, con lectura estable durante varios frames antes de decidir:
+   - cara + código juntos → se captura y pasa a la selfie;
+   - cara sin código durante unos segundos → `NOT_FOUND_TIMEOUT`: Toast pidiendo un DNI con código de barras, y se reinicia el escaneo (no hay paso de reverso al que pasar).
+2. **Selfie** → prueba de vida activa sobre el preview (ML Kit Face Detection con clasificación); superada, se toma la foto sola.
 
-La lectura final y determinante del documento (no la del escaneo en vivo, que sólo decide el flujo) ocurre en `EdgeIdentityVerificationService`: intenta el código del frente primero y, si no hay, el del reverso. ML Kit Face Detection recorta la foto impresa del frente y la de la selfie; TFLite produce los dos embeddings. `coseno(A, B) ≥ FACE_MATCH_THRESHOLD` → `biometric_verified: true`.
+La lectura final y determinante (no la del escaneo en vivo, que sólo decide cuándo capturar) ocurre en `EdgeIdentityVerificationService`, sobre la foto ya capturada. ML Kit Face Detection recorta la foto impresa del frente y la de la selfie; TFLite produce los dos embeddings. `coseno(A, B) ≥ FACE_MATCH_THRESHOLD` → `biometric_verified: true`.
 
-> ⚠️ **El formato exacto del contenido del QR del DNI electrónico no está confirmado contra una tarjeta real.** `ArgentineDniQrParser` prueba, en orden, el mismo delimitado por `@` del PDF417 (por si se reutilizó), JSON, y una URL de verificación con el número como query param. Si ninguno aplica devuelve `null` — nunca inventa un número — pero hay que validarlo apenas se pueda escanear una tarjeta física y, si el formato real es otro (por ejemplo un token opaco que sólo tenga sentido para un servicio de verificación de RENAPER), reemplazar esa clase.
+**Principio abierto/cerrado en el parser**: `DocumentDataParser` es la interfaz (`parse(rawData: String): ArgentineDni?`); `LegacyDniPdf417Parser` la implementa de verdad, `ElectronicDniQrParser` es un **stub deliberado** que lanza `NotImplementedError("A la espera de definiciones oficiales del Renaper")`. No hay heurística de JSON/URL/delimitado inventada — no hay documentación pública del formato del QR, y adivinar es peor que rechazar explícitamente. `MlKitDniBarcodeReader` ya reconoce PDF417 y QR y despacha por formato; el día que RENAPER publique el formato, `ElectronicDniQrParser` es la única clase que hay que tocar (y recién ahí tiene sentido reintroducir el paso del reverso en `DocumentScanSession`/`DocumentScanScreen`, hoy retirado a propósito).
 
 **Prueba de vida**: se exige una *transición* observada en vivo (neutra→sonrisa, u ojos abiertos→cerrados), no un gesto aislado. Comprobar sólo "está sonriendo" lo pasaría una foto impresa de alguien sonriendo. El gesto se sortea en cada intento para que no alcance con grabar un video una vez.
 
@@ -29,7 +28,11 @@ La lectura final y determinante del documento (no la del escaneo en vivo, que s�
 
 **Dependencia externa**: el modelo `.tflite` de reconocimiento facial **no está en el repositorio** (licencia + tamaño). Ver `app/src/main/assets/README.md`. Sin él, la verificación falla con `BiometricsUnavailable`; nunca se da por válida.
 
-**Gotcha de CameraX + Compose**: `PreviewView` en modo `PERFORMANCE` (default, SurfaceView) puede quedar negro en hardware real cuando hay otro contenido de Compose dibujado encima — el overlay se ve, el video no. Pasa poco en emulador. Las dos pantallas de cámara (`DocumentScanScreen`, `LivenessCaptureScreen`) usan `ImplementationMode.COMPATIBLE` (TextureView) por esto; si se agrega una tercera pantalla con preview, aplicar lo mismo.
+### Gotcha de CameraX + Compose: pantalla negra
+Dos causas posibles, y las dos se dieron acá:
+
+1. **`DisposableEffect` keyeado con el estado que el propio efecto escribe.** Si `cameraProvider` es un `remember { mutableStateOf<ProcessCameraProvider?>(null) }` que se completa DENTRO de un `LaunchedEffect` (recién al terminar `bindToLifecycle`), y el `DisposableEffect` de limpieza se keyea con `cameraProvider`, el cambio de `null` → `provider` hace que Compose trate ese cambio como "la key cambió": dispone el efecto anterior — llamando a `onDispose`, que para entonces ya lee el provider recién bindeado — y lo desvincula ahí mismo, un instante después de bindearlo. La cámara queda unbindeada casi enseguida y nada la vuelve a bindear. Se ve como "la pantalla se pone negra justo después de un instante", porque el bind y el auto-unbind caen en la misma recomposición. **Fix**: `DisposableEffect(Unit)`, nunca keyeado con un estado que el propio setup escribe.
+2. `PreviewView` en modo `PERFORMANCE` (default, `SurfaceView`) puede además quedar negro en hardware real cuando hay otro contenido de Compose dibujado encima, aunque el bind esté bien — pasa poco en emulador. `DocumentScanScreen` y `LivenessCaptureScreen` usan `ImplementationMode.COMPATIBLE` (`TextureView`) por las dudas; si se agrega una tercera pantalla con preview, aplicar lo mismo.
 
 ## Contrato compartido entre componentes (US-01 — fuente única de verdad, idéntico en los 3 repos)
 
@@ -89,7 +92,7 @@ La lectura final y determinante del documento (no la del escaneo en vivo, que s�
   /data/remote/            # Retrofit ApiService, interceptors
   /data/crypto/            # HpkeEncryptor (Tink), AttestationProvider (mock JWT | Play Integrity)
   /data/edge/              # SecureImageBuffer/SecureBitmap
-  /data/edge/document/     # PDF417 + QR (ML Kit), parsers del DNI actual y electrónico, escaneo en vivo
+  /data/edge/document/     # PDF417 (ML Kit) + DocumentDataParser (legacy real, electrónico stub), escaneo en vivo
   /data/edge/face/         # recorte (ML Kit), embedder (TFLite), similitud coseno
   /data/edge/liveness/     # desafío de vida sobre el stream de cámara
   /di/                     # módulos Hilt
@@ -97,8 +100,8 @@ La lectura final y determinante del documento (no la del escaneo en vivo, que s�
 Regla dura: `domain` no importa Retrofit ni Compose. `presentation` solo llama a `domain`.
 
 ## Flujo de datos US-01
-1. `presentation/signup`: formulario captura Email y Password. `presentation/camera`: pide el permiso `CAMERA` en runtime y toma 2 o 3 fotos con CameraX (frente + selfie siempre; reverso sólo si el escaneo en vivo del frente no encontró código), entregándolas **en memoria** (nunca a disco: por eso no se usa `ActivityResultContracts.TakePicture`, que exige URI de destino).
-2. `data/edge`: `SecureImageBuffer` toma posesión de los bytes, corre lectura de código (frente o reverso) + match facial + liveness → `EdgeResult.Verified(dni, faceSimilarity)` o `EdgeResult.Rejected(reason)`. Inmediatamente después libera/sobreescribe buffers, bitmaps y embeddings — sin cache en disco, sin referencias vivas post-uso (verificado con test).
+1. `presentation/signup`: formulario captura Email y Password. `presentation/camera`: pide el permiso `CAMERA` en runtime y toma 2 fotos con CameraX (frente del DNI y selfie), entregándolas **en memoria** (nunca a disco: por eso no se usa `ActivityResultContracts.TakePicture`, que exige URI de destino).
+2. `data/edge`: `SecureImageBuffer` toma posesión de los bytes, corre lectura de PDF417 + match facial + liveness → `EdgeResult.Verified(dni, faceSimilarity)` o `EdgeResult.Rejected(reason)`. Inmediatamente después libera/sobreescribe buffers, bitmaps y embeddings — sin cache en disco, sin referencias vivas post-uso (verificado con test).
 3. `domain/signup`: `RegisterUserUseCase` arma `{dni, email, password, biometric_verified}`.
 4. `data/crypto`: `HpkeEncryptor` (Tink) cifra el payload contra `IDENTITY_HPKE_PUBLIC_KEY` → produce `{ephemeral_public_key, ciphertext}` (base64).
 5. `data/crypto`: `AttestationProvider` obtiene el veredicto de integridad ligado al hash del cuerpo — JWT firmado con la PSK en modo `mock`, token de Google en modo `play_integrity`.

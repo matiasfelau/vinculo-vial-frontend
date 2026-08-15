@@ -10,8 +10,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Lee el número de documento de cualquiera de los dos formatos de DNI en circulación:
- * el PDF417 del frente (DNI actual) o el QR del reverso (DNI electrónico).
+ * Lee el número de documento de cualquiera de los formatos de DNI que la app reconoce.
+ *
+ * Hoy sólo el actual (PDF417) tiene lectura real; el electrónico (QR) está reconocido
+ * a nivel de formato pero su parser es un stub — ver [ElectronicDniQrParser].
  */
 interface DniBarcodeReader {
 
@@ -24,14 +26,18 @@ interface DniBarcodeReader {
  *
  * Lectura determinista: el código decodifica o no decodifica, sin el margen de
  * interpretación del OCR de texto impreso. El formato detectado (`Barcode.getFormat()`)
- * decide qué parser aplicar; no se intenta adivinar por el contenido.
+ * decide qué [DocumentDataParser] aplicar; no se intenta adivinar por el contenido.
  */
 @Singleton
-class MlKitDniBarcodeReader @Inject constructor() : DniBarcodeReader {
+class MlKitDniBarcodeReader @Inject constructor(
+    private val legacyParser: LegacyDniPdf417Parser,
+    private val electronicParser: ElectronicDniQrParser,
+) : DniBarcodeReader {
 
     /**
-     * Limitar los formatos hace la detección más rápida y evita falsos positivos con
-     * otros códigos que puedan estar en el documento o alrededor.
+     * Se reconocen los dos formatos aunque el electrónico todavía no tenga parser real:
+     * así, cuando lo tenga, alcanza con completar [ElectronicDniQrParser] — este
+     * despacho no cambia (principio abierto/cerrado).
      */
     private val scanner by lazy {
         BarcodeScanning.getClient(
@@ -51,10 +57,16 @@ class MlKitDniBarcodeReader @Inject constructor() : DniBarcodeReader {
 
     private fun Barcode.toDniNumber(): String? {
         val raw = rawValue ?: return null
-        return when (format) {
-            Barcode.FORMAT_PDF417 -> ArgentineDniParser.parse(raw)?.number
-            Barcode.FORMAT_QR_CODE -> ArgentineDniQrParser.parseDniNumber(raw)
-            else -> null
+        return try {
+            when (format) {
+                Barcode.FORMAT_PDF417 -> legacyParser.parse(raw)?.number
+                Barcode.FORMAT_QR_CODE -> electronicParser.parse(raw).number
+                else -> null
+            }
+        } catch (e: NotImplementedError) {
+            // El DNI electrónico todavía no tiene parser real (stub deliberado): se
+            // trata como "código no reconocido", no como un fallo del registro.
+            null
         }
     }
 }

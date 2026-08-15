@@ -66,13 +66,11 @@ class SignUpViewModel @Inject constructor(
     }
 
     /**
-     * El escaneo del documento terminó: [backImage] sólo viene si hizo falta (DNI
-     * electrónico). El ViewModel **no** guarda las imágenes: las pasa y suelta la
-     * referencia en el acto.
+     * El escaneo del frente terminó con un código legible. El ViewModel **no** guarda la
+     * imagen: la pasa y suelta la referencia en el acto.
      */
-    fun onDocumentScanned(frontImage: ByteArray, backImage: ByteArray?) = acceptCapture(CaptureTarget.DOCUMENT) {
+    fun onDocumentScanned(frontImage: ByteArray) = acceptCapture(CaptureTarget.DOCUMENT) {
         identityVerification.acceptDniFront(frontImage)
-        backImage?.let { identityVerification.acceptDniBack(it) }
     }
 
     /** La selfie, con el veredicto de la prueba de vida ya resuelto en la pantalla. */

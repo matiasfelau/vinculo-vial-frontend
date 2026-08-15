@@ -77,7 +77,7 @@ app/
                   SignUpResult/SignUpError, CredentialRules, EdgeResult
   data/
     edge/         SecureImageBuffer, SecureBitmap
-      document/   PDF417 + QR con ML Kit, parsers del DNI actual y electrónico, escaneo en vivo
+      document/   PDF417 con ML Kit, DocumentDataParser (legacy real, electrónico stub), escaneo en vivo
       face/       recorte con ML Kit, embedder TFLite, similitud coseno
       liveness/   desafío de vida sobre el stream de cámara
     crypto/       HpkeEncryptor (Tink), AttestationProvider (Play Integrity | mock JWT)
@@ -91,11 +91,10 @@ app/
 1. El usuario completa DNI, email y contraseña; la UI valida con `CredentialRules` (dominio).
 2. Consentimiento explícito antes de pedir cámara; el permiso `CAMERA` se solicita en
    runtime recién al abrir la captura.
-3. Captura del documento con CameraX (cámara trasera): el frente siempre, el reverso sólo si
-   el escaneo en vivo no encontró el código ahí (ver "Onboarding biométrico" abajo). Selfie
-   con la cámara frontal. Los bytes salen del buffer de la cámara y entran directo a un
+3. Captura del frente del DNI con CameraX (cámara trasera) y de la selfie (cámara
+   frontal). Los bytes salen del buffer de la cámara y entran directo a un
    `SecureImageBuffer`, sin tocar disco.
-4. `RegisterUserUseCase` corre el Edge: lectura de código, prueba de vida, match facial y
+4. `RegisterUserUseCase` corre el Edge: lectura de PDF417, prueba de vida, match facial y
    **descarte de imágenes, bitmaps y embeddings en `finally`**.
 5. Si el documento no se lee, la prueba de vida falla, las caras no coinciden o el DNI leído no
    coincide con el tipeado, **nada sale del dispositivo**.
@@ -129,41 +128,45 @@ app/
 
 Corre entero en el dispositivo. Al backend sólo llegan el número de documento y un booleano.
 
-### Dos formatos de DNI, un flujo que se adapta solo
+### Un solo paso, sólo el DNI actual (MVP)
 
-En Argentina conviven el DNI actual (PDF417 junto a la foto, en el frente) y el DNI
-electrónico (tarjeta con chip, en emisión desde 2026: sólo la foto en el frente, código QR
-en el reverso). La app no pregunta cuál tiene el usuario — lo decide escaneando el frente
-en vivo, con lectura estable durante varios frames antes de actuar:
-
-```
-Frente ──┬─ cara + código juntos ──────────► listo, va directo a la selfie   (DNI actual)
-         └─ cara sin código (confirmado) ──► pide el reverso ──► código ──► selfie   (DNI electrónico)
-```
+Por decisión explícita (YAGNI): mientras RENAPER no publique el formato del DNI
+electrónico (código QR en el reverso), la app **sólo acepta el DNI actual** (PDF417 en el
+mismo frente). No hay paso de reverso — inventar un parser sin documentación oficial sería
+adivinar, y un DNI mal leído es peor que uno rechazado explícitamente.
 
 | Paso | Qué busca | Motor | Resultado |
 |---|---|---|---|
-| 1. Frente | cara **y** código (PDF417 o QR) a la vez | ML Kit Face Detection + Barcode | decide el formato; foto para el embedding A |
-| 2. Reverso (condicional) | sólo el código | ML Kit Barcode | número de documento, si no salió del frente |
-| 3. Selfie | prueba de vida + cara | ML Kit Face Detection + TFLite | embedding B |
+| 1. Frente | cara **y** PDF417 a la vez | ML Kit Face Detection + Barcode | número de documento; foto para el embedding A |
+| 2. Selfie | prueba de vida + cara | ML Kit Face Detection + TFLite | embedding B |
 
-La decisión de qué formato es (`DocumentScanSession`, en vivo, guía la pantalla) y la
-lectura final del número (`EdgeIdentityVerificationService`, al terminar, prueba frente y
-luego reverso) son cosas separadas a propósito: lo que decide qué le viaja al backend es
-siempre la segunda, nunca la heurística de la pantalla. Verificado si
-`coseno(A, B) ≥ FACE_MATCH_THRESHOLD`.
+Si el frente tiene cara pero nunca aparece el código (unos segundos de lectura estable sin
+encontrarlo), se avisa con un Toast — *"Para esta fase de pruebas, por favor utiliza un DNI
+tarjeta tradicional (con código de barras)"* — y se reinicia el escaneo. No hay una
+pantalla de reverso a la que pasar.
 
-**Por qué códigos de barra y no OCR de texto**: decodifican o no decodifican. No hay margen
-de interpretación ni dependencia de la tipografía o el desgaste del plástico.
+Verificado si `coseno(A, B) ≥ FACE_MATCH_THRESHOLD`.
 
-> ⚠️ **El contenido exacto del QR del DNI electrónico no está confirmado contra una tarjeta
-> real** — no hay documentación pública con el formato byte a byte. `ArgentineDniQrParser`
-> prueba, en orden: el mismo delimitado por `@` del PDF417 (por si RENAPER lo reutilizó),
-> JSON, y una URL de verificación con el número como query param. Si ninguno aplica,
-> devuelve `null` en vez de inventar un número. **Hay que validar esto contra una tarjeta
-> física** apenas se consiga una; si el formato real resulta ser otro (por ejemplo un token
-> opaco que sólo tenga sentido para un servicio de verificación de RENAPER, en cuyo caso la
-> extracción ya no podría ser 100% on-device), esa clase es el único lugar que hay que tocar.
+**Por qué PDF417 y no OCR de texto**: decodifica o no decodifica. No hay margen de
+interpretación ni dependencia de la tipografía o el desgaste del plástico.
+
+### Principio abierto/cerrado en el parser
+
+`DocumentDataParser` es la interfaz (`parse(rawData: String): ArgentineDni?`):
+
+- `LegacyDniPdf417Parser` — implementación real, la que efectivamente se usa hoy.
+- `ElectronicDniQrParser` — **stub deliberado**. RENAPER no publicó el formato del
+  contenido del QR del DNI electrónico; no hay documentación pública del formato byte a
+  byte, así que no hay heurística confiable que escribir. Lanza
+  `NotImplementedError("A la espera de definiciones oficiales del Renaper")` en vez de
+  adivinar con JSON/URL/delimitado.
+
+`MlKitDniBarcodeReader` ya reconoce los dos formatos (PDF417 y QR) y despacha por
+`Barcode.getFormat()`; si detecta un QR, lo manda al stub y captura el
+`NotImplementedError` como "código no reconocido" (no deja que tumbe el registro). El día
+que RENAPER publique el formato, `ElectronicDniQrParser` es la única clase que hay que
+tocar — el despacho no cambia. Recién ahí tiene sentido reintroducir el paso del reverso
+en `DocumentScanSession`/`DocumentScanScreen`, hoy retirado a propósito.
 
 **Prueba de vida**: se exige una *transición* observada en vivo — de cara neutra a sonrisa, o
 de ojos abiertos a cerrados — y no un gesto aislado. Comprobar sólo "está sonriendo" lo pasaría
@@ -177,14 +180,40 @@ inocuo sería tan grave como mandar la foto.
 
 ### Pantalla negra en la preview de la cámara (CameraX + Compose)
 
-`PreviewView` en modo `PERFORMANCE` (el default) usa `SurfaceView`, que compone en una
-superficie aparte de la ventana. Cuando hay otro contenido de Compose dibujado encima —
-acá, los overlays de encuadre — esa superficie puede terminar detrás y quedar negra en
-hardware real, aunque en el emulador no se note (el overlay sí se ve porque es Compose
-normal, compuesto en la jerarquía de la ventana). La solución es
-`previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE`
-(TextureView, que sí se integra en el dibujado normal). Las dos pantallas de cámara ya lo
-tienen; si se agrega una tercera con preview, aplicar lo mismo.
+Dos causas posibles — las dos se dieron en este proyecto, en momentos distintos:
+
+**1. `DisposableEffect` keyeado con el estado que el propio efecto escribe** (la causa
+real de "video negro justo después de un instante"). Patrón roto:
+
+```kotlin
+var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+
+LaunchedEffect(Unit) {
+    val provider = /* ...bind... */
+    cameraProvider = provider   // escribe el mismo estado que la key de abajo
+}
+
+DisposableEffect(cameraProvider) {   // 🔴 mal: la key cambia por el propio efecto
+    onDispose { cameraProvider?.unbindAll() }
+}
+```
+
+Cuando `cameraProvider` pasa de `null` a `provider`, Compose ve que la *key* del
+`DisposableEffect` cambió y trata eso como "hay que reiniciar el efecto": dispone el
+anterior — corriendo `onDispose`, que para ese momento ya lee el provider recién
+bindeado — y lo desvincula ahí mismo, un instante después de bindearlo. Nada lo vuelve a
+bindear. El bind y el auto-unbind caen en la misma recomposición, así que se percibe como
+"la preview se pone negra justo cuando recompone la pantalla" (el overlay, que también
+recompone en ese momento, no tiene nada que ver). **Fix**: `DisposableEffect(Unit)`, nunca
+keyeado con un estado que el propio setup del efecto escribe.
+
+**2. `PreviewView` en modo `PERFORMANCE`** (el default) usa `SurfaceView`, que compone en
+una superficie aparte de la ventana. Con otro contenido de Compose dibujado encima —los
+overlays de encuadre— esa superficie puede terminar detrás y quedar negra en hardware
+real, aunque en el emulador no se note. `previewView.implementationMode =
+PreviewView.ImplementationMode.COMPATIBLE` (TextureView) lo evita. Las dos pantallas de
+cámara ya lo tienen, por las dudas, aunque la causa raíz haya sido la (1); si se agrega
+una tercera pantalla con preview, aplicar lo mismo.
 
 ### Falta el modelo de reconocimiento facial
 

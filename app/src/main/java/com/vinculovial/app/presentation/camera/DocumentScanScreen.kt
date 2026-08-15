@@ -1,5 +1,6 @@
 package com.vinculovial.app.presentation.camera
 
+import android.widget.Toast
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
@@ -47,42 +48,35 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vinculovial.app.domain.signup.DocumentScanSession
-import com.vinculovial.app.domain.signup.model.DocumentScanMode
 import com.vinculovial.app.domain.signup.model.DocumentScanOutcome
 import com.vinculovial.app.domain.signup.model.DocumentScanProgress
 import com.vinculovial.app.domain.signup.model.FramingHint
 import com.vinculovial.app.presentation.components.VvCircleIconButton
 import com.vinculovial.app.presentation.theme.VvGreen
-import com.vinculovial.app.presentation.theme.VvOrange
 import java.util.concurrent.Executors
 
+private const val UNSUPPORTED_DNI_MESSAGE =
+    "Para esta fase de pruebas, por favor utiliza un DNI tarjeta tradicional (con código de barras)."
+
 /**
- * Escaneo del documento: frente primero, reverso sólo si hace falta.
+ * Escaneo del frente del documento.
  *
- * En Argentina conviven dos formatos de DNI y esta pantalla no le pregunta al usuario
- * cuál tiene — lo decide sola mirando el frente:
- * - si encuentra la cara **y** un código de barras al mismo tiempo → DNI actual, listo;
- * - si encuentra la cara pero **no** un código → DNI electrónico, pide el reverso.
+ * Por ahora la app sólo acepta el DNI actual (PDF417 en el mismo frente): si el escaneo
+ * en vivo confirma que hay cara pero nunca aparece el código, se avisa con un Toast y se
+ * reinicia el escaneo — no se le pide el reverso.
  *
- * Ambas fases usan la cámara trasera (nunca la frontal: acá no hay selfie, sólo se
- * fotografía el documento) y no hace falta volver a pedir el permiso ni rebindear la
- * cámara entre una y otra — sólo cambia el modo del [DocumentScanSession] y el texto en
- * pantalla.
- *
- * @param onScanned entrega el frente siempre, y el reverso sólo si se llegó a escanear.
- * Toma posesión de los bytes.
+ * @param onScanned entrega la foto del frente. Toma posesión de los bytes.
  */
 @Composable
 fun DocumentScanScreen(
     documentScanSession: DocumentScanSession,
-    onScanned: (frontImage: ByteArray, backImage: ByteArray?) -> Unit,
+    onScanned: (frontImage: ByteArray) -> Unit,
     onCancel: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val progress by documentScanSession.progress.collectAsStateWithLifecycle()
 
-    var phase by remember { mutableStateOf<ScanPhase>(ScanPhase.Front) }
     var capturing by remember { mutableStateOf(false) }
     var failure by remember { mutableStateOf<String?>(null) }
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
@@ -90,8 +84,8 @@ fun DocumentScanScreen(
     val previewView = remember {
         PreviewView(context).apply {
             scaleType = PreviewView.ScaleType.FILL_CENTER
-            // Ver LivenessCaptureScreen: SurfaceView (el modo por defecto) puede quedar
-            // negro cuando hay otro contenido de Compose dibujado encima, en hardware real.
+            // SurfaceView (el modo por defecto) puede quedar negro cuando hay otro
+            // contenido de Compose dibujado encima, en hardware real.
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         }
     }
@@ -105,7 +99,7 @@ fun DocumentScanScreen(
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
 
     LaunchedEffect(Unit) {
-        documentScanSession.start(DocumentScanMode.FACE_AND_BARCODE)
+        documentScanSession.start()
 
         failure = try {
             val provider = context.awaitCameraProviderInternal()
@@ -117,8 +111,15 @@ fun DocumentScanScreen(
                 .build()
                 .apply {
                     setAnalyzer(analysisExecutor) { imageProxy ->
-                        val frame = imageProxy.toCameraFrame()
-                        imageProxy.close()
+                        // El try/finally garantiza el close() incluso si toCameraFrame()
+                        // lanzara una excepción: sin él, CameraX se queda sin buffers a
+                        // los pocos frames. Cerrar ANTES de analizar libera el slot de
+                        // la cámara enseguida; el frame ya está copiado a NV21.
+                        val frame = try {
+                            imageProxy.toCameraFrame()
+                        } finally {
+                            imageProxy.close()
+                        }
                         if (frame != null) {
                             kotlinx.coroutines.runBlocking { documentScanSession.submitFrame(frame) }
                         }
@@ -140,7 +141,16 @@ fun DocumentScanScreen(
         }
     }
 
-    DisposableEffect(cameraProvider) {
+    // La key es Unit a propósito, NO `cameraProvider`: ese estado se escribe DENTRO del
+    // LaunchedEffect de arriba, recién al terminar el bind. Si el efecto se keyea con ese
+    // mismo estado, el cambio de null -> provider hace que DisposableEffect trate ese
+    // cambio como "la key cambió": dispone el efecto anterior (ejecutando este mismo
+    // onDispose, que para entonces ya lee el provider recién bindeado) y lo desvincula
+    // in situ, un instante después de bindearlo. Eso es lo que se veía como "la pantalla
+    // se pone negra justo cuando aparece el overlay": el bind y el auto-unbind caen en la
+    // misma recomposición, y el overlay se redibuja en ese mismo momento porque toda la
+    // pantalla recompone — no porque el overlay tenga nada que ver con la cámara.
+    DisposableEffect(Unit) {
         onDispose {
             cameraProvider?.unbindAll()
             analysisExecutor.shutdown()
@@ -153,11 +163,11 @@ fun DocumentScanScreen(
         if (capturing) return@LaunchedEffect
 
         when (progress.outcome) {
-            DocumentScanOutcome.LEGACY_WITH_BARCODE -> {
+            DocumentScanOutcome.FOUND -> {
                 capturing = true
                 imageCapture.captureJpegInternal(
                     context = context,
-                    onJpeg = { front -> onScanned(front, null) },
+                    onJpeg = { front -> onScanned(front) },
                     onFailure = {
                         capturing = false
                         failure = "No pudimos tomar la foto. Intentá de nuevo."
@@ -165,33 +175,11 @@ fun DocumentScanScreen(
                 )
             }
 
-            DocumentScanOutcome.ELECTRONIC_NO_BARCODE -> {
-                capturing = true
-                imageCapture.captureJpegInternal(
-                    context = context,
-                    onJpeg = { front ->
-                        capturing = false
-                        phase = ScanPhase.Back(frontImage = front)
-                        documentScanSession.start(DocumentScanMode.BARCODE_ONLY)
-                    },
-                    onFailure = {
-                        capturing = false
-                        failure = "No pudimos tomar la foto. Intentá de nuevo."
-                    },
-                )
-            }
-
-            DocumentScanOutcome.BARCODE_FOUND -> {
-                val current = phase as? ScanPhase.Back ?: return@LaunchedEffect
-                capturing = true
-                imageCapture.captureJpegInternal(
-                    context = context,
-                    onJpeg = { back -> onScanned(current.frontImage, back) },
-                    onFailure = {
-                        capturing = false
-                        failure = "No pudimos tomar la foto. Intentá de nuevo."
-                    },
-                )
+            DocumentScanOutcome.NOT_FOUND_TIMEOUT -> {
+                Toast.makeText(context, UNSUPPORTED_DNI_MESSAGE, Toast.LENGTH_LONG).show()
+                // No es un error de cámara ni del usuario: se reinicia por si cambia de
+                // documento o reacomoda el que tiene.
+                documentScanSession.start()
             }
 
             DocumentScanOutcome.NONE -> Unit
@@ -220,7 +208,7 @@ fun DocumentScanScreen(
                 enabled = !capturing,
             )
             Text(
-                text = phase.title(),
+                text = "Frente del DNI",
                 style = MaterialTheme.typography.labelLarge,
                 color = Color.White,
                 textAlign = TextAlign.Center,
@@ -244,43 +232,20 @@ fun DocumentScanScreen(
             }
 
             Text(
-                text = failure ?: progress.instructionText(phase),
+                text = failure ?: progress.instructionText(),
                 style = MaterialTheme.typography.bodyLarge,
-                color = when {
-                    failure != null -> VvOrange
-                    progress.isDecided -> VvGreen
-                    else -> Color.White
-                },
+                color = if (failure != null || progress.outcome == DocumentScanOutcome.FOUND) VvGreen else Color.White,
                 textAlign = TextAlign.Center,
             )
         }
     }
 }
 
-/**
- * Qué foto está esperando la pantalla. El reverso sólo existe si el frente resultó ser
- * un DNI electrónico — por eso lleva la foto del frente adentro, no como variable aparte
- * que pudiera estar vacía en el momento equivocado.
- */
-private sealed interface ScanPhase {
-    data object Front : ScanPhase
-    data class Back(val frontImage: ByteArray) : ScanPhase
-}
-
-private fun ScanPhase.title(): String = when (this) {
-    ScanPhase.Front -> "Frente del DNI"
-    is ScanPhase.Back -> "Reverso del DNI"
-}
-
-private fun DocumentScanProgress.instructionText(phase: ScanPhase): String = when {
+private fun DocumentScanProgress.instructionText(): String = when {
     hint == FramingHint.MULTIPLE_FACES -> "Que sólo se vea el documento"
     hint == FramingHint.TOO_FAR -> "Acercate un poco"
     hint == FramingHint.TOO_CLOSE -> "Alejate un poco"
-    hint == FramingHint.NO_FACE && phase is ScanPhase.Front ->
-        "Encuadrá el frente del documento, con tu foto visible"
-
-    phase is ScanPhase.Back && barcodeDetected -> "¡Ya casi! Mantené el código enfocado"
-    phase is ScanPhase.Back -> "Dá vuelta tu DNI para escanear el código del reverso"
+    hint == FramingHint.NO_FACE -> "Encuadrá el frente del documento, con tu foto visible"
     barcodeDetected -> "¡Perfecto! Mantené el documento quieto"
     else -> "Encuadrá el frente de tu DNI dentro del recuadro"
 }

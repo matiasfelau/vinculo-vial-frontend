@@ -2,7 +2,6 @@ package com.vinculovial.app.domain.signup
 
 import com.vinculovial.app.domain.signup.model.CameraFrame
 import com.vinculovial.app.domain.signup.model.Credentials
-import com.vinculovial.app.domain.signup.model.DocumentScanMode
 import com.vinculovial.app.domain.signup.model.DocumentScanProgress
 import com.vinculovial.app.domain.signup.model.EdgeResult
 import com.vinculovial.app.domain.signup.model.LivenessChallenge
@@ -15,7 +14,6 @@ class FakeIdentityVerificationService(
     var result: EdgeResult = EdgeResult.Verified(dni = "12345678", faceSimilarity = 0.9f),
 ) : IdentityVerificationService {
 
-    var dniBackCaptures = 0
     var dniFrontCaptures = 0
     var selfieCaptures = 0
     var lastLivenessPassed: Boolean? = null
@@ -24,11 +22,6 @@ class FakeIdentityVerificationService(
 
     /** Si no es `null`, aceptar una captura falla con esta excepción. */
     var captureFailure: Exception? = null
-
-    override suspend fun acceptDniBack(image: ByteArray) {
-        captureFailure?.let { throw it }
-        dniBackCaptures++
-    }
 
     override suspend fun acceptDniFront(image: ByteArray) {
         captureFailure?.let { throw it }
@@ -87,13 +80,13 @@ class FakeLivenessSession : LivenessSession {
 /** Sesión de escaneo de documento inerte: el ViewModel sólo la expone hacia esa pantalla. */
 class FakeDocumentScanSession : DocumentScanSession {
 
-    private val _progress = MutableStateFlow(DocumentScanProgress(mode = DocumentScanMode.FACE_AND_BARCODE))
+    private val _progress = MutableStateFlow(DocumentScanProgress())
     override val progress: StateFlow<DocumentScanProgress> = _progress
 
     var starts = 0
     var closes = 0
 
-    override fun start(mode: DocumentScanMode) {
+    override fun start() {
         starts++
     }
 

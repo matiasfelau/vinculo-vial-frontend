@@ -1,42 +1,26 @@
 package com.vinculovial.app.domain.signup.model
 
 /**
- * En Argentina conviven dos formatos de DNI:
- * - el **actual**: PDF417 en el mismo frente, junto a la foto;
- * - el **DNI electrónico** (tarjeta con chip, en emisión desde 2026): sólo la foto en el
- *   frente, QR en el reverso.
+ * Qué se decidió a partir de lo observado en el frente del documento. Mientras es
+ * [NONE] el escaneo sigue en curso.
  *
- * El escaneo por eso tiene dos modos: en el frente se busca cara y código a la vez (para
- * saber cuál de los dos formatos es); en el reverso, si hace falta, sólo el código.
- */
-enum class DocumentScanMode {
-    /** Frente del documento: busca cara y código de barras al mismo tiempo. */
-    FACE_AND_BARCODE,
-
-    /** Reverso del documento: sólo busca el código (QR del DNI electrónico). */
-    BARCODE_ONLY,
-}
-
-/**
- * Qué se decidió a partir de lo observado en el frame. Mientras es [NONE] el escaneo
- * sigue en curso; cualquier otro valor le indica a la pantalla que capture la foto y
- * qué hacer después (terminar, o pasar a escanear el reverso).
+ * Por ahora la app sólo acepta el DNI actual (código en el mismo frente): el DNI
+ * electrónico (código en el reverso) queda fuera de alcance del MVP — ver
+ * `ElectronicDniQrParser`. Por eso no hay un tercer resultado "es electrónico, pedí el
+ * reverso": si no aparece un código en el frente, [NOT_FOUND_TIMEOUT] se lo dice al
+ * usuario y listo.
  */
 enum class DocumentScanOutcome {
     NONE,
 
-    /** Frente con cara y código a la vez: DNI actual. No hace falta el reverso. */
-    LEGACY_WITH_BARCODE,
+    /** Cara y código a la vez: se puede capturar. */
+    FOUND,
 
-    /** Frente con cara pero sin código: DNI electrónico. Hay que escanear el reverso. */
-    ELECTRONIC_NO_BARCODE,
-
-    /** Reverso con código legible. */
-    BARCODE_FOUND,
+    /** Hay cara hace rato pero nunca apareció un código: no es un DNI con código de barras. */
+    NOT_FOUND_TIMEOUT,
 }
 
 data class DocumentScanProgress(
-    val mode: DocumentScanMode,
     val faceDetected: Boolean = false,
     val barcodeDetected: Boolean = false,
     val hint: FramingHint = FramingHint.NONE,

@@ -109,10 +109,17 @@ fun LivenessCaptureScreen(
                 .build()
                 .apply {
                     setAnalyzer(analysisExecutor) { imageProxy ->
-                        val frame = imageProxy.toCameraFrame()
-                        // Cerrar el proxy antes de analizar libera el slot de la cámara
-                        // enseguida; el frame ya está copiado a NV21.
-                        imageProxy.close()
+                        // El try/finally garantiza el close() incluso si toCameraFrame()
+                        // lanzara una excepción: sin él, CameraX se queda sin buffers a
+                        // los pocos frames y dejar de analizar deja de importar porque la
+                        // preview también se traba. Cerrar ANTES de analizar (no en un
+                        // finally que envuelva también el análisis) libera el slot de la
+                        // cámara enseguida; el frame ya está copiado a NV21.
+                        val frame = try {
+                            imageProxy.toCameraFrame()
+                        } finally {
+                            imageProxy.close()
+                        }
                         if (frame != null) {
                             // El analyzer corre en su propio hilo y CameraX espera que sea
                             // bloqueante. submitFrame descarta el frame si hay otro en
@@ -152,7 +159,16 @@ fun LivenessCaptureScreen(
         }
     }
 
-    DisposableEffect(cameraProvider) {
+    // La key es Unit a propósito, NO `cameraProvider`: ese estado se escribe DENTRO del
+    // LaunchedEffect de arriba, recién al terminar el bind. Si el efecto se keyea con ese
+    // mismo estado, el cambio de null -> provider hace que DisposableEffect trate ese
+    // cambio como "la key cambió": dispone el efecto anterior (ejecutando este mismo
+    // onDispose, que para entonces ya lee el provider recién bindeado) y lo desvincula
+    // in situ, un instante después de bindearlo. Eso es lo que se veía como "la pantalla
+    // se pone negra justo cuando aparece el overlay": el bind y el auto-unbind caen en la
+    // misma recomposición, y el overlay se redibuja en ese mismo momento porque toda la
+    // pantalla recompone — no porque el overlay tenga nada que ver con la cámara.
+    DisposableEffect(Unit) {
         onDispose {
             cameraProvider?.unbindAll()
             analysisExecutor.shutdown()

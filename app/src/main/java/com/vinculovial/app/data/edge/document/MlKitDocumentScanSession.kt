@@ -9,7 +9,6 @@ import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.vinculovial.app.domain.signup.DocumentScanSession
 import com.vinculovial.app.domain.signup.model.CameraFrame
-import com.vinculovial.app.domain.signup.model.DocumentScanMode
 import com.vinculovial.app.domain.signup.model.DocumentScanOutcome
 import com.vinculovial.app.domain.signup.model.DocumentScanProgress
 import com.vinculovial.app.domain.signup.model.FramingHint
@@ -22,34 +21,32 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Escaneo en vivo del documento.
+ * Escaneo en vivo del frente del documento: busca cara y **PDF417** a la vez.
  *
- * En el frente busca cara y código de barras a la vez, para decidir sin preguntarle
- * nada al usuario si el DNI es el formato actual (PDF417 junto a la foto) o el
- * electrónico (sólo la foto; el código está en el reverso). En el reverso, si hace
- * falta, sólo busca el código.
+ * Por ahora el MVP sólo acepta el DNI actual, así que no hay una segunda fase — si el
+ * código no aparece después de unos segundos, [DocumentScanOutcome.NOT_FOUND_TIMEOUT] se
+ * lo dice a la pantalla para que avise al usuario, en vez de quedarse escaneando para
+ * siempre.
  *
  * Igual que la prueba de vida, exige una lectura **estable** durante varios frames antes
  * de decidir: un solo frame borroso o mal encuadrado no alcanza para actuar. Confirmar
- * "no hay código" (DNI electrónico) pide más frames que confirmar "sí hay código" (DNI
- * actual) — confundir un código momentáneamente fuera de foco con su ausencia mandaría
- * al usuario a escanear un reverso que no hacía falta.
+ * "no hay código" pide bastantes más frames que confirmar "sí hay código": confundir un
+ * código momentáneamente fuera de foco con su ausencia cortaría el escaneo de golpe.
  *
  * Los frames se descartan a medida que se procesan; la sesión no acumula imágenes.
  */
 @Singleton
 class MlKitDocumentScanSession @Inject constructor() : DocumentScanSession {
 
-    private val _progress = MutableStateFlow(DocumentScanProgress(mode = DocumentScanMode.FACE_AND_BARCODE))
+    private val _progress = MutableStateFlow(DocumentScanProgress())
     override val progress: StateFlow<DocumentScanProgress> = _progress.asStateFlow()
 
     /** Un frame por vez: ML Kit no admite llamadas concurrentes sobre el mismo cliente. */
     private val inFlight = Mutex()
     private var lastAnalyzedAt = 0L
 
-    private var legacyStreak = 0
-    private var electronicStreak = 0
-    private var backBarcodeStreak = 0
+    private var foundStreak = 0
+    private var notFoundStreak = 0
 
     private val faceDetector by lazy {
         FaceDetection.getClient(
@@ -63,20 +60,23 @@ class MlKitDocumentScanSession @Inject constructor() : DocumentScanSession {
         )
     }
 
+    /**
+     * Sólo PDF417: el DNI electrónico (QR) queda fuera de alcance del MVP y no tiene
+     * sentido detectarlo acá, donde la única salida posible sería "no lo sé leer".
+     */
     private val barcodeScanner by lazy {
         BarcodeScanning.getClient(
             BarcodeScannerOptions.Builder()
-                .setBarcodeFormats(Barcode.FORMAT_PDF417, Barcode.FORMAT_QR_CODE)
+                .setBarcodeFormats(Barcode.FORMAT_PDF417)
                 .build(),
         )
     }
 
-    override fun start(mode: DocumentScanMode) {
-        legacyStreak = 0
-        electronicStreak = 0
-        backBarcodeStreak = 0
+    override fun start() {
+        foundStreak = 0
+        notFoundStreak = 0
         lastAnalyzedAt = 0L
-        _progress.value = DocumentScanProgress(mode = mode)
+        _progress.value = DocumentScanProgress()
     }
 
     override suspend fun submitFrame(frame: CameraFrame) {
@@ -90,15 +90,8 @@ class MlKitDocumentScanSession @Inject constructor() : DocumentScanSession {
         try {
             lastAnalyzedAt = now
             val input = frame.toInputImage()
-            // El código se busca en los dos modos; la cara sólo hace falta en el frente.
             val barcodes = barcodeScanner.process(input).await()
-
-            _progress.value = when (_progress.value.mode) {
-                DocumentScanMode.FACE_AND_BARCODE ->
-                    evaluateFront(faceDetector.process(input).await(), barcodes, frame)
-
-                DocumentScanMode.BARCODE_ONLY -> evaluateBack(barcodes)
-            }
+            _progress.value = evaluate(faceDetector.process(input).await(), barcodes, frame)
         } catch (e: Exception) {
             // Un frame que falla no invalida el intento: se ignora y sigue el siguiente.
         } finally {
@@ -111,7 +104,7 @@ class MlKitDocumentScanSession @Inject constructor() : DocumentScanSession {
         barcodeScanner.close()
     }
 
-    private fun evaluateFront(faces: List<Face>, barcodes: List<Barcode>, frame: CameraFrame): DocumentScanProgress {
+    private fun evaluate(faces: List<Face>, barcodes: List<Barcode>, frame: CameraFrame): DocumentScanProgress {
         val current = _progress.value
 
         if (faces.isEmpty()) {
@@ -131,27 +124,27 @@ class MlKitDocumentScanSession @Inject constructor() : DocumentScanSession {
 
         val hasBarcode = barcodes.any { it.rawValue != null }
         return if (hasBarcode) {
-            electronicStreak = 0
-            legacyStreak++
+            notFoundStreak = 0
+            foundStreak++
             current.copy(
                 faceDetected = true,
                 barcodeDetected = true,
                 hint = FramingHint.NONE,
-                outcome = if (legacyStreak >= LEGACY_CONFIRM_FRAMES) {
-                    DocumentScanOutcome.LEGACY_WITH_BARCODE
+                outcome = if (foundStreak >= FOUND_CONFIRM_FRAMES) {
+                    DocumentScanOutcome.FOUND
                 } else {
                     DocumentScanOutcome.NONE
                 },
             )
         } else {
-            legacyStreak = 0
-            electronicStreak++
+            foundStreak = 0
+            notFoundStreak++
             current.copy(
                 faceDetected = true,
                 barcodeDetected = false,
                 hint = FramingHint.NONE,
-                outcome = if (electronicStreak >= ELECTRONIC_CONFIRM_FRAMES) {
-                    DocumentScanOutcome.ELECTRONIC_NO_BARCODE
+                outcome = if (notFoundStreak >= NOT_FOUND_TIMEOUT_FRAMES) {
+                    DocumentScanOutcome.NOT_FOUND_TIMEOUT
                 } else {
                     DocumentScanOutcome.NONE
                 },
@@ -159,30 +152,9 @@ class MlKitDocumentScanSession @Inject constructor() : DocumentScanSession {
         }
     }
 
-    private fun evaluateBack(barcodes: List<Barcode>): DocumentScanProgress {
-        val current = _progress.value
-        val hasBarcode = barcodes.any { it.rawValue != null }
-
-        if (!hasBarcode) {
-            backBarcodeStreak = 0
-            return current.copy(barcodeDetected = false, hint = FramingHint.NONE)
-        }
-
-        backBarcodeStreak++
-        return current.copy(
-            barcodeDetected = true,
-            hint = FramingHint.NONE,
-            outcome = if (backBarcodeStreak >= BACK_BARCODE_CONFIRM_FRAMES) {
-                DocumentScanOutcome.BARCODE_FOUND
-            } else {
-                DocumentScanOutcome.NONE
-            },
-        )
-    }
-
     private fun resetStreaks() {
-        legacyStreak = 0
-        electronicStreak = 0
+        foundStreak = 0
+        notFoundStreak = 0
     }
 
     /** `null` si el encuadre es aceptable. */
@@ -215,14 +187,13 @@ class MlKitDocumentScanSession @Inject constructor() : DocumentScanSession {
         const val MAX_COVERAGE = 0.35f
 
         /** Confirmación rápida: es una señal positiva (el código ya se ve). */
-        const val LEGACY_CONFIRM_FRAMES = 3
+        const val FOUND_CONFIRM_FRAMES = 3
 
         /**
-         * Confirmación lenta: hay que estar seguros de que el código realmente no está
-         * en el frente, no que el usuario todavía está acomodando el documento.
+         * "Unos segundos" antes de avisar que no hay código, para no confundir "fuera de
+         * foco un instante" con "este documento no tiene PDF417". A ~8 fps, ~34 frames
+         * son ~4 segundos.
          */
-        const val ELECTRONIC_CONFIRM_FRAMES = 10
-
-        const val BACK_BARCODE_CONFIRM_FRAMES = 3
+        const val NOT_FOUND_TIMEOUT_FRAMES = 34
     }
 }

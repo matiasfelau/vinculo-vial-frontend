@@ -39,12 +39,11 @@ data class SignUpUiState(
 /**
  * Los dos pasos del onboarding biométrico, tal como los ve el usuario.
  *
- * El documento es un único paso aunque por dentro pueda implicar una o dos fotos: si es
- * el DNI actual alcanza con el frente; si es el electrónico, la pantalla de escaneo pide
- * también el reverso sin que haga falta una acción aparte del usuario.
+ * Por ahora sólo se acepta el DNI actual (código en el mismo frente); el electrónico
+ * queda fuera de alcance del MVP — ver `ElectronicDniQrParser`.
  */
 enum class CaptureTarget {
-    /** Frente del DNI y, si hace falta, reverso. */
+    /** Frente del DNI. */
     DOCUMENT,
 
     /** Selfie, tomada sólo después de superar la prueba de vida. */

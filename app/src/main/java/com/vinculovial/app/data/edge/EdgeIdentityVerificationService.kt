@@ -20,9 +20,8 @@ import javax.inject.Singleton
  * Onboarding biométrico completo, 100 % en el dispositivo.
  *
  * Encadena las verificaciones y garantiza que ninguna imagen sobreviva:
- * 1. código de barras (PDF417 del frente en el DNI actual, QR del reverso en el
- *    electrónico) → número de documento; el reverso es opcional, sólo llega si el
- *    escaneo en vivo no encontró código en el frente;
+ * 1. PDF417 del frente → número de documento (por ahora sólo el DNI actual; el
+ *    electrónico, con código en el reverso, queda fuera de alcance del MVP);
  * 2. cara del frente del documento → embedding A;
  * 3. cara de la selfie (con prueba de vida ya superada) → embedding B;
  * 4. `coseno(A, B) ≥ umbral` → identidad verificada.
@@ -43,15 +42,9 @@ class EdgeIdentityVerificationService @Inject constructor(
     /** Serializa capturas y verificación: nunca dos accesos concurrentes a las imágenes. */
     private val mutex = Mutex()
 
-    private var dniBack: SecureImageBuffer? = null
     private var dniFront: SecureImageBuffer? = null
     private var selfie: SecureImageBuffer? = null
     private var livenessPassed = false
-
-    override suspend fun acceptDniBack(image: ByteArray) = store(image) { previous ->
-        dniBack?.clear()
-        dniBack = previous
-    }
 
     override suspend fun acceptDniFront(image: ByteArray) = store(image) { captured ->
         dniFront?.clear()
@@ -71,8 +64,8 @@ class EdgeIdentityVerificationService @Inject constructor(
             try {
                 verify()
             } finally {
-                // Zero Retention: pase lo que pase (incluida una excepción de cualquier
-                // motor), las imágenes no sobreviven a esta llamada.
+                // Zero Retention: pase lo que pase (incluida una excepción de un motor),
+                // las imágenes no sobreviven a esta llamada.
                 releaseImages()
             }
         }
@@ -81,12 +74,9 @@ class EdgeIdentityVerificationService @Inject constructor(
     override fun discardCaptures() = releaseImages()
 
     private suspend fun verify(): EdgeResult {
-        val backBuffer = dniBack
         val frontBuffer = dniFront
         val selfieBuffer = selfie
 
-        // El reverso es opcional: sólo se captura para el DNI electrónico (código en el
-        // reverso). En el DNI actual el código está en el mismo frente.
         if (frontBuffer == null || selfieBuffer == null) {
             return EdgeResult.Rejected(EdgeResult.Reason.INCOMPLETE_CAPTURE)
         }
@@ -103,11 +93,7 @@ class EdgeIdentityVerificationService @Inject constructor(
             return EdgeResult.Rejected(EdgeResult.Reason.BIOMETRICS_UNAVAILABLE)
         }
 
-        // El código puede estar en el frente (DNI actual) o en el reverso (DNI
-        // electrónico); se prueba el frente primero porque siempre está disponible.
         val dniNumber = frontBuffer.readBitmap { bitmap ->
-            bitmap?.let { barcodeReader.readDniNumber(it) }
-        } ?: backBuffer?.readBitmap { bitmap ->
             bitmap?.let { barcodeReader.readDniNumber(it) }
         } ?: return EdgeResult.Rejected(EdgeResult.Reason.BARCODE_NOT_FOUND)
 
@@ -172,10 +158,8 @@ class EdgeIdentityVerificationService @Inject constructor(
     }
 
     private fun releaseImages() {
-        dniBack?.clear()
         dniFront?.clear()
         selfie?.clear()
-        dniBack = null
         dniFront = null
         selfie = null
         livenessPassed = false

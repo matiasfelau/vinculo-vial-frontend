@@ -46,8 +46,8 @@ class SignUpViewModelTest {
     /** La cámara real entrega bytes; en los tests alcanza con cualquier contenido. */
     private fun foto() = ByteArray(64) { it.toByte() }
 
-    private fun SignUpViewModel.capturarTodo(livenessPassed: Boolean = true, backImage: ByteArray? = null) {
-        onDocumentScanned(foto(), backImage)
+    private fun SignUpViewModel.capturarTodo(livenessPassed: Boolean = true) {
+        onDocumentScanned(foto())
         onSelfieCaptured(foto(), livenessPassed)
     }
 
@@ -84,27 +84,15 @@ class SignUpViewModelTest {
     }
 
     @Test
-    fun `escanear el documento sin reverso le entrega solo el frente al edge`() = runTest {
+    fun `escanear el documento le entrega el frente al edge`() = runTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onDocumentScanned(foto(), null)
+        viewModel.onDocumentScanned(foto())
 
         assertEquals(1, verification.dniFrontCaptures)
-        assertEquals(0, verification.dniBackCaptures)
         assertTrue(viewModel.uiState.value.isCaptured(CaptureTarget.DOCUMENT))
         assertEquals(null, viewModel.uiState.value.capturing)
-    }
-
-    @Test
-    fun `escanear el documento con reverso le entrega las dos caras al edge`() = runTest {
-        val viewModel = viewModel()
-        viewModel.completarFormulario()
-
-        viewModel.onDocumentScanned(foto(), foto())
-
-        assertEquals(1, verification.dniFrontCaptures)
-        assertEquals(1, verification.dniBackCaptures)
     }
 
     @Test
@@ -121,7 +109,7 @@ class SignUpViewModelTest {
     fun `no se puede enviar hasta tener las dos capturas`() = runTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
-        viewModel.onDocumentScanned(foto(), null)
+        viewModel.onDocumentScanned(foto())
 
         viewModel.submit()
 
@@ -209,7 +197,7 @@ class SignUpViewModelTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onDocumentScanned(foto(), null)
+        viewModel.onDocumentScanned(foto())
 
         val state = viewModel.uiState.value
         assertEquals(SignUpError.DocumentUnreadable, state.error)
@@ -225,7 +213,7 @@ class SignUpViewModelTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onDocumentScanned(foto(), null)
+        viewModel.onDocumentScanned(foto())
 
         assertEquals(null, viewModel.uiState.value.error)
     }

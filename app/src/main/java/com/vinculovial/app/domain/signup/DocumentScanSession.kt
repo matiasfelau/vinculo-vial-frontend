@@ -1,14 +1,13 @@
 package com.vinculovial.app.domain.signup
 
 import com.vinculovial.app.domain.signup.model.CameraFrame
-import com.vinculovial.app.domain.signup.model.DocumentScanMode
 import com.vinculovial.app.domain.signup.model.DocumentScanProgress
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Escaneo en vivo del documento: decide, mirando el stream de la cámara, si el DNI es el
- * formato actual (código en el frente) o el electrónico (código en el reverso), y cuándo
- * hay señal suficiente como para tomar la foto.
+ * Escaneo en vivo del frente del documento: busca cara y código de barras a la vez, y
+ * decide cuándo hay señal suficiente como para tomar la foto (o para avisar que el
+ * documento no tiene el código que la app sabe leer).
  *
  * Es una sesión con estado sobre *varios frames*, no el análisis de una foto sola: hace
  * falta que la lectura sea estable antes de decidir, para no cortar el escaneo por un
@@ -20,8 +19,8 @@ interface DocumentScanSession {
 
     val progress: StateFlow<DocumentScanProgress>
 
-    /** Arranca (o reinicia) el escaneo en el modo indicado. */
-    fun start(mode: DocumentScanMode)
+    /** Arranca (o reinicia) el escaneo. */
+    fun start()
 
     /**
      * Entrega un frame del preview. La implementación puede descartarlo si viene
