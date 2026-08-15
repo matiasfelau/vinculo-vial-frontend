@@ -1,6 +1,7 @@
 package com.vinculovial.app.presentation.camera
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
@@ -53,6 +54,7 @@ import com.vinculovial.app.domain.signup.model.DocumentScanProgress
 import com.vinculovial.app.domain.signup.model.FramingHint
 import com.vinculovial.app.presentation.components.VvCircleIconButton
 import com.vinculovial.app.presentation.theme.VvGreen
+import com.vinculovial.app.presentation.theme.VvOrange
 import java.util.concurrent.Executors
 
 private const val UNSUPPORTED_DNI_MESSAGE =
@@ -80,6 +82,18 @@ fun DocumentScanScreen(
     var capturing by remember { mutableStateOf(false) }
     var failure by remember { mutableStateOf<String?>(null) }
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var showCancelDialog by remember { mutableStateOf(false) }
+
+    // Se calcula ni bien el escaneo decide que hay código, no recién cuando arranca la
+    // captura asíncrona: así no queda ni un frame en el que el botón de cancelar siga
+    // habilitado o el spinner tarde en aparecer.
+    val locked = capturing || progress.outcome == DocumentScanOutcome.FOUND
+
+    // Atrás cancela con confirmación mientras se puede cancelar; una vez decidido el
+    // documento, se ignora — no tiene sentido interrumpir una captura que ya está en curso.
+    BackHandler {
+        if (!locked) showCancelDialog = true
+    }
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -204,8 +218,8 @@ fun DocumentScanScreen(
             VvCircleIconButton(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Cancelar",
-                onClick = onCancel,
-                enabled = !capturing,
+                onClick = { showCancelDialog = true },
+                enabled = !locked,
             )
             Text(
                 text = "Frente del DNI",
@@ -227,15 +241,29 @@ fun DocumentScanScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (capturing) {
+            if (locked) {
                 CircularProgressIndicator(color = Color.White, modifier = Modifier.size(28.dp))
             }
 
             Text(
                 text = failure ?: progress.instructionText(),
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (failure != null || progress.outcome == DocumentScanOutcome.FOUND) VvGreen else Color.White,
+                color = when {
+                    failure != null -> VvOrange
+                    progress.outcome == DocumentScanOutcome.FOUND -> VvGreen
+                    else -> Color.White
+                },
                 textAlign = TextAlign.Center,
+            )
+        }
+
+        if (showCancelDialog) {
+            CancelRegistrationDialog(
+                onConfirm = {
+                    showCancelDialog = false
+                    onCancel()
+                },
+                onDismiss = { showCancelDialog = false },
             )
         }
     }

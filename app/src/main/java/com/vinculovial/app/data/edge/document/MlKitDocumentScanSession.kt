@@ -33,6 +33,13 @@ import javax.inject.Singleton
  * "no hay código" pide bastantes más frames que confirmar "sí hay código": confundir un
  * código momentáneamente fuera de foco con su ausencia cortaría el escaneo de golpe.
  *
+ * **La lectura exitosa manda por sobre la geometría.** Mientras no hay código, la
+ * cobertura de la cara en el frame guía el encuadre (`TOO_FAR`/`TOO_CLOSE`). Pero apenas
+ * el PDF417 decodifica, esa geometría deja de importar: el código es una señal binaria
+ * (decodificó o no decodificó) y exigir además que el bounding box caiga en un rango de
+ * cobertura "ideal" rechazaba capturas perfectamente legibles por un margen que no
+ * calzaba con la heurística visual.
+ *
  * Los frames se descartan a medida que se procesan; la sesión no acumula imágenes.
  */
 @Singleton
@@ -116,17 +123,17 @@ class MlKitDocumentScanSession @Inject constructor() : DocumentScanSession {
             return current.copy(faceDetected = false, hint = FramingHint.MULTIPLE_FACES)
         }
 
-        val coverage = faces.first().coverageOf(frame)
-        framingHint(coverage)?.let { hint ->
-            resetStreaks()
-            return current.copy(faceDetected = true, barcodeDetected = false, hint = hint)
-        }
-
         val hasBarcode = barcodes.any { it.rawValue != null }
-        return if (hasBarcode) {
+
+        // El éxito de ML Kit hace override de la geometría: el PDF417 decodifica o no
+        // decodifica, sin ambigüedad, y ya hay una cara detectada con confianza (ML Kit
+        // filtra por MIN_FACE_SIZE antes de que el resultado llegue acá). Exigir además
+        // que el bounding box caiga en un rango de cobertura "ideal" rechazaba capturas
+        // perfectamente legibles sólo porque el margen no calzaba con la heurística visual.
+        if (hasBarcode) {
             notFoundStreak = 0
             foundStreak++
-            current.copy(
+            return current.copy(
                 faceDetected = true,
                 barcodeDetected = true,
                 hint = FramingHint.NONE,
@@ -136,20 +143,28 @@ class MlKitDocumentScanSession @Inject constructor() : DocumentScanSession {
                     DocumentScanOutcome.NONE
                 },
             )
-        } else {
-            foundStreak = 0
-            notFoundStreak++
-            current.copy(
-                faceDetected = true,
-                barcodeDetected = false,
-                hint = FramingHint.NONE,
-                outcome = if (notFoundStreak >= NOT_FOUND_TIMEOUT_FRAMES) {
-                    DocumentScanOutcome.NOT_FOUND_TIMEOUT
-                } else {
-                    DocumentScanOutcome.NONE
-                },
-            )
         }
+
+        // Sin código todavía: acá sí importa la geometría, para guiar el encuadre
+        // mientras se sigue buscando. Una vez que el código decodifica, deja de aplicar.
+        val coverage = faces.first().coverageOf(frame)
+        framingHint(coverage)?.let { hint ->
+            resetStreaks()
+            return current.copy(faceDetected = true, barcodeDetected = false, hint = hint)
+        }
+
+        foundStreak = 0
+        notFoundStreak++
+        return current.copy(
+            faceDetected = true,
+            barcodeDetected = false,
+            hint = FramingHint.NONE,
+            outcome = if (notFoundStreak >= NOT_FOUND_TIMEOUT_FRAMES) {
+                DocumentScanOutcome.NOT_FOUND_TIMEOUT
+            } else {
+                DocumentScanOutcome.NONE
+            },
+        )
     }
 
     private fun resetStreaks() {

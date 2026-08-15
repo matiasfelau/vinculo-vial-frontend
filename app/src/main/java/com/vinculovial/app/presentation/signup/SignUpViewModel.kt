@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 /**
@@ -41,6 +42,9 @@ class SignUpViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(SignUpUiState())
     val uiState: StateFlow<SignUpUiState> = _uiState.asStateFlow()
+
+    /** Barrera sincrónica contra un doble tap en "Verificar y registrarme". Ver [submit]. */
+    private val submitInFlight = AtomicBoolean(false)
 
     fun onDniChange(value: String) = updateForm(CredentialField.DNI) {
         it.copy(dni = value.filter(Char::isDigit).take(8))
@@ -124,25 +128,35 @@ class SignUpViewModel @Inject constructor(
         val state = _uiState.value
         if (!state.canSubmitCapture) return
 
+        // canSubmitCapture ya exige !isBusy, pero eso sólo se refleja en la UI después de
+        // una recomposición: un doble tap en la misma fracción de segundo puede llamar a
+        // submit() dos veces antes de que _uiState.update de la primera llegue a
+        // aplicarse. Este flag es la barrera real, sincrónica, contra esa carrera.
+        if (!submitInFlight.compareAndSet(false, true)) return
+
         viewModelScope.launch {
-            _uiState.update { it.copy(status = SignUpStatus.Submitting) }
+            try {
+                _uiState.update { it.copy(status = SignUpStatus.Submitting) }
 
-            val result = registerUser(state.form)
+                val result = registerUser(state.form)
 
-            _uiState.update {
-                when (result) {
-                    is SignUpResult.Registered -> it.copy(
-                        status = SignUpStatus.Registered,
-                        // El Edge ya descartó las imágenes al verificar.
-                        completedCaptures = emptySet(),
-                    )
+                _uiState.update {
+                    when (result) {
+                        is SignUpResult.Registered -> it.copy(
+                            status = SignUpStatus.Registered,
+                            // El Edge ya descartó las imágenes al verificar.
+                            completedCaptures = emptySet(),
+                        )
 
-                    is SignUpResult.Failed -> it.copy(
-                        status = SignUpStatus.Failed(result.error),
-                        // Las imágenes ya no existen: cualquier reintento vuelve a capturar.
-                        completedCaptures = emptySet(),
-                    )
+                        is SignUpResult.Failed -> it.copy(
+                            status = SignUpStatus.Failed(result.error),
+                            // Las imágenes ya no existen: cualquier reintento vuelve a capturar.
+                            completedCaptures = emptySet(),
+                        )
+                    }
                 }
+            } finally {
+                submitInFlight.set(false)
             }
         }
     }

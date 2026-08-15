@@ -1,5 +1,6 @@
 package com.vinculovial.app.presentation.signup
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -53,6 +54,14 @@ fun SignUpCaptureScreen(
     onErrorDismissed: () -> Unit = {},
     onEditForm: () -> Unit = {},
 ) {
+    // Mientras se está enviando (verificación + HPKE + POST en curso), el back se
+    // ignora del todo: salir a mitad del envío dejaría una carrera entre esa corrutina
+    // y discardCaptures() sobre los mismos buffers, y además abandonaría una request ya
+    // en vuelo sin avisar. Fuera de ese momento, se comporta igual que el botón propio.
+    BackHandler {
+        if (!state.isSubmitting) onBack()
+    }
+
     state.error?.let { error ->
         SignUpErrorDialog(
             error = error,
