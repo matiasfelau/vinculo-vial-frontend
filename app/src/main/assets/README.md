@@ -1,22 +1,38 @@
 # Modelo de reconocimiento facial
 
 Acá va el `.tflite` que usa `TfLiteFaceEmbedder` para comparar la foto del DNI con la
-selfie. **No está en el repositorio** y sin él la verificación biométrica falla de forma
-explícita (`BiometricsUnavailable`): nunca se da por válido un match que no se pudo
-calcular.
+selfie. **No está en el repositorio** (sigue en `.gitignore`) y sin él la verificación
+biométrica falla de forma explícita (`BiometricsUnavailable`): nunca se da por válido un
+match que no se pudo calcular. Si acá hay un archivo `mobilefacenet.tflite`, es local de
+este checkout — cualquier otro clon necesita el suyo.
 
 ## Qué archivo hace falta
 
-- Nombre por defecto: `face_embedder.tflite` (configurable con `FACE_EMBEDDER_MODEL_ASSET`).
-- Entrada: `[1, N, N, 3]` float32, cuadrada. Típicamente 112×112 (MobileFaceNet) o
-  160×160 (FaceNet).
-- Salida: `[1, D]` float32, el embedding. Típicamente 192 o 512 dimensiones.
+- Nombre por defecto: `mobilefacenet.tflite` (configurable con `FACE_EMBEDDER_MODEL_ASSET`
+  si tu modelo se llama distinto — el nombre exacto tiene que coincidir con el archivo,
+  o `context.assets.openFd()` falla y la verificación queda no disponible).
+- Entrada: `[1, N, N, 3]` float32, cuadrada. En uso: 112×112 (MobileFaceNet estándar).
+- Salida: `[1, D]` float32, el embedding. En uso: 512 dimensiones.
 - Normalización esperada: `(pixel - 127.5) / 128`, que es la convención de MobileFaceNet.
   Si el modelo elegido se entrenó con otra, hay que ajustar `INPUT_MEAN` / `INPUT_SCALE`
   en `EdgeModule`.
 
-Las dimensiones **no** están hardcodeadas: se leen del propio modelo al cargarlo, así que
-cualquier variante que cumpla esa forma funciona sin tocar código.
+Las dimensiones **no** están hardcodeadas: se leen del propio modelo al cargarlo (ver
+`TfLiteFaceEmbedder.loadEngine()`), así que cualquier variante que cumpla esa forma
+funciona sin tocar código — incluida una con otra cantidad de dimensiones de salida.
+
+## Si `BiometricsUnavailable` aparece de nuevo
+
+`TfLiteFaceEmbedder` loguea la excepción real con `Log.e("TfLiteFaceEmbedder", ...)`
+apenas falla la carga — mirar logcat filtrando por ese tag antes de asumir nada. Las
+causas típicas:
+
+- **Nombre de archivo que no coincide** con `FACE_EMBEDDER_MODEL_ASSET` (la causa más
+  común: `assets.openFd()` tira `FileNotFoundException`).
+- **Modelo con una forma de entrada/salida que no cumple el contrato** (entrada no
+  cuadrada NHWC, o salida que no es `[1, N]`) — el log lo dice explícito.
+- Archivo corrupto o truncado a mitad de descarga (los primeros 4 bytes después del
+  prefijo de longitud tienen que ser `TFL3`).
 
 ## Por qué no está versionado
 

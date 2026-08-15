@@ -2,6 +2,7 @@ package com.vinculovial.app.data.edge.face
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.core.graphics.scale
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.tensorflow.lite.Interpreter
@@ -41,8 +42,18 @@ class TfLiteFaceEmbedder @Inject constructor(
     /**
      * Se construye una sola vez y en forma perezosa: cargar el intérprete cuesta y
      * puede no llegar a necesitarse si el usuario abandona el registro.
+     *
+     * El fallo se loguea acá, en el único punto donde se conoce la excepción real: hacia
+     * afuera sólo viaja `BiometricsUnavailable` (nunca se filtra detalle técnico a la UI,
+     * como con cualquier otro error de US-01), así que sin este log un asset mal
+     * nombrado, un modelo con la forma equivocada o un archivo corrupto son
+     * indistinguibles entre sí para quien lo esté depurando.
      */
-    private val engine: Result<Engine> by lazy { runCatching { loadEngine() } }
+    private val engine: Result<Engine> by lazy {
+        runCatching { loadEngine() }.onFailure {
+            Log.e(TAG, "No se pudo inicializar el modelo de reconocimiento facial ($modelAssetName)", it)
+        }
+    }
 
     override fun isAvailable(): Boolean = engine.isSuccess
 
@@ -125,6 +136,7 @@ class TfLiteFaceEmbedder @Inject constructor(
     }
 
     private companion object {
+        const val TAG = "TfLiteFaceEmbedder"
         const val FLOAT_BYTES = 4
         const val CHANNELS = 3
     }

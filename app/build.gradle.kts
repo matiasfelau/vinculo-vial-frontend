@@ -56,10 +56,13 @@ android {
         // Comparar una foto impresa de DNI contra una selfie es más ruidoso que
         // comparar dos selfies: calibrar con datos reales antes de mover este valor.
         buildConfigField("float", "FACE_MATCH_THRESHOLD", config("FACE_MATCH_THRESHOLD", "0.62") + "f")
+        // Nombre del .tflite en app/src/main/assets/. Default alineado con el archivo
+        // real que se usa en desarrollo (ver app/src/main/assets/README.md); si tu
+        // modelo se llama distinto, sobreescribí FACE_EMBEDDER_MODEL_ASSET.
         buildConfigField(
             "String",
             "FACE_EMBEDDER_MODEL_ASSET",
-            "\"${config("FACE_EMBEDDER_MODEL_ASSET", "face_embedder.tflite")}\"",
+            "\"${config("FACE_EMBEDDER_MODEL_ASSET", "mobilefacenet.tflite")}\"",
         )
 
         // `play_integrity` = veredicto real de Google (default); `mock` = JWT firmado con

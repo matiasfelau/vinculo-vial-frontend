@@ -254,15 +254,20 @@ PreviewView.ImplementationMode.COMPATIBLE` (TextureView) lo evita. Las dos panta
 cámara ya lo tienen, por las dudas, aunque la causa raíz haya sido la (1); si se agrega
 una tercera pantalla con preview, aplicar lo mismo.
 
-### Falta el modelo de reconocimiento facial
+### El modelo de reconocimiento facial no se versiona
 
 ML Kit hace *detección* de caras, no *reconocimiento*: no existe un modelo de embeddings
-faciales distribuible por Maven. Hay que colocar un `.tflite` tipo MobileFaceNet en
-`app/src/main/assets/` — ver [assets/README.md](app/src/main/assets/README.md) para la forma
-esperada y las consideraciones de licencia.
+faciales distribuible por Maven. Hace falta un `.tflite` tipo MobileFaceNet (112×112 →
+512-d) en `app/src/main/assets/`, nombrado `mobilefacenet.tflite` (o lo que diga
+`FACE_EMBEDDER_MODEL_ASSET`) — ver [assets/README.md](app/src/main/assets/README.md)
+para la forma esperada, las consideraciones de licencia y qué mirar si esto vuelve a
+fallar.
 
-Sin ese archivo la app compila y corre, pero el registro falla con "no podemos validar tu
-identidad". **Nunca se da por válido un match que no se pudo calcular.**
+Sin el archivo, o con el nombre que no coincide, la app compila y corre, pero el registro
+falla con "no podemos validar tu identidad" — **nunca se da por válido un match que no se
+pudo calcular**. `TfLiteFaceEmbedder` loguea la excepción real (logcat, tag
+`TfLiteFaceEmbedder`) apenas falla la carga: un archivo faltante, mal nombrado o con una
+forma de tensor inesperada son distinguibles ahí, en vez de todos verse igual desde la UI.
 
 El umbral `FACE_MATCH_THRESHOLD` (hoy `0.62`) es un punto de partida sin calibrar. Comparar una
 foto impresa contra una selfie es más ruidoso que comparar dos selfies.

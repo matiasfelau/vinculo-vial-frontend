@@ -31,7 +31,7 @@ Además, `InputImage.fromBitmap(bitmap, rotationDegrees)` con rotación no nula 
 
 **Zero Retention**: las imágenes viven dentro de `SecureImageBuffer`, y los bitmaps que necesitan ML Kit y TFLite se sobreescriben y reciclan (`SecureBitmap`). Los embeddings también se ponen en cero: un vector facial es un dato biométrico y tratarlo como inocuo sería tan grave como mandar la foto.
 
-**Dependencia externa**: el modelo `.tflite` de reconocimiento facial **no está en el repositorio** (licencia + tamaño). Ver `app/src/main/assets/README.md`. Sin él, la verificación falla con `BiometricsUnavailable`; nunca se da por válida.
+**Dependencia externa**: el modelo `.tflite` de reconocimiento facial (MobileFaceNet, 112×112 → 512-d) **no está en el repositorio** (licencia + tamaño, sigue en `.gitignore`). Ver `app/src/main/assets/README.md`. Sin él, o si el nombre del archivo no coincide con `FACE_EMBEDDER_MODEL_ASSET`, la verificación falla con `BiometricsUnavailable` — nunca se da por válida. `TfLiteFaceEmbedder` loguea la excepción real (tag `TfLiteFaceEmbedder`) apenas falla la carga, así que un nombre mal escrito o una forma de tensor inesperada son diagnosticables por logcat en vez de quedar como un booleano opaco.
 
 ### Gotcha de CameraX + Compose: pantalla negra
 Dos causas posibles, y las dos se dieron acá:
@@ -142,7 +142,7 @@ Rama base `dev`. Una rama por feature, `feature/<slug>`, PR + squash merge a `de
 - `ATTESTATION_TOKEN_TTL_SECONDS` (default `60`) — sólo modo `mock`.
 - `NETWORK_TIMEOUT_MS` (default `15000`)
 - `FACE_MATCH_THRESHOLD` (default `0.62`) — umbral de similitud coseno. **Sin calibrar**.
-- `FACE_EMBEDDER_MODEL_ASSET` (default `face_embedder.tflite`) — nombre del modelo en `assets/`.
+- `FACE_EMBEDDER_MODEL_ASSET` (default `mobilefacenet.tflite`) — nombre del modelo en `assets/`. Tiene que coincidir exacto con el archivo.
 
 ## Comandos
 ```
