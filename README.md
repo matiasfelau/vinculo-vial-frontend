@@ -70,14 +70,14 @@ firmado con la clave de debug por defecto devuelve `APP_NOT_INSTALLED`, que la a
 app/
   presentation/   Compose + ViewModels (estado en StateFlow). Sólo habla con domain.
     signup/       formulario, consentimiento, captura, éxito y estados de error
-    camera/       CameraCaptureScreen (CameraX), CameraPermissionGate
+    camera/       DocumentScanScreen y LivenessCaptureScreen (CameraX), CameraPermissionGate
     splash/ theme/ components/ navigation/
   domain/         Modelos, reglas y puertos. Sin Retrofit ni Compose.
     signup/       RegisterUserUseCase, SignUpRepository, IdentityVerificationService,
                   SignUpResult/SignUpError, CredentialRules, EdgeResult
   data/
     edge/         SecureImageBuffer, SecureBitmap
-      document/   PDF417 con ML Kit + parser del DNI argentino
+      document/   PDF417 + QR con ML Kit, parsers del DNI actual y electrónico, escaneo en vivo
       face/       recorte con ML Kit, embedder TFLite, similitud coseno
       liveness/   desafío de vida sobre el stream de cámara
     crypto/       HpkeEncryptor (Tink), AttestationProvider (Play Integrity | mock JWT)
@@ -91,11 +91,12 @@ app/
 1. El usuario completa DNI, email y contraseña; la UI valida con `CredentialRules` (dominio).
 2. Consentimiento explícito antes de pedir cámara; el permiso `CAMERA` se solicita en
    runtime recién al abrir la captura.
-3. Tres capturas con CameraX (reverso y frente del DNI con la cámara trasera, selfie con la
-   frontal). Los bytes salen del buffer de la cámara y entran directo a un `SecureImageBuffer`,
-   sin tocar disco.
-4. `RegisterUserUseCase` corre el Edge: PDF417, prueba de vida, match facial y **descarte de
-   imágenes, bitmaps y embeddings en `finally`**.
+3. Captura del documento con CameraX (cámara trasera): el frente siempre, el reverso sólo si
+   el escaneo en vivo no encontró el código ahí (ver "Onboarding biométrico" abajo). Selfie
+   con la cámara frontal. Los bytes salen del buffer de la cámara y entran directo a un
+   `SecureImageBuffer`, sin tocar disco.
+4. `RegisterUserUseCase` corre el Edge: lectura de código, prueba de vida, match facial y
+   **descarte de imágenes, bitmaps y embeddings en `finally`**.
 5. Si el documento no se lee, la prueba de vida falla, las caras no coinciden o el DNI leído no
    coincide con el tipeado, **nada sale del dispositivo**.
 6. `SignUpRepositoryImpl` cifra `{dni,email,password,biometric_verified}` con HPKE y publica
@@ -128,16 +129,41 @@ app/
 
 Corre entero en el dispositivo. Al backend sólo llegan el número de documento y un booleano.
 
-| Paso | Qué se captura | Motor | Qué produce |
+### Dos formatos de DNI, un flujo que se adapta solo
+
+En Argentina conviven el DNI actual (PDF417 junto a la foto, en el frente) y el DNI
+electrónico (tarjeta con chip, en emisión desde 2026: sólo la foto en el frente, código QR
+en el reverso). La app no pregunta cuál tiene el usuario — lo decide escaneando el frente
+en vivo, con lectura estable durante varios frames antes de actuar:
+
+```
+Frente ──┬─ cara + código juntos ──────────► listo, va directo a la selfie   (DNI actual)
+         └─ cara sin código (confirmado) ──► pide el reverso ──► código ──► selfie   (DNI electrónico)
+```
+
+| Paso | Qué busca | Motor | Resultado |
 |---|---|---|---|
-| 1 | Reverso del DNI | ML Kit Barcode (PDF417) | número de documento |
-| 2 | Frente del DNI | ML Kit Face Detection + TFLite | embedding A |
-| 3 | Selfie | ML Kit Face Detection (liveness) + TFLite | embedding B |
+| 1. Frente | cara **y** código (PDF417 o QR) a la vez | ML Kit Face Detection + Barcode | decide el formato; foto para el embedding A |
+| 2. Reverso (condicional) | sólo el código | ML Kit Barcode | número de documento, si no salió del frente |
+| 3. Selfie | prueba de vida + cara | ML Kit Face Detection + TFLite | embedding B |
 
-Verificado si `coseno(A, B) ≥ FACE_MATCH_THRESHOLD`.
+La decisión de qué formato es (`DocumentScanSession`, en vivo, guía la pantalla) y la
+lectura final del número (`EdgeIdentityVerificationService`, al terminar, prueba frente y
+luego reverso) son cosas separadas a propósito: lo que decide qué le viaja al backend es
+siempre la segunda, nunca la heurística de la pantalla. Verificado si
+`coseno(A, B) ≥ FACE_MATCH_THRESHOLD`.
 
-**Por qué PDF417 y no OCR de texto**: el código decodifica o no decodifica. No hay margen de
-interpretación ni dependencia de la tipografía o el desgaste del plástico.
+**Por qué códigos de barra y no OCR de texto**: decodifican o no decodifican. No hay margen
+de interpretación ni dependencia de la tipografía o el desgaste del plástico.
+
+> ⚠️ **El contenido exacto del QR del DNI electrónico no está confirmado contra una tarjeta
+> real** — no hay documentación pública con el formato byte a byte. `ArgentineDniQrParser`
+> prueba, en orden: el mismo delimitado por `@` del PDF417 (por si RENAPER lo reutilizó),
+> JSON, y una URL de verificación con el número como query param. Si ninguno aplica,
+> devuelve `null` en vez de inventar un número. **Hay que validar esto contra una tarjeta
+> física** apenas se consiga una; si el formato real resulta ser otro (por ejemplo un token
+> opaco que sólo tenga sentido para un servicio de verificación de RENAPER, en cuyo caso la
+> extracción ya no podría ser 100% on-device), esa clase es el único lugar que hay que tocar.
 
 **Prueba de vida**: se exige una *transición* observada en vivo — de cara neutra a sonrisa, o
 de ojos abiertos a cerrados — y no un gesto aislado. Comprobar sólo "está sonriendo" lo pasaría
@@ -148,6 +174,17 @@ momento en que se probó la presencia.
 **Qué se borra**: los JPEG (`SecureImageBuffer`), los bitmaps que necesitan ML Kit y TFLite
 (`SecureBitmap`) y los embeddings. Un vector facial es un dato biométrico: tratarlo como
 inocuo sería tan grave como mandar la foto.
+
+### Pantalla negra en la preview de la cámara (CameraX + Compose)
+
+`PreviewView` en modo `PERFORMANCE` (el default) usa `SurfaceView`, que compone en una
+superficie aparte de la ventana. Cuando hay otro contenido de Compose dibujado encima —
+acá, los overlays de encuadre — esa superficie puede terminar detrás y quedar negra en
+hardware real, aunque en el emulador no se note (el overlay sí se ve porque es Compose
+normal, compuesto en la jerarquía de la ventana). La solución es
+`previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE`
+(TextureView, que sí se integra en el dibujado normal). Las dos pantallas de cámara ya lo
+tienen; si se agrega una tercera con preview, aplicar lo mismo.
 
 ### Falta el modelo de reconocimiento facial
 

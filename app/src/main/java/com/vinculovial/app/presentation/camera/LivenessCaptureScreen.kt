@@ -50,7 +50,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vinculovial.app.domain.signup.LivenessSession
 import com.vinculovial.app.domain.signup.model.LivenessChallenge
-import com.vinculovial.app.domain.signup.model.LivenessHint
+import com.vinculovial.app.domain.signup.model.FramingHint
 import com.vinculovial.app.domain.signup.model.LivenessStage
 import com.vinculovial.app.presentation.components.VvCircleIconButton
 import com.vinculovial.app.presentation.theme.VvGreen
@@ -82,7 +82,15 @@ fun LivenessCaptureScreen(
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
 
     val previewView = remember {
-        PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER }
+        PreviewView(context).apply {
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+            // PERFORMANCE (default) usa SurfaceView: compone en una superficie aparte de
+            // la ventana, y cuando hay otro contenido de Compose dibujado encima (acá, el
+            // óvalo del overlay) esa superficie puede terminar detrás y quedar negra en
+            // hardware real, aunque en el emulador no se note. COMPATIBLE usa TextureView,
+            // que sí se integra en la jerarquía normal de dibujado.
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+        }
     }
     val imageCapture = remember { ImageCapture.Builder().setFlashMode(ImageCapture.FLASH_MODE_OFF).build() }
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
@@ -101,7 +109,7 @@ fun LivenessCaptureScreen(
                 .build()
                 .apply {
                     setAnalyzer(analysisExecutor) { imageProxy ->
-                        val frame = imageProxy.toLivenessFrame()
+                        val frame = imageProxy.toCameraFrame()
                         // Cerrar el proxy antes de analizar libera el slot de la cámara
                         // enseguida; el frame ya está copiado a NV21.
                         imageProxy.close()
@@ -236,11 +244,11 @@ private fun FaceOvalOverlay(passed: Boolean) {
 /** Qué se le dice al usuario en cada punto del desafío. */
 private fun com.vinculovial.app.domain.signup.model.LivenessProgress.instructionText(): String =
     when {
-        hint == LivenessHint.NO_FACE -> "Poné tu cara dentro del óvalo"
-        hint == LivenessHint.MULTIPLE_FACES -> "Que sólo se vea tu cara"
-        hint == LivenessHint.TOO_FAR -> "Acercate un poco"
-        hint == LivenessHint.TOO_CLOSE -> "Alejate un poco"
-        hint == LivenessHint.LOOK_STRAIGHT -> "Mirá de frente a la cámara"
+        hint == FramingHint.NO_FACE -> "Poné tu cara dentro del óvalo"
+        hint == FramingHint.MULTIPLE_FACES -> "Que sólo se vea tu cara"
+        hint == FramingHint.TOO_FAR -> "Acercate un poco"
+        hint == FramingHint.TOO_CLOSE -> "Alejate un poco"
+        hint == FramingHint.LOOK_STRAIGHT -> "Mirá de frente a la cámara"
         stage == LivenessStage.PASSED -> "¡Listo!"
         stage == LivenessStage.WAITING_GESTURE -> when (challenge) {
             LivenessChallenge.SMILE -> "Ahora sonreí"

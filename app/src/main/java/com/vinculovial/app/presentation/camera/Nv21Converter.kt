@@ -1,17 +1,17 @@
 package com.vinculovial.app.presentation.camera
 
 import androidx.camera.core.ImageProxy
-import com.vinculovial.app.domain.signup.model.LivenessFrame
+import com.vinculovial.app.domain.signup.model.CameraFrame
 
 /**
  * Convierte un frame YUV_420_888 de CameraX a NV21, que es el formato neutral que
- * atraviesa la frontera hacia `domain`.
+ * atraviesa la frontera hacia `domain`. La usan tanto la prueba de vida como el
+ * escaneo de documento: ambas analizan el stream, no una foto sola.
  *
- * La conversión existe para que el puerto de liveness no hable de tipos de CameraX.
  * Es una copia por frame, pero el análisis está limitado a ~8 fps, así que el costo es
- * marginal frente a la detección facial en sí.
+ * marginal frente a la detección en sí (facial o de código de barras).
  */
-internal fun ImageProxy.toLivenessFrame(): LivenessFrame? {
+internal fun ImageProxy.toCameraFrame(): CameraFrame? {
     if (planes.size < 3) return null
 
     val yPlane = planes[0]
@@ -53,7 +53,7 @@ internal fun ImageProxy.toLivenessFrame(): LivenessFrame? {
         }
     }
 
-    return LivenessFrame(
+    return CameraFrame(
         nv21 = nv21,
         width = width,
         height = height,

@@ -2,6 +2,7 @@ package com.vinculovial.app.presentation.signup
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vinculovial.app.domain.signup.DocumentScanSession
 import com.vinculovial.app.domain.signup.IdentityVerificationService
 import com.vinculovial.app.domain.signup.LivenessSession
 import com.vinculovial.app.domain.signup.RegisterUserUseCase
@@ -31,10 +32,11 @@ class SignUpViewModel @Inject constructor(
     private val registerUser: RegisterUserUseCase,
     private val identityVerification: IdentityVerificationService,
     /**
-     * La pantalla de selfie la consume directamente: es una sesión con estado sobre el
-     * stream de la cámara, no una operación puntual que el ViewModel pueda envolver.
+     * Las pantallas de captura las consumen directamente: son sesiones con estado sobre
+     * el stream de la cámara, no una operación puntual que el ViewModel pueda envolver.
      */
     val livenessSession: LivenessSession,
+    val documentScanSession: DocumentScanSession,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SignUpUiState())
@@ -64,22 +66,26 @@ class SignUpViewModel @Inject constructor(
     }
 
     /**
-     * Recibe la foto que tomó la cámara y la entrega al Edge, que se queda con los bytes.
-     *
-     * El ViewModel **no** guarda la imagen: la pasa y suelta la referencia en el acto.
-     *
-     * @param livenessPassed sólo aplica a la selfie; para el documento se ignora.
+     * El escaneo del documento terminó: [backImage] sólo viene si hizo falta (DNI
+     * electrónico). El ViewModel **no** guarda las imágenes: las pasa y suelta la
+     * referencia en el acto.
      */
-    fun onImageCaptured(target: CaptureTarget, image: ByteArray, livenessPassed: Boolean = false) {
+    fun onDocumentScanned(frontImage: ByteArray, backImage: ByteArray?) = acceptCapture(CaptureTarget.DOCUMENT) {
+        identityVerification.acceptDniFront(frontImage)
+        backImage?.let { identityVerification.acceptDniBack(it) }
+    }
+
+    /** La selfie, con el veredicto de la prueba de vida ya resuelto en la pantalla. */
+    fun onSelfieCaptured(image: ByteArray, livenessPassed: Boolean) = acceptCapture(CaptureTarget.SELFIE) {
+        identityVerification.acceptSelfie(image, livenessPassed)
+    }
+
+    private fun acceptCapture(target: CaptureTarget, accept: suspend () -> Unit) {
         viewModelScope.launch {
             _uiState.update { it.copy(capturing = target, status = SignUpStatus.Idle) }
 
             val accepted = try {
-                when (target) {
-                    CaptureTarget.DNI_BACK -> identityVerification.acceptDniBack(image)
-                    CaptureTarget.DNI_FRONT -> identityVerification.acceptDniFront(image)
-                    CaptureTarget.SELFIE -> identityVerification.acceptSelfie(image, livenessPassed)
-                }
+                accept()
                 true
             } catch (e: CancellationException) {
                 // La pantalla se fue: no es un fallo de captura, hay que dejar propagar.

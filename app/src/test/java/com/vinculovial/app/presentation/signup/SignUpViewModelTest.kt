@@ -1,5 +1,6 @@
 package com.vinculovial.app.presentation.signup
 
+import com.vinculovial.app.domain.signup.FakeDocumentScanSession
 import com.vinculovial.app.domain.signup.FakeIdentityVerificationService
 import com.vinculovial.app.domain.signup.FakeLivenessSession
 import com.vinculovial.app.domain.signup.FakeSignUpRepository
@@ -26,11 +27,13 @@ class SignUpViewModelTest {
     private val verification = FakeIdentityVerificationService()
     private val repository = FakeSignUpRepository()
     private val livenessSession = FakeLivenessSession()
+    private val documentScanSession = FakeDocumentScanSession()
 
     private fun viewModel() = SignUpViewModel(
         registerUser = RegisterUserUseCase(verification, repository),
         identityVerification = verification,
         livenessSession = livenessSession,
+        documentScanSession = documentScanSession,
     )
 
     private fun SignUpViewModel.completarFormulario() {
@@ -43,10 +46,9 @@ class SignUpViewModelTest {
     /** La cámara real entrega bytes; en los tests alcanza con cualquier contenido. */
     private fun foto() = ByteArray(64) { it.toByte() }
 
-    private fun SignUpViewModel.capturarTodo(livenessPassed: Boolean = true) {
-        onImageCaptured(CaptureTarget.DNI_BACK, foto())
-        onImageCaptured(CaptureTarget.DNI_FRONT, foto())
-        onImageCaptured(CaptureTarget.SELFIE, foto(), livenessPassed)
+    private fun SignUpViewModel.capturarTodo(livenessPassed: Boolean = true, backImage: ByteArray? = null) {
+        onDocumentScanned(foto(), backImage)
+        onSelfieCaptured(foto(), livenessPassed)
     }
 
     @Test
@@ -82,16 +84,27 @@ class SignUpViewModelTest {
     }
 
     @Test
-    fun `cada captura se entrega a su paso del pipeline`() = runTest {
+    fun `escanear el documento sin reverso le entrega solo el frente al edge`() = runTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.capturarTodo()
+        viewModel.onDocumentScanned(foto(), null)
 
-        assertEquals(1, verification.dniBackCaptures)
         assertEquals(1, verification.dniFrontCaptures)
-        assertEquals(1, verification.selfieCaptures)
+        assertEquals(0, verification.dniBackCaptures)
+        assertTrue(viewModel.uiState.value.isCaptured(CaptureTarget.DOCUMENT))
         assertEquals(null, viewModel.uiState.value.capturing)
+    }
+
+    @Test
+    fun `escanear el documento con reverso le entrega las dos caras al edge`() = runTest {
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+
+        viewModel.onDocumentScanned(foto(), foto())
+
+        assertEquals(1, verification.dniFrontCaptures)
+        assertEquals(1, verification.dniBackCaptures)
     }
 
     @Test
@@ -99,17 +112,16 @@ class SignUpViewModelTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onImageCaptured(CaptureTarget.SELFIE, foto(), livenessPassed = false)
+        viewModel.onSelfieCaptured(foto(), livenessPassed = false)
 
         assertEquals(false, verification.lastLivenessPassed)
     }
 
     @Test
-    fun `no se puede enviar hasta tener las tres capturas`() = runTest {
+    fun `no se puede enviar hasta tener las dos capturas`() = runTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
-        viewModel.onImageCaptured(CaptureTarget.DNI_BACK, foto())
-        viewModel.onImageCaptured(CaptureTarget.DNI_FRONT, foto())
+        viewModel.onDocumentScanned(foto(), null)
 
         viewModel.submit()
 
@@ -118,7 +130,7 @@ class SignUpViewModelTest {
     }
 
     @Test
-    fun `con las tres capturas se habilita el envio`() = runTest {
+    fun `con documento y selfie se habilita el envio`() = runTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
@@ -192,12 +204,12 @@ class SignUpViewModelTest {
     }
 
     @Test
-    fun `si la captura falla se informa sin dejar la pantalla trabada`() = runTest {
-        verification.captureFailure = IllegalStateException("cámara no disponible")
+    fun `si el edge rechaza el documento se informa sin dejar la pantalla trabada`() = runTest {
+        verification.captureFailure = IllegalStateException("no se pudo leer el código")
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onImageCaptured(CaptureTarget.DNI_BACK, foto())
+        viewModel.onDocumentScanned(foto(), null)
 
         val state = viewModel.uiState.value
         assertEquals(SignUpError.DocumentUnreadable, state.error)
@@ -213,7 +225,7 @@ class SignUpViewModelTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onImageCaptured(CaptureTarget.DNI_BACK, foto())
+        viewModel.onDocumentScanned(foto(), null)
 
         assertEquals(null, viewModel.uiState.value.error)
     }

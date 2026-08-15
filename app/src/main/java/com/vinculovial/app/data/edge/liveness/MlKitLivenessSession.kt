@@ -5,9 +5,9 @@ import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.vinculovial.app.domain.signup.LivenessSession
+import com.vinculovial.app.domain.signup.model.CameraFrame
+import com.vinculovial.app.domain.signup.model.FramingHint
 import com.vinculovial.app.domain.signup.model.LivenessChallenge
-import com.vinculovial.app.domain.signup.model.LivenessFrame
-import com.vinculovial.app.domain.signup.model.LivenessHint
 import com.vinculovial.app.domain.signup.model.LivenessProgress
 import com.vinculovial.app.domain.signup.model.LivenessStage
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,7 +63,7 @@ class MlKitLivenessSession @Inject constructor() : LivenessSession {
         )
     }
 
-    override suspend fun submitFrame(frame: LivenessFrame) {
+    override suspend fun submitFrame(frame: CameraFrame) {
         if (_progress.value.isPassed) return
 
         val now = System.currentTimeMillis()
@@ -89,21 +89,21 @@ class MlKitLivenessSession @Inject constructor() : LivenessSession {
     private fun evaluate(
         current: LivenessProgress,
         faces: List<Face>,
-        frame: LivenessFrame,
+        frame: CameraFrame,
     ): LivenessProgress {
         if (faces.isEmpty()) {
             baselineEstablished = false
             return current.copy(
                 stage = LivenessStage.SEARCHING_FACE,
                 faceCoverage = 0f,
-                hint = LivenessHint.NO_FACE,
+                hint = FramingHint.NO_FACE,
             )
         }
         if (faces.size > 1) {
             baselineEstablished = false
             return current.copy(
                 stage = LivenessStage.SEARCHING_FACE,
-                hint = LivenessHint.MULTIPLE_FACES,
+                hint = FramingHint.MULTIPLE_FACES,
             )
         }
 
@@ -128,23 +128,23 @@ class MlKitLivenessSession @Inject constructor() : LivenessSession {
             return current.copy(
                 stage = if (baselineEstablished) LivenessStage.WAITING_GESTURE else LivenessStage.SEARCHING_FACE,
                 faceCoverage = coverage,
-                hint = LivenessHint.NONE,
+                hint = FramingHint.NONE,
             )
         }
 
         return current.copy(
             stage = if (gestureActive) LivenessStage.PASSED else LivenessStage.WAITING_GESTURE,
             faceCoverage = coverage,
-            hint = LivenessHint.NONE,
+            hint = FramingHint.NONE,
         )
     }
 
     /** `null` si el encuadre es aceptable. */
-    private fun framingHint(face: Face, coverage: Float): LivenessHint? = when {
-        coverage < MIN_COVERAGE -> LivenessHint.TOO_FAR
-        coverage > MAX_COVERAGE -> LivenessHint.TOO_CLOSE
-        kotlin.math.abs(face.headEulerAngleY) > MAX_YAW_DEGREES -> LivenessHint.LOOK_STRAIGHT
-        kotlin.math.abs(face.headEulerAngleZ) > MAX_ROLL_DEGREES -> LivenessHint.LOOK_STRAIGHT
+    private fun framingHint(face: Face, coverage: Float): FramingHint? = when {
+        coverage < MIN_COVERAGE -> FramingHint.TOO_FAR
+        coverage > MAX_COVERAGE -> FramingHint.TOO_CLOSE
+        kotlin.math.abs(face.headEulerAngleY) > MAX_YAW_DEGREES -> FramingHint.LOOK_STRAIGHT
+        kotlin.math.abs(face.headEulerAngleZ) > MAX_ROLL_DEGREES -> FramingHint.LOOK_STRAIGHT
         else -> null
     }
 
@@ -157,14 +157,14 @@ class MlKitLivenessSession @Inject constructor() : LivenessSession {
                 (rightEyeOpenProbability ?: 1f) <= EYE_CLOSED_THRESHOLD
     }
 
-    private fun Face.coverageOf(frame: LivenessFrame): Float {
+    private fun Face.coverageOf(frame: CameraFrame): Float {
         val frameArea = (frame.width.toLong() * frame.height).toFloat()
         if (frameArea <= 0f) return 0f
         val faceArea = (boundingBox.width().toLong() * boundingBox.height()).toFloat()
         return (faceArea / frameArea).coerceIn(0f, 1f)
     }
 
-    private fun LivenessFrame.toInputImage(): InputImage =
+    private fun CameraFrame.toInputImage(): InputImage =
         InputImage.fromByteArray(
             nv21,
             width,

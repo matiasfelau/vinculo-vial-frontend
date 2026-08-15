@@ -1,9 +1,11 @@
 package com.vinculovial.app.domain.signup
 
+import com.vinculovial.app.domain.signup.model.CameraFrame
 import com.vinculovial.app.domain.signup.model.Credentials
+import com.vinculovial.app.domain.signup.model.DocumentScanMode
+import com.vinculovial.app.domain.signup.model.DocumentScanProgress
 import com.vinculovial.app.domain.signup.model.EdgeResult
 import com.vinculovial.app.domain.signup.model.LivenessChallenge
-import com.vinculovial.app.domain.signup.model.LivenessFrame
 import com.vinculovial.app.domain.signup.model.LivenessProgress
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -75,7 +77,27 @@ class FakeLivenessSession : LivenessSession {
         starts++
     }
 
-    override suspend fun submitFrame(frame: LivenessFrame) = Unit
+    override suspend fun submitFrame(frame: CameraFrame) = Unit
+
+    override fun close() {
+        closes++
+    }
+}
+
+/** Sesión de escaneo de documento inerte: el ViewModel sólo la expone hacia esa pantalla. */
+class FakeDocumentScanSession : DocumentScanSession {
+
+    private val _progress = MutableStateFlow(DocumentScanProgress(mode = DocumentScanMode.FACE_AND_BARCODE))
+    override val progress: StateFlow<DocumentScanProgress> = _progress
+
+    var starts = 0
+    var closes = 0
+
+    override fun start(mode: DocumentScanMode) {
+        starts++
+    }
+
+    override suspend fun submitFrame(frame: CameraFrame) = Unit
 
     override fun close() {
         closes++

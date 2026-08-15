@@ -4,12 +4,14 @@ import android.content.Context
 import com.vinculovial.app.BuildConfig
 import com.vinculovial.app.data.edge.EdgeIdentityVerificationService
 import com.vinculovial.app.data.edge.document.DniBarcodeReader
-import com.vinculovial.app.data.edge.document.MlKitPdf417DniReader
+import com.vinculovial.app.data.edge.document.MlKitDniBarcodeReader
+import com.vinculovial.app.data.edge.document.MlKitDocumentScanSession
 import com.vinculovial.app.data.edge.face.FaceEmbedder
 import com.vinculovial.app.data.edge.face.FaceLocator
 import com.vinculovial.app.data.edge.face.MlKitFaceLocator
 import com.vinculovial.app.data.edge.face.TfLiteFaceEmbedder
 import com.vinculovial.app.data.edge.liveness.MlKitLivenessSession
+import com.vinculovial.app.domain.signup.DocumentScanSession
 import com.vinculovial.app.domain.signup.IdentityVerificationService
 import com.vinculovial.app.domain.signup.LivenessSession
 import dagger.Binds
@@ -26,7 +28,7 @@ import javax.inject.Singleton
 abstract class EdgeModule {
 
     @Binds
-    abstract fun bindDniBarcodeReader(impl: MlKitPdf417DniReader): DniBarcodeReader
+    abstract fun bindDniBarcodeReader(impl: MlKitDniBarcodeReader): DniBarcodeReader
 
     @Binds
     abstract fun bindFaceLocator(impl: MlKitFaceLocator): FaceLocator
@@ -34,6 +36,10 @@ abstract class EdgeModule {
     @Binds
     @Singleton
     abstract fun bindLivenessSession(impl: MlKitLivenessSession): LivenessSession
+
+    @Binds
+    @Singleton
+    abstract fun bindDocumentScanSession(impl: MlKitDocumentScanSession): DocumentScanSession
 
     companion object {
 

@@ -37,14 +37,15 @@ data class SignUpUiState(
 }
 
 /**
- * Las tres tomas del onboarding biométrico. El orden es el que se le muestra al usuario.
+ * Los dos pasos del onboarding biométrico, tal como los ve el usuario.
+ *
+ * El documento es un único paso aunque por dentro pueda implicar una o dos fotos: si es
+ * el DNI actual alcanza con el frente; si es el electrónico, la pantalla de escaneo pide
+ * también el reverso sin que haga falta una acción aparte del usuario.
  */
 enum class CaptureTarget {
-    /** Reverso del documento: de ahí sale el número, leyendo el PDF417. */
-    DNI_BACK,
-
-    /** Frente del documento: de ahí sale la foto impresa del titular. */
-    DNI_FRONT,
+    /** Frente del DNI y, si hace falta, reverso. */
+    DOCUMENT,
 
     /** Selfie, tomada sólo después de superar la prueba de vida. */
     SELFIE,

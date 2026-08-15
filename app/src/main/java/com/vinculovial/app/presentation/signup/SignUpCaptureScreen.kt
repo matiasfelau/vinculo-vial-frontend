@@ -16,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,8 +41,8 @@ import com.vinculovial.app.presentation.theme.VvMuted
 import com.vinculovial.app.presentation.theme.VvNavy
 
 /**
- * Las tres capturas del onboarding biométrico. Todo el análisis ocurre después, en el
- * dispositivo, al tocar "Verificar y registrarme".
+ * Los dos pasos del onboarding biométrico: documento y selfie. Todo el análisis ocurre
+ * después, en el dispositivo, al tocar "Verificar y registrarme".
  */
 @Composable
 fun SignUpCaptureScreen(
@@ -186,20 +185,17 @@ private fun CaptureTile(
 }
 
 private fun CaptureTarget.icon(): ImageVector = when (this) {
-    CaptureTarget.DNI_BACK -> Icons.Filled.CreditCard
-    CaptureTarget.DNI_FRONT -> Icons.Filled.Badge
+    CaptureTarget.DOCUMENT -> Icons.Filled.Badge
     CaptureTarget.SELFIE -> Icons.Filled.Face
 }
 
 private fun CaptureTarget.title(): String = when (this) {
-    CaptureTarget.DNI_BACK -> "Reverso del DNI"
-    CaptureTarget.DNI_FRONT -> "Frente del DNI"
+    CaptureTarget.DOCUMENT -> "Documento"
     CaptureTarget.SELFIE -> "Selfie"
 }
 
 private fun CaptureTarget.hint(): String = when (this) {
-    CaptureTarget.DNI_BACK -> "Tocá para escanear el código de barras"
-    CaptureTarget.DNI_FRONT -> "Tocá para fotografiar tu foto del documento"
+    CaptureTarget.DOCUMENT -> "Tocá para escanear tu DNI"
     CaptureTarget.SELFIE -> "Tocá y seguí la indicación en pantalla"
 }
 
@@ -208,7 +204,7 @@ private fun CaptureTarget.hint(): String = when (this) {
 private fun SignUpCapturePreview() {
     VinculoVialTheme {
         SignUpCaptureScreen(
-            state = SignUpUiState(completedCaptures = setOf(CaptureTarget.DNI_BACK)),
+            state = SignUpUiState(completedCaptures = setOf(CaptureTarget.DOCUMENT)),
             onBack = {},
             onCapture = {},
             onSubmit = {},

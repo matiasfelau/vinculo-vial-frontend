@@ -9,17 +9,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
 import androidx.compose.ui.platform.LocalContext
-import com.vinculovial.app.presentation.camera.CameraCaptureScreen
-import com.vinculovial.app.presentation.camera.CameraCaptureSpec
 import com.vinculovial.app.presentation.camera.CameraPermissionGate
-import com.vinculovial.app.presentation.camera.CaptureGuide
+import com.vinculovial.app.presentation.camera.DocumentScanScreen
 import com.vinculovial.app.presentation.camera.LivenessCaptureScreen
 import com.vinculovial.app.presentation.signup.CaptureTarget
 import com.vinculovial.app.presentation.signup.SignUpCaptureScreen
@@ -38,11 +34,8 @@ object Route {
     const val SIGN_UP_CAPTURE = "signup/capture"
     const val SIGN_UP_SUCCESS = "signup/success"
 
-    const val CAMERA_TARGET_ARG = "target"
-    const val SIGN_UP_CAMERA = "signup/camera"
+    const val SIGN_UP_DOCUMENT_SCAN = "signup/document-scan"
     const val SIGN_UP_LIVENESS = "signup/liveness"
-
-    fun camera(target: CaptureTarget) = "$SIGN_UP_CAMERA/${target.name}"
 }
 
 @Composable
@@ -110,11 +103,10 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                         navController.popBackStack()
                     },
                     onCapture = { target ->
-                        // La selfie no tiene obturador: va a la pantalla de prueba de vida.
-                        if (target == CaptureTarget.SELFIE) {
-                            navController.navigate(Route.SIGN_UP_LIVENESS)
-                        } else {
-                            navController.navigate(Route.camera(target))
+                        when (target) {
+                            CaptureTarget.DOCUMENT -> navController.navigate(Route.SIGN_UP_DOCUMENT_SCAN)
+                            // La selfie no tiene obturador: va a la pantalla de prueba de vida.
+                            CaptureTarget.SELFIE -> navController.navigate(Route.SIGN_UP_LIVENESS)
                         }
                     },
                     onSubmit = viewModel::submit,
@@ -126,22 +118,14 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                 )
             }
 
-            composable(
-                route = "${Route.SIGN_UP_CAMERA}/{${Route.CAMERA_TARGET_ARG}}",
-                arguments = listOf(navArgument(Route.CAMERA_TARGET_ARG) { type = NavType.StringType }),
-            ) { entry ->
+            composable(Route.SIGN_UP_DOCUMENT_SCAN) { entry ->
                 val viewModel = entry.sharedSignUpViewModel(navController)
-                val target = remember(entry) {
-                    CaptureTarget.valueOf(
-                        entry.arguments?.getString(Route.CAMERA_TARGET_ARG) ?: CaptureTarget.DNI_BACK.name,
-                    )
-                }
 
                 CameraPermissionGate(onDenied = { navController.popBackStack() }) {
-                    CameraCaptureScreen(
-                        spec = target.toCaptureSpec(),
-                        onCaptured = { image ->
-                            viewModel.onImageCaptured(target, image)
+                    DocumentScanScreen(
+                        documentScanSession = viewModel.documentScanSession,
+                        onScanned = { front, back ->
+                            viewModel.onDocumentScanned(front, back)
                             navController.popBackStack()
                         },
                         onCancel = { navController.popBackStack() },
@@ -156,7 +140,7 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                     LivenessCaptureScreen(
                         livenessSession = viewModel.livenessSession,
                         onCaptured = { image, livenessPassed ->
-                            viewModel.onImageCaptured(CaptureTarget.SELFIE, image, livenessPassed)
+                            viewModel.onSelfieCaptured(image, livenessPassed)
                             navController.popBackStack()
                         },
                         onCancel = { navController.popBackStack() },
@@ -176,34 +160,6 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
             }
         }
     }
-}
-
-/**
- * Cómo se le pide cada foto de documento al usuario.
- *
- * La selfie no pasa por acá: tiene su propia pantalla con prueba de vida.
- */
-private fun CaptureTarget.toCaptureSpec(): CameraCaptureSpec = when (this) {
-    CaptureTarget.DNI_BACK -> CameraCaptureSpec(
-        title = "Reverso del DNI",
-        instruction = "Encuadrá el reverso del documento: necesitamos leer el código de barras.",
-        useFrontLens = false,
-        guide = CaptureGuide.DOCUMENT,
-    )
-
-    CaptureTarget.DNI_FRONT -> CameraCaptureSpec(
-        title = "Frente del DNI",
-        instruction = "Encuadrá el frente del documento, con buena luz y sin reflejos sobre tu foto.",
-        useFrontLens = false,
-        guide = CaptureGuide.DOCUMENT,
-    )
-
-    CaptureTarget.SELFIE -> CameraCaptureSpec(
-        title = "Selfie",
-        instruction = "Mirá de frente a la cámara.",
-        useFrontLens = true,
-        guide = CaptureGuide.FACE,
-    )
 }
 
 /**

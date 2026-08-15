@@ -19,8 +19,10 @@ import javax.inject.Singleton
 /**
  * Onboarding biométrico completo, 100 % en el dispositivo.
  *
- * Encadena las tres verificaciones y garantiza que ninguna imagen sobreviva:
- * 1. PDF417 del reverso → número de documento;
+ * Encadena las verificaciones y garantiza que ninguna imagen sobreviva:
+ * 1. código de barras (PDF417 del frente en el DNI actual, QR del reverso en el
+ *    electrónico) → número de documento; el reverso es opcional, sólo llega si el
+ *    escaneo en vivo no encontró código en el frente;
  * 2. cara del frente del documento → embedding A;
  * 3. cara de la selfie (con prueba de vida ya superada) → embedding B;
  * 4. `coseno(A, B) ≥ umbral` → identidad verificada.
@@ -83,7 +85,9 @@ class EdgeIdentityVerificationService @Inject constructor(
         val frontBuffer = dniFront
         val selfieBuffer = selfie
 
-        if (backBuffer == null || frontBuffer == null || selfieBuffer == null) {
+        // El reverso es opcional: sólo se captura para el DNI electrónico (código en el
+        // reverso). En el DNI actual el código está en el mismo frente.
+        if (frontBuffer == null || selfieBuffer == null) {
             return EdgeResult.Rejected(EdgeResult.Reason.INCOMPLETE_CAPTURE)
         }
 
@@ -99,7 +103,11 @@ class EdgeIdentityVerificationService @Inject constructor(
             return EdgeResult.Rejected(EdgeResult.Reason.BIOMETRICS_UNAVAILABLE)
         }
 
-        val dniNumber = backBuffer.readBitmap { bitmap ->
+        // El código puede estar en el frente (DNI actual) o en el reverso (DNI
+        // electrónico); se prueba el frente primero porque siempre está disponible.
+        val dniNumber = frontBuffer.readBitmap { bitmap ->
+            bitmap?.let { barcodeReader.readDniNumber(it) }
+        } ?: backBuffer?.readBitmap { bitmap ->
             bitmap?.let { barcodeReader.readDniNumber(it) }
         } ?: return EdgeResult.Rejected(EdgeResult.Reason.BARCODE_NOT_FOUND)
 

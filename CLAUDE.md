@@ -10,18 +10,26 @@ Un ciudadano se registra en la plataforma. La app captura DNI (foto) y selfie, e
 ## Onboarding biométrico (Edge)
 Todo el procesamiento ocurre en el dispositivo. El backend recibe el número de documento y un booleano; nada más.
 
-Tres capturas, en este orden:
-1. **Reverso del DNI** → ML Kit Barcode Scanning lee el **PDF417** y de ahí sale el número. Es determinista: el código decodifica o no decodifica, sin el margen de interpretación del OCR de texto impreso.
-2. **Frente del DNI** → ML Kit Face Detection recorta la foto impresa del titular; TFLite produce el embedding A.
-3. **Selfie** → prueba de vida activa sobre el preview (ML Kit Face Detection con clasificación); superada, se toma la foto y se produce el embedding B.
+### Dos formatos de DNI, un solo flujo
+En Argentina conviven el DNI actual (PDF417 junto a la foto, en el mismo frente) y el DNI electrónico (tarjeta con chip, emisión desde 2026: sólo la foto en el frente, código **QR** en el reverso). La app no le pregunta al usuario cuál tiene — lo decide sola escaneando el frente en vivo:
 
-Después: `coseno(A, B) ≥ FACE_MATCH_THRESHOLD` → `biometric_verified: true`.
+1. **Frente del DNI** → `DocumentScanSession` busca cara y código de barras (PDF417 o QR) a la vez, con lectura estable durante varios frames antes de decidir:
+   - cara + código juntos → **DNI actual**, se captura y se salta directo al paso 3;
+   - cara sin código (tras una ventana de confirmación más larga, para no confundir "código fuera de foco" con "no hay código") → **DNI electrónico**, se captura y se pide el reverso.
+2. **Reverso del DNI** (condicional) → sólo se pide si hizo falta. Se busca el QR.
+3. **Selfie** → prueba de vida activa sobre el preview (ML Kit Face Detection con clasificación); superada, se toma la foto sola.
+
+La lectura final y determinante del documento (no la del escaneo en vivo, que sólo decide el flujo) ocurre en `EdgeIdentityVerificationService`: intenta el código del frente primero y, si no hay, el del reverso. ML Kit Face Detection recorta la foto impresa del frente y la de la selfie; TFLite produce los dos embeddings. `coseno(A, B) ≥ FACE_MATCH_THRESHOLD` → `biometric_verified: true`.
+
+> ⚠️ **El formato exacto del contenido del QR del DNI electrónico no está confirmado contra una tarjeta real.** `ArgentineDniQrParser` prueba, en orden, el mismo delimitado por `@` del PDF417 (por si se reutilizó), JSON, y una URL de verificación con el número como query param. Si ninguno aplica devuelve `null` — nunca inventa un número — pero hay que validarlo apenas se pueda escanear una tarjeta física y, si el formato real es otro (por ejemplo un token opaco que sólo tenga sentido para un servicio de verificación de RENAPER), reemplazar esa clase.
 
 **Prueba de vida**: se exige una *transición* observada en vivo (neutra→sonrisa, u ojos abiertos→cerrados), no un gesto aislado. Comprobar sólo "está sonriendo" lo pasaría una foto impresa de alguien sonriendo. El gesto se sortea en cada intento para que no alcance con grabar un video una vez.
 
 **Zero Retention**: las imágenes viven dentro de `SecureImageBuffer`, y los bitmaps que necesitan ML Kit y TFLite se sobreescriben y reciclan (`SecureBitmap`). Los embeddings también se ponen en cero: un vector facial es un dato biométrico y tratarlo como inocuo sería tan grave como mandar la foto.
 
 **Dependencia externa**: el modelo `.tflite` de reconocimiento facial **no está en el repositorio** (licencia + tamaño). Ver `app/src/main/assets/README.md`. Sin él, la verificación falla con `BiometricsUnavailable`; nunca se da por válida.
+
+**Gotcha de CameraX + Compose**: `PreviewView` en modo `PERFORMANCE` (default, SurfaceView) puede quedar negro en hardware real cuando hay otro contenido de Compose dibujado encima — el overlay se ve, el video no. Pasa poco en emulador. Las dos pantallas de cámara (`DocumentScanScreen`, `LivenessCaptureScreen`) usan `ImplementationMode.COMPATIBLE` (TextureView) por esto; si se agrega una tercera pantalla con preview, aplicar lo mismo.
 
 ## Contrato compartido entre componentes (US-01 — fuente única de verdad, idéntico en los 3 repos)
 
@@ -81,7 +89,7 @@ Después: `coseno(A, B) ≥ FACE_MATCH_THRESHOLD` → `biometric_verified: true`
   /data/remote/            # Retrofit ApiService, interceptors
   /data/crypto/            # HpkeEncryptor (Tink), AttestationProvider (mock JWT | Play Integrity)
   /data/edge/              # SecureImageBuffer/SecureBitmap
-  /data/edge/document/     # PDF417 (ML Kit) + parser del DNI argentino
+  /data/edge/document/     # PDF417 + QR (ML Kit), parsers del DNI actual y electrónico, escaneo en vivo
   /data/edge/face/         # recorte (ML Kit), embedder (TFLite), similitud coseno
   /data/edge/liveness/     # desafío de vida sobre el stream de cámara
   /di/                     # módulos Hilt
@@ -89,8 +97,8 @@ Después: `coseno(A, B) ≥ FACE_MATCH_THRESHOLD` → `biometric_verified: true`
 Regla dura: `domain` no importa Retrofit ni Compose. `presentation` solo llama a `domain`.
 
 ## Flujo de datos US-01
-1. `presentation/signup`: formulario captura Email y Password. `presentation/camera`: pide el permiso `CAMERA` en runtime y toma las tres fotos con CameraX, entregándolas **en memoria** (nunca a disco: por eso no se usa `ActivityResultContracts.TakePicture`, que exige URI de destino).
-2. `data/edge`: `SecureImageBuffer` toma posesión de los bytes, corre PDF417 + match facial + liveness → `EdgeResult.Verified(dni, faceSimilarity)` o `EdgeResult.Rejected(reason)`. Inmediatamente después libera/sobreescribe buffers, bitmaps y embeddings — sin cache en disco, sin referencias vivas post-uso (verificado con test).
+1. `presentation/signup`: formulario captura Email y Password. `presentation/camera`: pide el permiso `CAMERA` en runtime y toma 2 o 3 fotos con CameraX (frente + selfie siempre; reverso sólo si el escaneo en vivo del frente no encontró código), entregándolas **en memoria** (nunca a disco: por eso no se usa `ActivityResultContracts.TakePicture`, que exige URI de destino).
+2. `data/edge`: `SecureImageBuffer` toma posesión de los bytes, corre lectura de código (frente o reverso) + match facial + liveness → `EdgeResult.Verified(dni, faceSimilarity)` o `EdgeResult.Rejected(reason)`. Inmediatamente después libera/sobreescribe buffers, bitmaps y embeddings — sin cache en disco, sin referencias vivas post-uso (verificado con test).
 3. `domain/signup`: `RegisterUserUseCase` arma `{dni, email, password, biometric_verified}`.
 4. `data/crypto`: `HpkeEncryptor` (Tink) cifra el payload contra `IDENTITY_HPKE_PUBLIC_KEY` → produce `{ephemeral_public_key, ciphertext}` (base64).
 5. `data/crypto`: `AttestationProvider` obtiene el veredicto de integridad ligado al hash del cuerpo — JWT firmado con la PSK en modo `mock`, token de Google en modo `play_integrity`.

@@ -1,6 +1,6 @@
 package com.vinculovial.app.domain.signup
 
-import com.vinculovial.app.domain.signup.model.LivenessFrame
+import com.vinculovial.app.domain.signup.model.CameraFrame
 import com.vinculovial.app.domain.signup.model.LivenessProgress
 import kotlinx.coroutines.flow.StateFlow
 
@@ -24,7 +24,7 @@ interface LivenessSession {
      * Entrega un frame del preview. La implementación puede descartarlo si viene
      * demasiado seguido del anterior.
      */
-    suspend fun submitFrame(frame: LivenessFrame)
+    suspend fun submitFrame(frame: CameraFrame)
 
     /** Libera los recursos del detector. */
     fun close()
