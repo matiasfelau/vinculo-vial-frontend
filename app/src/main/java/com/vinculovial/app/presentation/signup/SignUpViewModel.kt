@@ -2,7 +2,6 @@ package com.vinculovial.app.presentation.signup
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vinculovial.app.domain.signup.DocumentScanSession
 import com.vinculovial.app.domain.signup.IdentityVerificationService
 import com.vinculovial.app.domain.signup.LivenessSession
 import com.vinculovial.app.domain.signup.RegisterUserUseCase
@@ -33,11 +32,11 @@ class SignUpViewModel @Inject constructor(
     private val registerUser: RegisterUserUseCase,
     private val identityVerification: IdentityVerificationService,
     /**
-     * Las pantallas de captura las consumen directamente: son sesiones con estado sobre
-     * el stream de la cámara, no una operación puntual que el ViewModel pueda envolver.
+     * La pantalla de selfie la consume directamente: es una sesión con estado sobre el
+     * stream de la cámara, no una operación puntual que el ViewModel pueda envolver. El
+     * frente del DNI no tiene equivalente — es captura manual, sin detección en vivo.
      */
     val livenessSession: LivenessSession,
-    val documentScanSession: DocumentScanSession,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SignUpUiState())

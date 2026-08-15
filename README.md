@@ -77,7 +77,7 @@ app/
                   SignUpResult/SignUpError, CredentialRules, EdgeResult
   data/
     edge/         SecureImageBuffer, SecureBitmap
-      document/   PDF417 con ML Kit, DocumentDataParser (legacy real, electrónico stub), escaneo en vivo
+      document/   PDF417 con ML Kit, DocumentDataParser (legacy real, electrónico stub)
       face/       recorte con ML Kit, embedder TFLite, similitud coseno
       liveness/   desafío de vida sobre el stream de cámara
     crypto/       HpkeEncryptor (Tink), AttestationProvider (Play Integrity | mock JWT)
@@ -135,27 +135,54 @@ electrónico (código QR en el reverso), la app **sólo acepta el DNI actual** (
 mismo frente). No hay paso de reverso — inventar un parser sin documentación oficial sería
 adivinar, y un DNI mal leído es peor que uno rechazado explícitamente.
 
-| Paso | Qué busca | Motor | Resultado |
+| Paso | Cómo se dispara | Motor | Resultado |
 |---|---|---|---|
-| 1. Frente | cara **y** PDF417 a la vez | ML Kit Face Detection + Barcode | número de documento; foto para el embedding A |
-| 2. Selfie | prueba de vida + cara | ML Kit Face Detection + TFLite | embedding B |
+| 1. Frente | **manual** — el usuario encuadra contra un marco estático y toca el obturador | ML Kit Face Detection + Barcode, sobre la foto ya tomada | número de documento; foto para el embedding A |
+| 2. Selfie | automático — prueba de vida sobre el preview en vivo | ML Kit Face Detection + TFLite | embedding B |
 
-Si el frente tiene cara pero nunca aparece el código (unos segundos de lectura estable sin
-encontrarlo), se avisa con un Toast — *"Para esta fase de pruebas, por favor utiliza un DNI
-tarjeta tradicional (con código de barras)"* — y se reinicia el escaneo. No hay una
-pantalla de reverso a la que pasar.
+**El frente es 100% manual, por decisión de producto — no por limitación técnica.**
+Hubo una versión con detección automática en vivo (`ImageAnalysis` corriendo ML Kit sobre
+cada frame del preview), pero el autoenfoque, la resolución del preview y los reflejos
+sobre el plástico la hacían fallar de forma inconsistente en hardware real —
+fragmentación de Android que ninguna heurística visual cubre del todo. Se retiró esa
+detección en vivo entera para esta pantalla: `DocumentScanScreen` sólo bindea `Preview` +
+`ImageCapture` (nada de `ImageAnalysis`), el marco queda como guía visual fija sin
+mensajes reactivos de "acercate"/"encuadrá mejor", y el usuario dispara la foto cuando
+está conforme.
 
-**Captura híbrida en el frente**: el autoenfoque, la resolución del preview o un reflejo
-sobre el plástico pueden hacer que el escaneo automático nunca se dispare en cierto
-hardware — fragmentación de Android que ninguna heurística cubre al 100%. Por eso el
-obturador manual está siempre visible (no aparece recién tras el timeout): toma una foto
-de resolución completa con `ImageCapture` y la valida ahí mismo contra el mismo pipeline
-real (`IdentityVerificationService.canReadDniFront()` — PDF417 + detección de cara), no
-contra la heurística del preview. Si no lee, un Toast — *"No pudimos leer el DNI. Evitá
-los reflejos y asegurate de que esté nítido"* — y la cámara vuelve a estar disponible; si
-lee, sigue exactamente por el mismo camino que el automático. El escaneo en vivo sigue
-corriendo en paralelo todo el tiempo; ambos caminos comparten un único lock para que
-nunca disparen dos capturas a la vez.
+Eso no significa que se acepte cualquier foto: `IdentityVerificationService.canReadDniFront()`
+corre el pipeline real (PDF417 + detección de cara) sobre la imagen recién tomada. Si no
+lee, un Toast — *"No pudimos leer el DNI. Evitá los reflejos y asegurate de que esté
+nítido"* — y la cámara queda lista para reintentar en el acto.
+
+Si ninguna foto trae el código (el documento no es el DNI actual), no hay una segunda
+pantalla de reverso a la que pasar — por ahora el DNI electrónico queda fuera de alcance
+(ver más abajo).
+
+### Bug de captura: rotación perdida en `ImageCapture`
+
+Si el DNI está perfectamente enfocado, iluminado y sin reflejos y aun así
+`canReadDniFront()` falla siempre, la causa casi segura es esta, no la calidad de la foto:
+
+`ImageCapture.OnImageCapturedCallback` entrega el JPEG **sin rotar** — el sensor suele
+estar montado apaisado, y lo que indica cuánto rotar para que la imagen quede vertical es
+`imageProxy.imageInfo.rotationDegrees`, no el contenido del archivo (a diferencia de la
+variante que guarda a un `OutputFileOptions`, acá no hay garantía de que el JPEG traiga
+EXIF de orientación). El código construía `InputImage.fromBitmap(bitmap, 0)` con la
+rotación hardcodeada en 0: ML Kit analizaba una imagen apaisada creyendo que estaba
+derecha, y ni el código de barras ni la cara del documento se detectaban de forma
+confiable — con cualquier foto, sin importar lo nítida que fuera.
+
+Tampoco alcanza con pasarle el ángulo correcto a `InputImage.fromBitmap(bitmap,
+rotationDegrees)`: ese parámetro tiene reportes de comunidad de comportarse de forma
+inconsistente en detección de caras/texto según el modelo de ML Kit.
+
+**Fix**: `CameraInternals.captureJpegInternal()` rota los píxeles físicamente (decode →
+`Matrix.postRotate()` → recodifica a JPEG) apenas se captura la foto, usando
+`imageInfo.rotationDegrees`. De ahí en más todo el pipeline recibe una imagen
+genuinamente vertical y siempre pasa rotación 0 a ML Kit. Corregido en el único punto
+compartido por la captura del DNI y la de la selfie — la selfie tenía el mismo bug
+latente, afectando en silencio la calidad del embedding para el match facial.
 
 Verificado si `coseno(A, B) ≥ FACE_MATCH_THRESHOLD`.
 

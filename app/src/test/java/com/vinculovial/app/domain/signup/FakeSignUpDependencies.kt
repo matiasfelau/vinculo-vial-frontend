@@ -2,7 +2,6 @@ package com.vinculovial.app.domain.signup
 
 import com.vinculovial.app.domain.signup.model.CameraFrame
 import com.vinculovial.app.domain.signup.model.Credentials
-import com.vinculovial.app.domain.signup.model.DocumentScanProgress
 import com.vinculovial.app.domain.signup.model.EdgeResult
 import com.vinculovial.app.domain.signup.model.LivenessChallenge
 import com.vinculovial.app.domain.signup.model.LivenessProgress
@@ -70,26 +69,6 @@ class FakeLivenessSession : LivenessSession {
 
     private val _progress = MutableStateFlow(LivenessProgress(challenge = LivenessChallenge.SMILE))
     override val progress: StateFlow<LivenessProgress> = _progress
-
-    var starts = 0
-    var closes = 0
-
-    override fun start() {
-        starts++
-    }
-
-    override suspend fun submitFrame(frame: CameraFrame) = Unit
-
-    override fun close() {
-        closes++
-    }
-}
-
-/** Sesión de escaneo de documento inerte: el ViewModel sólo la expone hacia esa pantalla. */
-class FakeDocumentScanSession : DocumentScanSession {
-
-    private val _progress = MutableStateFlow(DocumentScanProgress())
-    override val progress: StateFlow<DocumentScanProgress> = _progress
 
     var starts = 0
     var closes = 0

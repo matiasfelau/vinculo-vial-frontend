@@ -5,13 +5,11 @@ import com.vinculovial.app.BuildConfig
 import com.vinculovial.app.data.edge.EdgeIdentityVerificationService
 import com.vinculovial.app.data.edge.document.DniBarcodeReader
 import com.vinculovial.app.data.edge.document.MlKitDniBarcodeReader
-import com.vinculovial.app.data.edge.document.MlKitDocumentScanSession
 import com.vinculovial.app.data.edge.face.FaceEmbedder
 import com.vinculovial.app.data.edge.face.FaceLocator
 import com.vinculovial.app.data.edge.face.MlKitFaceLocator
 import com.vinculovial.app.data.edge.face.TfLiteFaceEmbedder
 import com.vinculovial.app.data.edge.liveness.MlKitLivenessSession
-import com.vinculovial.app.domain.signup.DocumentScanSession
 import com.vinculovial.app.domain.signup.IdentityVerificationService
 import com.vinculovial.app.domain.signup.LivenessSession
 import dagger.Binds
@@ -36,10 +34,6 @@ abstract class EdgeModule {
     @Binds
     @Singleton
     abstract fun bindLivenessSession(impl: MlKitLivenessSession): LivenessSession
-
-    @Binds
-    @Singleton
-    abstract fun bindDocumentScanSession(impl: MlKitDocumentScanSession): DocumentScanSession
 
     companion object {
 
