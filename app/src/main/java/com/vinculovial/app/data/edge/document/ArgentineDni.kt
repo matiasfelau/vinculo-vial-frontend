@@ -16,7 +16,8 @@ data class ArgentineDni(
     /**
      * Número de trámite (11 dígitos). Nullable a propósito: no está garantizado en todas las
      * disposiciones en circulación, y la verificación Edge no lo necesita. Quien sí lo
-     * necesita es RENAPER — ver `RenaperIdentityVerificationProvider`.
+     * necesita es RENAPER, para identificar contra qué registro verificar — por eso viaja
+     * en el payload de `/signup` (ver `CLAUDE.md`, pivote RENAPER-Ready).
      */
     val procedureNumber: String? = null,
 ) {

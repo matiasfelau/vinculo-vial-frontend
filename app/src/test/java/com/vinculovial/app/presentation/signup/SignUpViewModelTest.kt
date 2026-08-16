@@ -177,8 +177,8 @@ class SignUpViewModelTest {
     }
 
     @Test
-    fun `un match facial negativo obliga a capturar de nuevo`() = runTest {
-        verification.result = EdgeResult.Rejected(EdgeResult.Reason.FACE_MISMATCH)
+    fun `un rechazo del edge obliga a capturar de nuevo`() = runTest {
+        verification.result = EdgeResult.Rejected(EdgeResult.Reason.LIVENESS_FAILED)
         val viewModel = viewModel()
         viewModel.completarFormulario()
         viewModel.capturarTodo()
@@ -186,7 +186,7 @@ class SignUpViewModelTest {
         viewModel.submit()
 
         val state = viewModel.uiState.value
-        assertEquals(SignUpError.FaceMismatch, state.error)
+        assertEquals(SignUpError.LivenessFailed, state.error)
         assertTrue("las capturas ya no existen en el Edge", state.completedCaptures.isEmpty())
     }
 

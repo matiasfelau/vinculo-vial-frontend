@@ -12,7 +12,3 @@ captures/
 *.aab
 *.keystore
 !debug.keystore
-
-# Modelos de reconocimiento facial: pesan varios MB y su licencia se decide aparte.
-# Ver app/src/main/assets/README.md
-*.tflite

@@ -20,17 +20,8 @@ sealed interface SignUpError {
     /** Se leyó un código, pero no es el de un DNI argentino. */
     data object DocumentNotRecognized : SignUpError
 
-    /** No se detectó un rostro en alguna de las capturas. */
-    data object FaceNotDetected : SignUpError
-
     /** Liveness negativo: no se pudo comprobar que haya una persona presente. */
     data object LivenessFailed : SignUpError
-
-    /** El rostro de la selfie no se corresponde con la foto del documento. */
-    data object FaceMismatch : SignUpError
-
-    /** El motor de reconocimiento facial no está disponible en este build. */
-    data object BiometricsUnavailable : SignUpError
 
     /** El DNI leído del documento no coincide con el que se tipeó. */
     data object DniMismatch : SignUpError

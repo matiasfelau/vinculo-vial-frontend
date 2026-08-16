@@ -45,7 +45,6 @@ class DocumentCaptureMessagesTest {
         listOf(
             SignUpError.DocumentUnreadable,
             SignUpError.DocumentNotRecognized,
-            SignUpError.FaceNotDetected,
         ).forEach { error ->
             val mensaje = error.presentation().message.lowercase()
 

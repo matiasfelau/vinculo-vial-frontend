@@ -37,13 +37,15 @@ data class SignUpUiState(
 }
 
 /**
- * Los dos pasos del onboarding biométrico, tal como los ve el usuario.
+ * Los dos pasos del onboarding, tal como los ve el usuario.
  *
- * Por ahora sólo se acepta el DNI actual (código en el mismo frente); el electrónico
- * queda fuera de alcance del MVP — ver `ElectronicDniQrParser`.
+ * El escaneo del documento detecta PDF417 (DNI tarjeta) y QR (DNI con chip) al mismo
+ * tiempo, sin que el usuario elija formato — ver `MlKitDocumentPresenceSession`. La
+ * *detección* cubre los dos; la *lectura* del contenido del QR todavía no, porque RENAPER
+ * no publicó ese formato — ver `ElectronicDniQrParser`.
  */
 enum class CaptureTarget {
-    /** Frente del DNI. */
+    /** Documento (DNI): frente si es tarjeta, reverso si es el nuevo con chip. */
     DOCUMENT,
 
     /** Selfie, tomada sólo después de superar la prueba de vida. */

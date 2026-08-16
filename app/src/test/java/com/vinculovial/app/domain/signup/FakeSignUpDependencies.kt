@@ -3,6 +3,7 @@ package com.vinculovial.app.domain.signup
 import com.vinculovial.app.domain.signup.model.CameraFrame
 import com.vinculovial.app.domain.signup.model.Credentials
 import com.vinculovial.app.domain.signup.model.DniFrontQuality
+import com.vinculovial.app.domain.signup.model.DocumentIdentity
 import com.vinculovial.app.domain.signup.model.DocumentPresence
 import com.vinculovial.app.domain.signup.model.DocumentPresenceStage
 import com.vinculovial.app.domain.signup.model.EdgeResult
@@ -13,7 +14,10 @@ import kotlinx.coroutines.flow.StateFlow
 
 /** Edge falso: devuelve el resultado programado y registra qué se le entregó. */
 class FakeIdentityVerificationService(
-    var result: EdgeResult = EdgeResult.Verified(dni = "12345678", faceSimilarity = 0.9f),
+    var result: EdgeResult = EdgeResult.Verified(
+        document = DocumentIdentity(number = "12345678", sex = "M", procedureNumber = "00307513148"),
+        selfieBase64 = "c2VsZmll",
+    ),
 ) : IdentityVerificationService {
 
     var dniFrontCaptures = 0

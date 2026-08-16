@@ -10,10 +10,7 @@ class SignUpErrorPresentationTest {
     private val todosLosErrores = listOf(
         SignUpError.DocumentUnreadable,
         SignUpError.DocumentNotRecognized,
-        SignUpError.FaceNotDetected,
         SignUpError.LivenessFailed,
-        SignUpError.FaceMismatch,
-        SignUpError.BiometricsUnavailable,
         SignUpError.DniMismatch,
         SignUpError.InvalidData,
         SignUpError.AttestationRejected,
@@ -49,9 +46,7 @@ class SignUpErrorPresentationTest {
         listOf(
             SignUpError.DocumentUnreadable,
             SignUpError.DocumentNotRecognized,
-            SignUpError.FaceNotDetected,
             SignUpError.LivenessFailed,
-            SignUpError.FaceMismatch,
         ).forEach { error ->
             assertEquals(
                 "$error debería invitar a recapturar",
@@ -63,11 +58,13 @@ class SignUpErrorPresentationTest {
 
     @Test
     fun `ningun mensaje culpa al usuario de fraude`() {
-        // Un falso positivo del match facial es esperable; el mensaje no puede acusar.
-        val texto = SignUpError.FaceMismatch.presentation().message.lowercase()
-
-        listOf("fraude", "falsific", "impostor", "mentir").forEach {
-            assertTrue("el mensaje de match facial usa '$it'", !texto.contains(it))
+        // Un falso positivo de la verificación es esperable (ahora la corre RENAPER del
+        // lado del backend, pero el principio es el mismo): ningún mensaje puede acusar.
+        todosLosErrores.forEach { error ->
+            val texto = error.presentation().message.lowercase()
+            listOf("fraude", "falsific", "impostor", "mentir").forEach { termino ->
+                assertTrue("$error usa '$termino'", !texto.contains(termino))
+            }
         }
     }
 

@@ -52,35 +52,11 @@ android {
         buildConfigField("long", "ATTESTATION_TOKEN_TTL_SECONDS", config("ATTESTATION_TOKEN_TTL_SECONDS", "60") + "L")
         buildConfigField("long", "NETWORK_TIMEOUT_MS", config("NETWORK_TIMEOUT_MS", "15000") + "L")
 
-        // Umbral de similitud coseno para dar por válido el match facial.
-        // Comparar una foto impresa de DNI contra una selfie es más ruidoso que
-        // comparar dos selfies: calibrar con datos reales antes de mover este valor.
-        //
-        // Bajado a 0.35 para el MVP/tesis, sobre un dispositivo de prueba concreto donde
-        // ImageCapture quedó atado a 1080x1440 (recorte de documento ~150px) pese a tres
-        // intentos de recuperar la resolución completa: ResolutionSelector(HIGHEST_AVAILABLE),
-        // separar la topología de streams (ImageAnalysis nunca bindeado junto a ImageCapture)
-        // y un margen de asentamiento entre el bind y el disparo. Ninguno cambió el número.
-        // El mecanismo exacto de ese techo no se aisló de forma concluyente — no se confirmó
-        // con CameraCharacteristics si es un límite real del sensor o alguna otra restricción
-        // de la topología en este hardware puntual (`DocumentScanScreen` deja un log opcional
-        // para eso). Documentado así, sin afirmar más de lo que se pudo verificar.
-        //
-        // Es un valor de demo, no una calibración: viene de un solo verdadero positivo (mismo
-        // usuario, su propio DNI) sobre una entrada degradada. Falta la otra mitad del dato —
-        // la tasa de falsos positivos, comparando el documento de una persona contra la selfie
-        // de otra — que no se puede estimar con un solo usuario. Antes de producción hace
-        // falta esa calibración real, con el pipeline sobre buena resolución si se resuelve el
-        // techo de este dispositivo, o aceptando conscientemente el trade-off si no.
-        buildConfigField("float", "FACE_MATCH_THRESHOLD", config("FACE_MATCH_THRESHOLD", "0.35") + "f")
-        // Nombre del .tflite en app/src/main/assets/. Default alineado con el archivo
-        // real que se usa en desarrollo (ver app/src/main/assets/README.md); si tu
-        // modelo se llama distinto, sobreescribí FACE_EMBEDDER_MODEL_ASSET.
-        buildConfigField(
-            "String",
-            "FACE_EMBEDDER_MODEL_ASSET",
-            "\"${config("FACE_EMBEDDER_MODEL_ASSET", "mobilefacenet.tflite")}\"",
-        )
+        // Pivote RENAPER-Ready: ya no hay umbral de similitud coseno ni modelo .tflite que
+        // configurar acá — la verificación de identidad (comparar la selfie contra el
+        // documento) se movió al backend, contra el padrón del Estado. FACE_MATCH_THRESHOLD
+        // y FACE_EMBEDDER_MODEL_ASSET existieron mientras esa comparación corría on-device
+        // con TensorFlow Lite; los dos se retiraron junto con esa lógica. Ver CLAUDE.md.
 
         // `play_integrity` = veredicto real de Google (default); `mock` = JWT firmado con
         // la PSK compartida, para emuladores y CI. El Gateway tiene que estar preparado
@@ -120,11 +96,6 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
-    }
-
-    androidResources {
-        // TFLite mapea el modelo directo desde el APK; comprimirlo rompe ese mapeo.
-        noCompress += "tflite"
     }
 
     packaging {
@@ -179,7 +150,6 @@ dependencies {
 
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.mlkit.face.detection)
-    implementation(libs.tensorflow.lite)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

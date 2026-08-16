@@ -29,13 +29,14 @@ data class SignUpErrorPresentation(
 )
 
 fun SignUpError.presentation(): SignUpErrorPresentation = when (this) {
-    // Se pide el FRENTE: el DNI tarjeta trae ahí el PDF417, y el paso de reverso se retiró
-    // del flujo. Tampoco se pide acercarse — el lente pierde el foco antes de que el
+    // Ni "frente" ni "reverso": el escaneo detecta PDF417 (tarjeta) y QR (con chip) al
+    // mismo tiempo, así que el lado correcto depende de qué versión de DNI tenga el
+    // usuario. Tampoco se pide acercarse — el lente pierde el foco antes de que el
     // documento llene la pantalla, así que la instrucción útil es apoyarlo y esperar el foco.
     SignUpError.DocumentUnreadable -> SignUpErrorPresentation(
         title = "No pudimos leer tu DNI",
-        message = "Apoyá el frente del documento en una superficie plana, con buena luz y sin " +
-            "reflejos, y esperá a que se vea nítido antes de sacar la foto.",
+        message = "Apoyá el documento en una superficie plana, con buena luz y sin reflejos, " +
+            "y esperá a que se vea nítido antes de sacar la foto.",
         action = SignUpErrorAction.RETRY_CAPTURE,
     )
 
@@ -46,32 +47,11 @@ fun SignUpError.presentation(): SignUpErrorPresentation = when (this) {
         action = SignUpErrorAction.RETRY_CAPTURE,
     )
 
-    SignUpError.FaceNotDetected -> SignUpErrorPresentation(
-        title = "No encontramos una cara",
-        message = "Asegurate de que tu foto del documento se vea completa y sin reflejos, y de " +
-            "que tu cara entre entera en la selfie.",
-        action = SignUpErrorAction.RETRY_CAPTURE,
-    )
-
     SignUpError.LivenessFailed -> SignUpErrorPresentation(
         title = "No pudimos confirmar que seas vos",
         message = "Repetí la selfie siguiendo la indicación en pantalla, mirando de frente a la " +
             "cámara y sin anteojos de sol ni gorra.",
         action = SignUpErrorAction.RETRY_CAPTURE,
-    )
-
-    SignUpError.FaceMismatch -> SignUpErrorPresentation(
-        title = "Tu cara no coincide con el documento",
-        message = "Repetí las dos fotos con buena luz y de frente. Si el problema sigue, puede " +
-            "que el documento no sea tuyo.",
-        action = SignUpErrorAction.RETRY_CAPTURE,
-    )
-
-    SignUpError.BiometricsUnavailable -> SignUpErrorPresentation(
-        title = "No podemos validar tu identidad",
-        message = "La verificación biométrica no está disponible en esta versión de la app. " +
-            "Probá actualizarla desde Google Play.",
-        action = SignUpErrorAction.DISMISS,
     )
 
     SignUpError.DniMismatch -> SignUpErrorPresentation(

@@ -28,18 +28,21 @@ class RegisterUserUseCase @Inject constructor(
             is EdgeResult.Rejected -> SignUpResult.Failed(edgeResult.reason.toSignUpError())
 
             is EdgeResult.Verified -> {
-                if (!edgeResult.dni.matches(form.dni)) {
+                if (!edgeResult.document.number.matches(form.dni)) {
                     return SignUpResult.Failed(SignUpError.DniMismatch)
                 }
 
-                // Viaja el DNI que se leyó del documento, no el que se tipeó. De toda la
-                // verificación biométrica sólo sale el booleano.
+                // Viajan los datos que se leyeron del documento, no lo que se tipeó. La
+                // identidad ya no se confirma acá: el backend la verifica contra RENAPER con
+                // la selfie que se manda en el mismo payload.
                 repository.signUp(
                     Credentials(
-                        dni = edgeResult.dni,
+                        dni = edgeResult.document.number,
+                        procedureNumber = edgeResult.document.procedureNumber,
+                        sex = edgeResult.document.sex,
                         email = form.email.trim(),
                         password = form.password,
-                        biometricVerified = true,
+                        selfieBase64 = edgeResult.selfieBase64,
                     ),
                 )
             }
@@ -50,14 +53,11 @@ class RegisterUserUseCase @Inject constructor(
         CredentialRules.normalizeDni(this) == CredentialRules.normalizeDni(declared)
 
     private fun EdgeResult.Reason.toSignUpError(): SignUpError = when (this) {
-        EdgeResult.Reason.BARCODE_NOT_FOUND -> SignUpError.DocumentUnreadable
+        EdgeResult.Reason.BARCODE_NOT_FOUND,
+        EdgeResult.Reason.MISSING_PROCEDURE_NUMBER,
+        -> SignUpError.DocumentUnreadable
         EdgeResult.Reason.BARCODE_NOT_A_DNI -> SignUpError.DocumentNotRecognized
-        EdgeResult.Reason.NO_FACE_IN_DOCUMENT,
-        EdgeResult.Reason.NO_FACE_IN_SELFIE,
-        -> SignUpError.FaceNotDetected
         EdgeResult.Reason.LIVENESS_FAILED -> SignUpError.LivenessFailed
-        EdgeResult.Reason.FACE_MISMATCH -> SignUpError.FaceMismatch
-        EdgeResult.Reason.BIOMETRICS_UNAVAILABLE -> SignUpError.BiometricsUnavailable
         EdgeResult.Reason.INCOMPLETE_CAPTURE -> SignUpError.DocumentUnreadable
     }
 }

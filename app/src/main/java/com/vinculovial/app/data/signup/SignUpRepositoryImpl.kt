@@ -96,9 +96,11 @@ class SignUpRepositoryImpl @Inject constructor(
                 JsonWriter.of(buffer),
                 SignUpPayloadDto(
                     dni = credentials.dni,
+                    procedureNumber = credentials.procedureNumber,
+                    sex = credentials.sex,
                     email = credentials.email,
                     password = credentials.password,
-                    biometricVerified = credentials.biometricVerified,
+                    selfie = credentials.selfieBase64,
                 ),
             )
             plaintext = buffer.readByteArray()

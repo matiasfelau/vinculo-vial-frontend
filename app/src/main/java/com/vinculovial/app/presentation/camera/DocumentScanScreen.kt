@@ -99,7 +99,14 @@ internal fun DniFrontQuality.failureMessage(): String = when (this) {
 }
 
 /**
- * Captura del frente del documento: **auto-disparo híbrido**.
+ * Escaneo del documento: **auto-disparo híbrido**.
+ *
+ * Detecta PDF417 (DNI tarjeta, código en el frente) y QR (DNI con chip, código en el
+ * reverso) al mismo tiempo — el usuario no elige qué versión de documento tiene, sólo
+ * muestra el código a la cámara. La *detección* de ambos ya funciona; la *decodificación*
+ * del contenido del QR todavía no, porque RENAPER no publicó ese formato (`ElectronicDniQrParser`
+ * sigue siendo un stub deliberado). Un QR detectado pero no decodificable se trata igual que
+ * cualquier código ilegible: `DniFrontQuality.BARCODE_UNREADABLE`.
  *
  * ## La arquitectura, y por qué es híbrida
  *
@@ -109,7 +116,9 @@ internal fun DniFrontQuality.failureMessage(): String = when (this) {
  *   distancia donde el lente enfoque, el código ocupa ~13% del ancho del cuadro, así que hace
  *   falta una imagen de varios megapíxeles. `ImageAnalysis` no llega ni cerca — ese fue
  *   siempre el motivo real por el que la detección en vivo fracasó dos veces en este
- *   proyecto, y no la heurística que se le echaba la culpa.
+ *   proyecto, y no la heurística que se le echaba la culpa. (No hay datos públicos sobre la
+ *   densidad del QR del DNI electrónico, pero nada en la resolución de un stream de video en
+ *   vivo sugiere que vaya a ser la excepción.)
  * - **Momento.** Pedirle al usuario que dispare a mano no funciona: en el momento en que
  *   presiona, mueve el teléfono.
  *
@@ -449,7 +458,7 @@ fun DocumentScanScreen(
                 enabled = !capturing,
             )
             Text(
-                text = "Frente del DNI",
+                text = "Escaneá el código de tu DNI",
                 style = MaterialTheme.typography.labelLarge,
                 color = Color.White,
                 textAlign = TextAlign.Center,
@@ -548,11 +557,18 @@ private fun Int?.toHardwareLevelLabel(): String = when (this) {
     else -> "desconocido ($this)"
 }
 
-/** Qué se le dice al usuario según lo que ve la cámara. Nunca "acercate": ver [failureMessage]. */
+/**
+ * Qué se le dice al usuario según lo que ve la cámara. Nunca "acercate": ver [failureMessage].
+ *
+ * Deliberadamente no dice "frente" ni "reverso": el escaneo detecta PDF417 (DNI tarjeta,
+ * código en el frente) y QR (DNI con chip, código en el reverso) al mismo tiempo, sin que el
+ * usuario tenga que elegir qué versión de documento tiene ni qué lado mostrar — cualquiera
+ * de los dos hace que el auto-disparo reaccione.
+ */
 private fun DocumentPresenceStage.instruction(capturing: Boolean): String = when {
     capturing -> "Tomando la foto, no muevas el documento"
     this == DocumentPresenceStage.SEARCHING ->
-        "Mostrá el frente de tu DNI a la distancia que te resulte cómoda, donde se vea nítido"
+        "Mostrá el código de tu DNI a la distancia que te resulte cómoda, donde se vea nítido"
     this == DocumentPresenceStage.DETECTED -> "Sostené firme un segundo…"
     else -> "¡Listo! Tomando la foto"
 }

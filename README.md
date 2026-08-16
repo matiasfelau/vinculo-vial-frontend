@@ -1,10 +1,12 @@
 # vinculo-vial-frontend
 
-App Android de **ViVi (Vínculo Vial)**. Esta entrega implementa **US-01 — Registro de usuario**
-con onboarding biométrico 100 % local: lectura del PDF417 del DNI, prueba de vida activa y
-comparación facial en el dispositivo, descarte inmediato de las imágenes (Zero Retention),
-cifrado HPKE del payload contra Identity y publicación en el Gateway con App Attestation de
-Google Play Integrity.
+App Android de **ViVi (Vínculo Vial)**. Esta entrega implementa **US-01 — Registro de usuario**,
+**RENAPER-Ready**: el escaneo del documento (PDF417 o QR, detectados en simultáneo) y la
+prueba de vida corren en el dispositivo, pero la verificación de identidad — comparar la
+selfie contra el padrón del Estado — la hace el backend. La selfie (redimensionada y
+comprimida) es la única imagen que sale del dispositivo; el DNI nunca sale, sólo sus campos
+ya leídos. Todo viaja cifrado con HPKE contra Identity, publicado en el Gateway con App
+Attestation de Google Play Integrity.
 
 El contrato compartido con `vinculo-vial-gateway` e `vinculo-vial-identity` está en
 [CLAUDE.md](CLAUDE.md), que es la fuente única de verdad.
@@ -12,8 +14,7 @@ El contrato compartido con `vinculo-vial-gateway` e `vinculo-vial-identity` est�
 ## Stack
 
 Kotlin · Jetpack Compose (Material 3) · MVVM + Clean layers · Hilt · CameraX ·
-ML Kit (Barcode + Face Detection) · TensorFlow Lite · Retrofit/OkHttp/Moshi ·
-Google Tink (HPKE) · Play Integrity.
+ML Kit (Barcode + Face Detection) · Retrofit/OkHttp/Moshi · Google Tink (HPKE) · Play Integrity.
 
 ## Puesta en marcha
 
@@ -74,11 +75,12 @@ app/
     splash/ theme/ components/ navigation/
   domain/         Modelos, reglas y puertos. Sin Retrofit ni Compose.
     signup/       RegisterUserUseCase, SignUpRepository, IdentityVerificationService,
-                  SignUpResult/SignUpError, CredentialRules, EdgeResult
+                  SignUpResult/SignUpError, CredentialRules, EdgeResult, DocumentIdentity
   data/
-    edge/         SecureImageBuffer, SecureBitmap
-      document/   PDF417 con ML Kit, DocumentDataParser (legacy real, electrónico stub)
-      face/       recorte con ML Kit, embedder TFLite, similitud coseno
+    edge/         SecureImageBuffer, SecureBitmap, SelfieCompressor
+      document/   PDF417/QR con ML Kit, DocumentDataParser (legacy real, electrónico stub),
+                  DocumentFaceDetector (sólo presencia, gate de calidad del documento),
+                  MlKitDocumentPresenceSession (auto-disparo del escaneo)
       liveness/   desafío de vida sobre el stream de cámara
     crypto/       HpkeEncryptor (Tink), AttestationProvider (Play Integrity | mock JWT)
     remote/       AuthApiService (Retrofit), AttestationInterceptor
@@ -91,24 +93,32 @@ app/
 1. El usuario completa DNI, email y contraseña; la UI valida con `CredentialRules` (dominio).
 2. Consentimiento explícito antes de pedir cámara; el permiso `CAMERA` se solicita en
    runtime recién al abrir la captura.
-3. Captura del frente del DNI con CameraX (cámara trasera) y de la selfie (cámara
+3. Escaneo del documento con CameraX (cámara trasera) y captura de la selfie (cámara
    frontal). Los bytes salen del buffer de la cámara y entran directo a un
    `SecureImageBuffer`, sin tocar disco.
-4. `RegisterUserUseCase` corre el Edge: lectura de PDF417, prueba de vida, match facial y
-   **descarte de imágenes, bitmaps y embeddings en `finally`**.
-5. Si el documento no se lee, la prueba de vida falla, las caras no coinciden o el DNI leído no
-   coincide con el tipeado, **nada sale del dispositivo**.
-6. `SignUpRepositoryImpl` cifra `{dni,email,password,biometric_verified}` con HPKE y publica
-   `POST /api/v1/auth/signup` con el header `X-App-Attestation`, ligado al cuerpo.
+4. `RegisterUserUseCase` corre el Edge: lectura de PDF417/QR, prueba de vida, y
+   redimensionado + compresión de la selfie (`SelfieCompressor`) — **descarte del documento,
+   bitmaps intermedios y JPEG original de la selfie en `finally`**; sólo sobrevive la selfie
+   ya comprimida, que es la que tiene que viajar.
+5. Si el documento no se lee, le falta el número de trámite, la prueba de vida falla o el
+   DNI leído no coincide con el tipeado, **nada sale del dispositivo**.
+6. `SignUpRepositoryImpl` cifra `{dni,tramite,sexo,email,password,selfie}` con HPKE y
+   publica `POST /api/v1/auth/signup` con el header `X-App-Attestation`, ligado al cuerpo.
+   La verificación de identidad —¿la selfie es la persona del documento?— la hace el
+   backend contra RENAPER; la app no recibe ese veredicto en la respuesta de signup.
 7. `201/400/403/409`, los fallos de red y los de attestation se traducen a `SignUpError`
    y a un mensaje genérico.
 
 ### Decisiones que conviene conocer
 
-- **Zero Retention**: las imágenes sólo existen dentro de `SecureImageBuffer`, se prestan con
-  `read {}` y al liberarse se sobreescriben con ceros. También se descartan al volver atrás y en
-  `onCleared()` del ViewModel. Backup en la nube y device transfer están deshabilitados, y
-  `FLAG_SECURE` bloquea capturas de pantalla y la miniatura de apps recientes.
+- **Zero Retention, con una excepción deliberada**: las imágenes sólo existen dentro de
+  `SecureImageBuffer`, se prestan con `read {}` y al liberarse se sobreescriben con ceros.
+  El documento nunca sale del dispositivo — sólo sus campos parseados. La **selfie es la
+  excepción**: `SelfieCompressor` la redimensiona/recomprime, y esa versión (nunca la
+  original) es la única imagen que viaja, porque la verificación de identidad ahora la hace
+  el backend. Todo se descarta también al volver atrás y en `onCleared()` del ViewModel.
+  Backup en la nube y device transfer están deshabilitados, y `FLAG_SECURE` bloquea capturas
+  de pantalla y la miniatura de apps recientes.
 - **La foto nunca toca el disco**: se usa `ImageCapture.takePicture(executor, OnImageCapturedCallback)`
   y no `ActivityResultContracts.TakePicture`, porque ese contrato exige una URI de destino —
   es decir, dejaría la foto escrita en el almacenamiento y visible para la app de cámara.
@@ -124,40 +134,28 @@ app/
 - **Simulaciones aisladas detrás de puertos** (`OcrEngine`, `LivenessDetector`): reemplazarlas
   no toca `domain` ni `presentation`. Cámara y attestation ya son reales.
 
-## Onboarding biométrico
+## Onboarding
 
-Corre entero en el dispositivo. Al backend sólo llegan el número de documento y un booleano.
-
-### Un solo paso, sólo el DNI actual (MVP)
-
-Por decisión explícita (YAGNI): mientras RENAPER no publique el formato del DNI
-electrónico (código QR en el reverso), la app **sólo acepta el DNI actual** (PDF417 en el
-mismo frente). No hay paso de reverso — inventar un parser sin documentación oficial sería
-adivinar, y un DNI mal leído es peor que uno rechazado explícitamente.
+El escaneo del documento y la prueba de vida corren en el dispositivo. La verificación de
+identidad (¿la selfie es la persona del documento?) la hace el backend contra RENAPER — es
+el único paso que ya no es local. Ver el pivote completo en `CLAUDE.md`.
 
 | Paso | Cómo se dispara | Motor | Resultado |
 |---|---|---|---|
-| 1. Frente | **manual** — el usuario encuadra contra un marco estático y toca el obturador | ML Kit Face Detection + Barcode, sobre la foto ya tomada | número de documento; foto para el embedding A |
-| 2. Selfie | automático — prueba de vida sobre el preview en vivo | ML Kit Face Detection + TFLite | embedding B |
+| 1. Documento | **auto-disparo híbrido** — `ImageAnalysis` detecta PDF417 o QR en vivo (sin elegir formato) y, al verlo quieto, dispara sola una foto de alta resolución | ML Kit Barcode + Face Detection | número, sexo y trámite del documento |
+| 2. Selfie | automático — prueba de vida sobre el preview en vivo | ML Kit Face Detection | JPEG redimensionado/comprimido, listo para el payload |
 
-**El frente es 100% manual, por decisión de producto — no por limitación técnica.**
-Hubo una versión con detección automática en vivo (`ImageAnalysis` corriendo ML Kit sobre
-cada frame del preview), pero el autoenfoque, la resolución del preview y los reflejos
-sobre el plástico la hacían fallar de forma inconsistente en hardware real —
-fragmentación de Android que ninguna heurística visual cubre del todo. Se retiró esa
-detección en vivo entera para esta pantalla: `DocumentScanScreen` sólo bindea `Preview` +
-`ImageCapture` (nada de `ImageAnalysis`), el marco queda como guía visual fija sin
-mensajes reactivos de "acercate"/"encuadrá mejor", y el usuario dispara la foto cuando
-está conforme.
+**El escaneo detecta PDF417 (DNI tarjeta) y QR (DNI con chip) al mismo tiempo**, sin que el
+usuario elija qué versión de documento tiene. La *detección* de los dos ya funciona; la
+*decodificación* del contenido del QR todavía no — RENAPER no publicó ese formato (ver
+`ElectronicDniQrParser`, más abajo). Detalle completo de la arquitectura híbrida
+(por qué `ImageAnalysis` sola no alcanza para decodificar, y cómo se dispara la foto de
+alta resolución sin que el usuario toque un botón) en `CLAUDE.md`.
 
-Eso no significa que se acepte cualquier foto: `IdentityVerificationService.canReadDniFront()`
-corre el pipeline real (PDF417 + detección de cara) sobre la imagen recién tomada. Si no
-lee, un Toast — *"No pudimos leer el DNI. Evitá los reflejos y asegurate de que esté
-nítido"* — y la cámara queda lista para reintentar en el acto.
-
-Si ninguna foto trae el código (el documento no es el DNI actual), no hay una segunda
-pantalla de reverso a la que pasar — por ahora el DNI electrónico queda fuera de alcance
-(ver más abajo).
+Sea cual sea el resultado, `IdentityVerificationService.canReadDniFront()` corre el
+pipeline real (barcode + presencia de la foto del titular) sobre la imagen recién tomada
+antes de aceptarla. Si no sirve, la app sigue intentando sola — no hay botón que tocar en
+el camino feliz, y el mensaje nunca pide "acercarse más" (ver por qué en `CLAUDE.md`).
 
 ### Bug de captura: rotación perdida en `ImageCapture`
 
@@ -182,9 +180,7 @@ inconsistente en detección de caras/texto según el modelo de ML Kit.
 `imageInfo.rotationDegrees`. De ahí en más todo el pipeline recibe una imagen
 genuinamente vertical y siempre pasa rotación 0 a ML Kit. Corregido en el único punto
 compartido por la captura del DNI y la de la selfie — la selfie tenía el mismo bug
-latente, afectando en silencio la calidad del embedding para el match facial.
-
-Verificado si `coseno(A, B) ≥ FACE_MATCH_THRESHOLD`.
+latente, afectando en silencio la calidad de la foto que termina viajando al backend.
 
 **Por qué PDF417 y no OCR de texto**: decodifica o no decodifica. No hay margen de
 interpretación ni dependencia de la tipografía o el desgaste del plástico.
@@ -213,9 +209,10 @@ una foto impresa de alguien sonriendo. El gesto se sortea en cada intento, así 
 grabar un video una vez. La foto se dispara sola al completar el gesto, para que corresponda al
 momento en que se probó la presencia.
 
-**Qué se borra**: los JPEG (`SecureImageBuffer`), los bitmaps que necesitan ML Kit y TFLite
-(`SecureBitmap`) y los embeddings. Un vector facial es un dato biométrico: tratarlo como
-inocuo sería tan grave como mandar la foto.
+**Qué se borra**: los JPEG (`SecureImageBuffer`) y los bitmaps que necesita ML Kit
+(`SecureBitmap`) — del documento siempre, de la selfie apenas se obtiene la versión
+comprimida que va a viajar. Esa versión comprimida es la única excepción deliberada al
+Zero Retention (ver más abajo).
 
 ### Pantalla negra en la preview de la cámara (CameraX + Compose)
 
@@ -254,25 +251,27 @@ PreviewView.ImplementationMode.COMPATIBLE` (TextureView) lo evita. Las dos panta
 cámara ya lo tienen, por las dudas, aunque la causa raíz haya sido la (1); si se agrega
 una tercera pantalla con preview, aplicar lo mismo.
 
-### El modelo de reconocimiento facial no se versiona
+### Pivote RENAPER-Ready: la selfie viaja, el reconocimiento facial local no
 
-ML Kit hace *detección* de caras, no *reconocimiento*: no existe un modelo de embeddings
-faciales distribuible por Maven. Hace falta un `.tflite` tipo MobileFaceNet (112×112 →
-512-d) en `app/src/main/assets/`, nombrado `mobilefacenet.tflite` (o lo que diga
-`FACE_EMBEDDER_MODEL_ASSET`) **con la entrada y la salida en float32** — un modelo con
-esos tensores en float16 falla al cargar con `"DataType error: DataType 10..."`, y no
-tiene arreglo posible del lado del código (ver por qué en
-[assets/README.md](app/src/main/assets/README.md)). Ese mismo README tiene la forma
-esperada, las consideraciones de licencia y qué mirar si esto vuelve a fallar.
+Hasta esta entrega la comparación de caras corría en el dispositivo, con TensorFlow Lite
+(`TfLiteFaceEmbedder`, similitud coseno contra un umbral). Ese pipeline entero se retiró:
+`FaceEmbedder`, el modelo `.tflite`, el recorte facial con margen y la clase de dominio
+`IdentityVerificationProvider` (el patrón Strategy pensado para este momento) ya no están.
+La verificación de identidad la hace ahora el backend, contra el padrón de RENAPER.
 
-Sin el archivo, o con el nombre que no coincide, la app compila y corre, pero el registro
-falla con "no podemos validar tu identidad" — **nunca se da por válido un match que no se
-pudo calcular**. `TfLiteFaceEmbedder` loguea la excepción real (logcat, tag
-`TfLiteFaceEmbedder`) apenas falla la carga: un archivo faltante, mal nombrado o con una
-forma de tensor inesperada son distinguibles ahí, en vez de todos verse igual desde la UI.
+Eso mueve una línea que hasta acá era absoluta: **la selfie sale del dispositivo.**
+`SelfieCompressor` la redimensiona a un máximo de 800×800 y la recomprime en JPEG bajando
+la calidad en escalones (arranca en ~80%) hasta entrar en un presupuesto de ~150KB
+crudos — lo que da un string Base64 de hasta ~200KB —, y ese string es el único que entra
+al payload cifrado. El JPEG original y el bitmap intermedio se descartan igual que
+siempre; sólo la versión comprimida sobrevive lo justo para viajar. El documento sigue sin
+salir nunca: sólo sus campos ya leídos (`dni`, `tramite`, `sexo`).
 
-El umbral `FACE_MATCH_THRESHOLD` (hoy `0.62`) es un punto de partida sin calibrar. Comparar una
-foto impresa contra una selfie es más ruidoso que comparar dos selfies.
+**Pendiente cross-repo, igual que en su momento `biometric_verified`**: Identity necesita
+poder recibir y usar estos campos nuevos, y el Gateway/Identity tienen que definir qué
+código HTTP devuelve un rechazo de RENAPER (hoy cae genéricamente en `400`, mapeado a
+`SignUpError.InvalidData`, hasta que se documente algo más específico). Detalle completo
+del contrato en `CLAUDE.md`.
 
 ## Fuera de alcance de esta entrega
 
@@ -280,7 +279,10 @@ iOS, login/sesión (US-02) y recuperación o verificación de email.
 
 ## Pendiente en otros repos
 
-Para activar `ATTESTATION_MODE=play_integrity` hace falta, en `vinculo-vial-gateway`:
-decodificar el token contra la Play Integrity API con una cuenta de servicio del mismo
-proyecto de Cloud, exigir `PLAY_RECOGNIZED` + `MEETS_DEVICE_INTEGRITY`, y validar el
-`requestHash` contra el cuerpo recibido. Hasta entonces, ambos repos van en modo `mock`.
+- Para activar `ATTESTATION_MODE=play_integrity` hace falta, en `vinculo-vial-gateway`:
+  decodificar el token contra la Play Integrity API con una cuenta de servicio del mismo
+  proyecto de Cloud, exigir `PLAY_RECOGNIZED` + `MEETS_DEVICE_INTEGRITY`, y validar el
+  `requestHash` contra el cuerpo recibido. Hasta entonces, ambos repos van en modo `mock`.
+- Para el pivote RENAPER-Ready: Identity tiene que aceptar `tramite`, `sexo` y `selfie` en
+  el payload interno (reemplazan a `biometric_verified`), y decidir/documentar el código
+  HTTP de un rechazo de RENAPER. Ver `CLAUDE.md`.

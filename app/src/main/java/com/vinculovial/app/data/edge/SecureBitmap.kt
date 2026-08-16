@@ -58,8 +58,9 @@ internal object SecureBitmap {
      * La versión anterior seguía dividiendo hasta quedar bajo el umbral, y como
      * `inSampleSize` avanza por potencias de dos eso significaba pasarse hasta a la mitad de
      * lo pedido: una captura de 4000px con un objetivo de 1600 terminaba en 1000px, un 37%
-     * por debajo. Invisible para una cara —el embedder reduce a 112x112 igual—, pero letal
-     * para el PDF417, que necesita un mínimo de píxeles por módulo y no tiene forma de
+     * por debajo. Invisible para una cara —a `DocumentFaceDetector` le alcanza con mucho
+     * menos para confirmar presencia—, pero letal para el PDF417, que necesita un mínimo de
+     * píxeles por módulo y no tiene forma de
      * recuperarlos. Cortar antes de cruzar el umbral cuesta como mucho el doble de memoria y
      * es lo que mantiene el código de barras decodificable.
      */

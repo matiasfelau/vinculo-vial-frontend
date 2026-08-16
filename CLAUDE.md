@@ -1,19 +1,19 @@
 # CLAUDE.md — vinculo-vial-app (Android, US-01 Registro)
 
 ## Resumen del caso de uso
-Un ciudadano se registra en la plataforma. La app captura DNI (foto) y selfie, ejecuta OCR y Liveness localmente (Edge), descarta las imágenes de RAM inmediatamente (Zero Retention), cifra DNI/email/password con HPKE contra la Public Key de Identity, adjunta un Mock App Attestation (JWT firmado con PSK local) y llama al backend. No recibe tokens de sesión en la respuesta (eso es US-02/Login).
+Un ciudadano se registra en la plataforma. La app escanea el código del DNI (PDF417 o QR) y ejecuta la prueba de vida localmente (Edge); descarta el documento de RAM inmediatamente (Zero Retention). La **verificación de identidad** (¿la selfie es la persona del documento?) ya no ocurre en el dispositivo — la hace el backend contra el padrón de RENAPER, pivote documentado en la sección "RENAPER-Ready" más abajo. La app cifra `{dni, tramite, sexo, email, password, selfie}` con HPKE contra la Public Key de Identity, adjunta un Mock App Attestation (JWT firmado con PSK local) y llama al backend. No recibe tokens de sesión en la respuesta (eso es US-02/Login).
 
 ## Fuera de alcance
 - iOS.
 - Recuperación o verificación de email.
 
-## Onboarding biométrico (Edge)
-Todo el procesamiento ocurre en el dispositivo. El backend recibe el número de documento y un booleano; nada más.
+## Onboarding (Edge)
+El escaneo del documento y la prueba de vida corren en el dispositivo. Al backend llegan los campos leídos del documento, las credenciales, y la selfie (comprimida) para que el backend verifique la identidad contra RENAPER.
 
-### Un solo paso, sólo el DNI actual (MVP)
-Por decisión explícita (YAGNI): mientras RENAPER no publique el formato del DNI electrónico (QR en el reverso), la app **sólo acepta el DNI actual** (PDF417 en el mismo frente). No hay paso de reverso.
+### Escaneo del documento: dos formatos, detección simultánea
+La app detecta **PDF417 (DNI tarjeta) y QR (DNI con chip) al mismo tiempo**, sin que el usuario elija qué versión tiene. Esto reemplaza la decisión anterior de "sólo el DNI actual, un solo paso" — sigue siendo YAGNI, pero acotado a lo que sí cambió: **la detección** de ambos formatos ya funciona (`MlKitDocumentPresenceSession` y `MlKitDniBarcodeReader` reconocen los dos desde hace varias entregas); **la decodificación** del contenido del QR sigue sin poder hacerse, porque RENAPER no publicó ese formato — ver "Principio abierto/cerrado en el parser" más abajo. Un QR detectado pero no decodificable se trata igual que cualquier código ilegible.
 
-1. **Frente del DNI** → **auto-disparo híbrido** (ver la sección siguiente). El texto que sigue describe la etapa manual anterior y se conserva porque explica por qué el auto-disparo está armado como está.
+1. **Documento** → **auto-disparo híbrido** (ver la sección siguiente). El texto que sigue describe la etapa manual anterior y se conserva porque explica por qué el auto-disparo está armado como está.
 
 #### Arquitectura híbrida de captura (la vigente)
 Dos requisitos que ningún caso de uso de CameraX satisface solo:
@@ -49,7 +49,7 @@ Con las tres correcciones anteriores aplicadas (`ResolutionSelector`, separar la
 
 Para no dejar la duda sin herramienta, `DocumentScanScreen.logSensorCapabilities()` loguea una vez al bindear (`Log.d`, tag `CameraCapture`, sólo debug, vía `Camera2CameraInfo`) el `Hardware Level` real del dispositivo y la resolución JPEG máxima que el sensor anuncia en `SCALER_STREAM_CONFIGURATION_MAP` — la fuente de verdad de Camera2, independiente de cualquier negociación de CameraX. Si esa cifra es bastante mayor a 1080×1440, el techo no es del sensor. Es puramente informativo: no bloquea nada ni cambia comportamiento.
 
-**Decisión de producto**: para los fines de este entregable se acepta el techo de resolución en el hardware de prueba disponible y se ajusta `FACE_MATCH_THRESHOLD` en consecuencia (ver la sección de calibración más abajo), documentando la limitación en vez de seguir iterando sobre binding sin poder confirmar la causa contra el hardware real.
+**Decisión de producto**: para los fines de este entregable se acepta el techo de resolución en el hardware de prueba disponible, documentando la limitación en vez de seguir iterando sobre binding sin poder confirmar la causa contra el hardware real. (En la entrega en que se tomó esta decisión, el techo también motivó ajustar `FACE_MATCH_THRESHOLD` — esa variable ya no existe, ver "Pivote RENAPER-Ready" más abajo.)
 
 ---
 
@@ -58,14 +58,14 @@ Descripción de la etapa manual anterior, que sigue vigente en todo lo demás:
 1. **Frente del DNI** → **100% manual, por decisión de producto.** Hubo una versión con detección automática en vivo (`ImageAnalysis` + ML Kit sobre el preview), pero el autoenfoque, la resolución del preview y los reflejos sobre el plástico la hacían fallar de forma inconsistente en hardware real — fragmentación de Android que ninguna heurística visual cubre del todo. Se retiró esa detección en vivo entera (`DocumentScanSession`, `MlKitDocumentScanSession` y los modelos que la acompañaban ya no existen en el código). `DocumentScanScreen` sólo bindea `Preview` + `ImageCapture` — nada de `ImageAnalysis` para esta pantalla —, muestra el marco como guía visual **estática** y el usuario dispara la foto con el obturador. La única pieza interactiva que sí quedó es **tap-to-focus** sobre el preview (`FocusMeteringAction` vía `camera.cameraControl`, con un anillo puramente visual como feedback) — es control manual de foco, no una heurística de encuadre, así que no contradice la decisión anterior. La foto sí pasa por el pipeline real igual: `IdentityVerificationService.canReadDniFront()` corre PDF417 + detección de cara sobre la imagen ya tomada, así que una foto mala se rechaza con un Toast y la cámara queda lista para reintentar.
 2. **Selfie** → prueba de vida activa sobre el preview (ML Kit Face Detection con clasificación); superada, se toma la foto sola. Este paso sigue siendo 100% automático por video — necesita seguir la transición de un gesto en el tiempo, no una foto sola, así que acá `ImageAnalysis` sigue corriendo.
 
-La validación de `canReadDniFront()` y la lectura final y determinante en `verifyAndDiscard()` son pipelines independientes que decodifican por separado (mismo código real — PDF417 + ML Kit Face Detection —, corrido dos veces): la primera es sólo una consulta rápida para la UX ("¿sirve esta foto?"), la segunda es la única fuente de verdad para lo que efectivamente se cifra y viaja al backend. `canReadDniFront()` devuelve `DniFrontQuality` y no un booleano: la pantalla necesita distinguir "no se lee el código" de "no se ve tu foto en el DNI", que se corrigen de formas distintas. ML Kit Face Detection recorta la foto impresa del frente y la de la selfie; TFLite produce los dos embeddings. `coseno(A, B) ≥ FACE_MATCH_THRESHOLD` → `biometric_verified: true`.
+La validación de `canReadDniFront()` y la lectura final y determinante en `verifyAndDiscard()` son pipelines independientes que decodifican por separado (mismo código real, corrido dos veces): la primera es sólo una consulta rápida para la UX ("¿sirve esta foto?"), la segunda es la única fuente de verdad para lo que efectivamente se cifra y viaja al backend. `canReadDniFront()` devuelve `DniFrontQuality` y no un booleano: la pantalla necesita distinguir "no se lee el código" de "no se ve tu foto en el DNI", que se corrigen de formas distintas. `DocumentFaceDetector` sólo confirma presencia (¿hay una cara en la foto impresa?, sin recorte ni margen) — es un gate de calidad del documento, no alimenta ninguna comparación: la comparación de caras ya no ocurre en el dispositivo (ver "RENAPER-Ready" más abajo).
 
 ### Bug de captura: rotación perdida en `ImageCapture`
 `ImageCapture.OnImageCapturedCallback` entrega el JPEG **sin rotar** — el sensor suele estar montado apaisado, y lo que indica cuánto rotar para que la imagen quede vertical es `imageProxy.imageInfo.rotationDegrees`, no el contenido del archivo (no hay garantía de EXIF ahí, a diferencia de la variante que guarda a un `OutputFileOptions`). El código construía `InputImage.fromBitmap(bitmap, 0)` con la rotación hardcodeada en 0, así que ML Kit analizaba una imagen apaisada creyendo que estaba derecha: ni el PDF417 ni la cara del documento se detectaban de forma confiable, **incluso con una foto perfectamente nítida y bien encuadrada** — el síntoma que delata este bug específico frente a uno de calidad de imagen real.
 
 Además, `InputImage.fromBitmap(bitmap, rotationDegrees)` con rotación no nula tiene reportes de comunidad de comportarse de forma inconsistente en detección de caras/texto según el modelo de ML Kit — no alcanza con pasarle el ángulo correcto a ese parámetro.
 
-**Fix**: `CameraInternals.captureJpegInternal()` rota los píxeles físicamente (decode → `Matrix.postRotate()` → recodifica a JPEG) apenas se captura la foto, usando `imageInfo.rotationDegrees`. De ahí en más todo el pipeline recibe una imagen genuinamente vertical y nunca necesita pasarle una rotación distinta de 0 a ML Kit. Corregido en un único punto compartido por la captura del DNI y la de la selfie — la selfie tenía el mismo bug latente, afectando la calidad del embedding para el match.
+**Fix**: `CameraInternals.captureJpegInternal()` rota los píxeles físicamente (decode → `Matrix.postRotate()` → recodifica a JPEG) apenas se captura la foto, usando `imageInfo.rotationDegrees`. De ahí en más todo el pipeline recibe una imagen genuinamente vertical y nunca necesita pasarle una rotación distinta de 0 a ML Kit. Corregido en un único punto compartido por la captura del DNI y la de la selfie — la selfie tenía el mismo bug latente, afectando la calidad de la foto que termina viajando al backend.
 
 ### El círculo vicioso del encuadre (y por qué era de resolución)
 Síntoma de campo: la app pedía acercar el DNI, y al acercarse el lente cruzaba su **distancia focal mínima** y perdía el foco; la foto salía borrosa, se rechazaba, y el mensaje volvía a mandar a acercarse.
@@ -75,12 +75,12 @@ Dos hallazgos al auditarlo:
 1. **Nunca hubo una validación de encuadre.** Nada medía qué porcentaje de pantalla ocupaba el documento. La exigencia venía del **dibujo y de la copy**: un rectángulo cerrado con la proporción exacta de la tarjeta, con velo oscuro alrededor, comunica "llename", y los mensajes lo decían literalmente. El único límite de tamaño real era `DOCUMENT_MIN_FACE_SIZE`.
 2. **Lo que realmente impedía leer a distancia cómoda era el techo de resolución.** A ~25cm la tarjeta ocupa ~27% del ancho del cuadro y el PDF417 ~13%; con ~205 módulos y un mínimo de ~2.5 px/módulo hacen falta ~500px sobre el código, o sea un cuadro de ~3800px. Con el techo en 2000px el código recibía la mitad de los píxeles necesarios y sólo era legible pegando la cámara al plástico — exactamente donde no enfoca.
 
-Correcciones: `MAX_CAPTURE_DIMENSION_PX` y `DOCUMENT_DECODE_DIMENSION` a 3000 (un sensor de 12MP pasa entero sin submuestrear); `DOCUMENT_MIN_FACE_SIZE` a 0.03 (la cara impresa es ~4% del ancho a 25cm); el rectángulo cerrado reemplazado por cuatro esquinas sin velo, que marcan zona sin sugerir tamaño; y toda la copy reescrita. `DocumentCaptureMessagesTest` prohíbe que "acercá"/"llená" vuelvan a aparecer en un mensaje de captura.
+Correcciones: `MAX_CAPTURE_DIMENSION_PX` y `DOCUMENT_DECODE_DIMENSION` a 3000 (un sensor de 12MP pasa entero sin submuestrear); el `MIN_FACE_SIZE` del detector de presencia del documento a 0.03 (la cara impresa es ~4% del ancho a 25cm; esa constante vivía en `MlKitFaceLocator.DOCUMENT_MIN_FACE_SIZE`, hoy vive en `MlKitDocumentFaceDetector.MIN_FACE_SIZE` — ver "Pivote RENAPER-Ready"); el rectángulo cerrado reemplazado por cuatro esquinas sin velo, que marcan zona sin sugerir tamaño; y toda la copy reescrita. `DocumentCaptureMessagesTest` prohíbe que "acercá"/"llená" vuelvan a aparecer en un mensaje de captura.
 
 **El warning de ML Kit sobre `Bitmap` no es la causa de nada.** Es un aviso de *rendimiento* dirigido a pipelines de video en vivo, donde conviene `InputImage.fromMediaImage()` sobre el `media.Image` del `ImageProxy` en vez de convertir cada frame a `Bitmap`. Acá se procesa **una sola imagen fija** que llega como JPEG desde `ImageCapture`: no hay `media.Image` que pasar, y las alternativas (`fromByteBuffer` con NV21/YV12) exigirían convertir JPEG→YUV a mano, que es más trabajo y más riesgo, no menos. `fromBitmap` es la entrada correcta para este caso.
 
 ### Resolución: lo único que decide si el PDF417 se lee
-Un decodificador de código de barras necesita del orden de **2-3 píxeles por módulo** (la barra más angosta). En un encuadre típico el PDF417 ocupa cerca de la mitad del ancho de la tarjeta, así que con el lado mayor de la imagen en ~1000px el código queda justo en el límite de lo indecodificable — y ninguna nitidez, iluminación ni encuadre lo compensa, porque el dato ya no está en los píxeles. La cara es indiferente a esto (el embedder reduce a 112×112 igual), así que **el que dicta la resolución de todo el pipeline del documento es el código de barras**.
+Un decodificador de código de barras necesita del orden de **2-3 píxeles por módulo** (la barra más angosta). En un encuadre típico el PDF417 ocupa cerca de la mitad del ancho de la tarjeta, así que con el lado mayor de la imagen en ~1000px el código queda justo en el límite de lo indecodificable — y ninguna nitidez, iluminación ni encuadre lo compensa, porque el dato ya no está en los píxeles. La cara es indiferente a esto (`DocumentFaceDetector` sólo necesita confirmar presencia, no una geometría precisa), así que **el que dicta la resolución de todo el pipeline del documento es el código de barras**.
 
 Dos lugares recortaban resolución sin que se notara, y ambos están corregidos:
 
@@ -91,26 +91,28 @@ Dos lugares recortaban resolución sin que se notara, y ambos están corregidos:
 
 **No hay detección de nitidez en el pipeline.** Nada mide enfoque, gradiente ni Laplaciano. Lo único que se evalúa sobre la foto del documento es si el código decodifica y si se ve la foto del titular — el mensaje de error que hablaba de nitidez inducía a error y fue reemplazado por uno por modo de falla (`DniFrontQuality`).
 
-**Tamaño de la cara: un detector por escala.** `MlKitFaceLocator` tiene dos, elegidos con `FaceSource`, porque las dos puntas de la comparación tienen escalas incomparables: la foto impresa del DNI mide ~19mm sobre una tarjeta de 85.6mm (`DOCUMENT_MIN_FACE_SIZE = 0.05`, deliberadamente permisivo — con 0.12 sólo pasaba un encuadre perfecto), mientras que en la selfie la cara domina el cuadro (`SELFIE_MIN_FACE_SIZE = 0.15`, que además descarta a alguien parado de fondo). Un único umbral tenía que elegir a cuál servir, y lo pagaba el documento.
+**Tamaño de la cara en el documento**: `MlKitDocumentFaceDetector.MIN_FACE_SIZE` está en 0.03, deliberadamente permisivo — la foto impresa del DNI mide ~19mm sobre una tarjeta de 85.6mm, y a la distancia donde el lente enfoca sin pelear (~25cm) esa cara puede ser apenas un ~3-4% del ancho del cuadro. Con un valor más alto (0.12, el que había antes de esta corrección) sólo pasaba un encuadre casi perfecto. Antes existía un umbral distinto para la selfie (`SELFIE_MIN_FACE_SIZE = 0.15`, en `MlKitFaceLocator`): ya no hace falta — con la biometría movida al backend, la selfie no pasa por ningún gate local de tamaño de cara (ver "Pivote RENAPER-Ready").
 
 **Autoenfoque: no se toca por Camera2Interop.** CameraX ya usa `CONTROL_AF_MODE_CONTINUOUS_PICTURE` por defecto en el preview, y `startFocusAndMetering()` (el tap-to-focus) pasa a `CONTROL_AF_MODE_AUTO` mientras dura el enfoque manual y vuelve a continuo al cancelar. Como Camera2Interop tiene **más** prioridad que CameraX, fijar el modo AF a mano sería redundante en el mejor caso y rompería el tap-to-focus en el peor — el propio equipo de CameraX desaconseja configurar AF/AE/AWB por interop. Hay un comentario en `DocumentScanScreen` para que la idea no vuelva.
 
-### Geometría del recorte facial
-El modelo recibe 112×112 y el recorte se estira hasta ese tamaño, así que **un recorte que no sea cuadrado se deforma**. El detalle que importa: la cara impresa del DNI y la de una selfie no tienen la misma relación de aspecto, así que cada una se deformaba distinto y el modelo comparaba dos geometrías que ya no se correspondían — falso negativo sistemático, con el pipeline "funcionando". `MlKitFaceLocator.squareBoxWithin()` recorta cuadrado (centrado en la cara, con margen, y corrido hacia adentro si toca un borde) para que las dos puntas reciban exactamente el mismo trato.
+### Pivote RENAPER-Ready: la biometría se movió al backend
+Hasta la entrega anterior había un **patrón Strategy** completo para esto: `IdentityVerificationProvider` (puerto), `EdgeIdentityVerificationProvider` (implementación activa, TensorFlow Lite + coseno) y `RenaperIdentityVerificationProvider` (stub, pensado para el día que se conectara RENAPER). Todo eso se **retiró** en este pivote, junto con `FaceEmbedder`, `TfLiteFaceEmbedder`, el modelo `.tflite`, `FaceLocator`/`MlKitFaceLocator` (el recorte cuadrado con margen, `squareBoxWithin()`), `FACE_MATCH_THRESHOLD` y `FACE_EMBEDDER_MODEL_ASSET`. Con ellos se fue toda la historia de calibración del umbral (`0.62` → `0.45` → `0.35`) documentada en entregas previas — dejó de aplicar por completo, no sólo el valor.
 
-**Espejado de la selfie**: MobileFaceNet no es invariante al espejado horizontal, y que el JPEG de la cámara frontal venga espejado o no depende del OEM (por eso existe `ImageCapture.Metadata.isReversedHorizontal`). `EdgeIdentityVerificationProvider` embebe la selfie **y su espejo** y se queda con la mejor similitud: cuesta una inferencia más y elimina una clase entera de falso negativo dependiente del teléfono. No afloja la seguridad — dos personas distintas no se parecen más porque una esté espejada.
+**Por qué se retiró la abstracción entera, no sólo la implementación Edge**: el patrón Strategy anticipaba una llamada de verificación *aparte*, previa al signup — pedirle a un `IdentityVerificationProvider` un veredicto sobre dos JPEG antes de decidir si mandar el registro. La integración real que se pidió es otra: la selfie viaja **dentro** del mismo payload de `/signup`, y es el backend el que decide al procesar esa request — no hay una llamada de verificación separada que el frontend orqueste. La abstracción no encajaba con la forma real de la integración, así que mantenerla como cascarón vacío hubiera sido indirección sin propósito.
 
-**Traza de calibración**: en builds de debug, `EdgeIdentityVerificationProvider` loguea con tag `BIOMETRY` el score de cada comparación, el score final, el umbral y el veredicto, más las dimensiones de los recortes. Nunca los embeddings ni el número de documento. Es lo que permite distinguir "el umbral está alto" de "el pipeline está roto".
+**Qué queda del lado del Edge**:
+- Lectura del código de barras (`DniBarcodeReader`) — sigue siendo la única fuente del `dni`/`sexo`/`trámite`.
+- `DocumentFaceDetector` (antes `FaceLocator`) — se achicó a sólo presencia (`hasFace(): Boolean`), sin recorte ni margen: esa geometría existía únicamente para alimentar al embedder, que ya no está. Sigue siendo el gate de calidad de `DniFrontQuality.PHOTO_NOT_FOUND`.
+- Prueba de vida — sin cambios, sigue siendo la única defensa local contra una foto-de-una-foto antes de gastar una llamada de red.
+- `SelfieCompressor` (nuevo) — redimensiona la selfie a un máximo de 800×800 (nunca agranda) y la recomprime en JPEG, bajando la calidad en escalones desde ~80% hasta entrar en un presupuesto de ~150KB crudos (~200KB ya en Base64, que infla ~4/3). Es la única imagen que sale del dispositivo en todo el flujo.
 
-**`FACE_MATCH_THRESHOLD` bajó de 0.62 a 0.35, y es un valor de demo, no una calibración.** El recorrido completo: `0.62` (original) → `0.45` (primera prueba real, `0.479`, con el recorte todavía a 145×145px) → `0.35` (después de tres intentos de recuperar la resolución de captura — ver la sección "Cuarta vuelta" más arriba —, con el techo de 1080×1440 aceptado como límite de este hardware de prueba). El último score real medido, `0.365`, sigue viniendo de un recorte degradado (~150px), y sigue siendo un solo verdadero positivo (DNI y selfie de la misma persona): falta la otra mitad del dato, la tasa de falsos positivos (documento de una persona contra la selfie de otra), que no se puede estimar con un solo usuario. Antes de producción hace falta esa calibración real — con buena resolución si se resuelve el techo de este dispositivo, o aceptando conscientemente el trade-off si no. Documentado con el mismo detalle en `app/src/main/assets/README.md`.
+**Zero Retention, con una única excepción deliberada**: el documento nunca sale — ni la imagen ni un embedding, sólo sus campos parseados. La selfie es la excepción: `EdgeIdentityVerificationService.verify()` sigue liberando todo en el `finally` de `verifyAndDiscard()` (documento, bitmaps intermedios, JPEG original de la selfie), pero deja sobrevivir el string Base64 ya comprimido — es el único dato pensado para viajar, y viaja dentro del mismo payload cifrado que el resto de los campos (`SignUpRepositoryImpl` lo serializa y cifra junto con `dni`/`email`/`password`, y lo pone en cero en el mismo `finally` que ya limpiaba la contraseña).
 
-**Principio abierto/cerrado en el parser**: `DocumentDataParser` es la interfaz (`parse(rawData: String): ArgentineDni?`); `LegacyDniPdf417Parser` la implementa de verdad, `ElectronicDniQrParser` es un **stub deliberado** que lanza `NotImplementedError("A la espera de definiciones oficiales del Renaper")`. No hay heurística de JSON/URL/delimitado inventada — no hay documentación pública del formato del QR, y adivinar es peor que rechazar explícitamente. `MlKitDniBarcodeReader` ya reconoce PDF417 y QR y despacha por formato; el día que RENAPER publique el formato, `ElectronicDniQrParser` es la única clase que hay que tocar (y recién ahí tiene sentido reintroducir el paso del reverso en `DocumentScanSession`/`DocumentScanScreen`, hoy retirado a propósito).
+**`MISSING_PROCEDURE_NUMBER`**: `EdgeResult.Reason` nuevo. RENAPER necesita el trámite para identificar contra qué registro verificar; si el código leído no lo trae (`ArgentineDni.procedureNumber` es nullable — no todas las disposiciones lo incluyen), se rechaza localmente en vez de mandar un registro que el backend no va a poder resolver.
+
+**Principio abierto/cerrado en el parser**: `DocumentDataParser` es la interfaz (`parse(rawData: String): ArgentineDni?`); `LegacyDniPdf417Parser` la implementa de verdad, `ElectronicDniQrParser` es un **stub deliberado** que lanza `NotImplementedError("A la espera de definiciones oficiales del Renaper")`. No hay heurística de JSON/URL/delimitado inventada — no hay documentación pública del formato del QR, y adivinar es peor que rechazar explícitamente. `MlKitDniBarcodeReader` ya reconoce PDF417 y QR y despacha por formato; el día que RENAPER publique el formato, `ElectronicDniQrParser` es la única clase que hay que tocar.
 
 **Prueba de vida**: se exige una *transición* observada en vivo (neutra→sonrisa, u ojos abiertos→cerrados), no un gesto aislado. Comprobar sólo "está sonriendo" lo pasaría una foto impresa de alguien sonriendo. El gesto se sortea en cada intento para que no alcance con grabar un video una vez.
-
-**Zero Retention**: las imágenes viven dentro de `SecureImageBuffer`, y los bitmaps que necesitan ML Kit y TFLite se sobreescriben y reciclan (`SecureBitmap`). Los embeddings también se ponen en cero: un vector facial es un dato biométrico y tratarlo como inocuo sería tan grave como mandar la foto.
-
-**Dependencia externa**: el modelo `.tflite` de reconocimiento facial (MobileFaceNet, 112×112 → 512-d) **no está en el repositorio** (licencia + tamaño, sigue en `.gitignore`). Ver `app/src/main/assets/README.md`. Sin él, o si el nombre del archivo no coincide con `FACE_EMBEDDER_MODEL_ASSET`, la verificación falla con `BiometricsUnavailable` — nunca se da por válida. `TfLiteFaceEmbedder` loguea la excepción real (tag `TfLiteFaceEmbedder`) apenas falla la carga, así que un nombre mal escrito o una forma de tensor inesperada son diagnosticables por logcat en vez de quedar como un booleano opaco. Un caso aparte, que sí requiere reemplazar el archivo (no hay arreglo posible del lado de la app): si el modelo tiene el tensor de entrada o salida en **float16**, `tensorflow-lite` (Java) lo rechaza con `"DataType error: DataType 10 is not recognized in Java"` — esa API nunca soportó float16, en ninguna versión, y `tensorflow-lite-support` no lo evita porque reutiliza el mismo `DataType`. Hay que re-exportar el modelo con la entrada/salida en float32 (los pesos sí pueden seguir cuantizados adentro). Detalle y snippet de conversión en `app/src/main/assets/README.md`.
 
 ### Gotcha de CameraX + Compose: pantalla negra
 Dos causas posibles, y las dos se dieron acá:
@@ -130,14 +132,16 @@ Dos causas posibles, y las dos se dieron acá:
   ```json
   {
     "dni": "12345678",
+    "tramite": "00307513148",
+    "sexo": "M",
     "email": "usuario@ejemplo.com",
     "password": "Password123!",
-    "biometric_verified": true
+    "selfie": "<base64, JPEG ≤800x800, ~80% calidad, ≤~200KB>"
   }
   ```
-  `biometric_verified` es el **único** rastro del onboarding biométrico que llega al backend: ni las imágenes ni los embeddings faciales salen del dispositivo. Es `true` sólo si en el device se leyó el PDF417, se superó la prueba de vida y el match facial dio por encima del umbral; si algo falla, la request no se envía.
+  Pivote RENAPER-Ready: reemplaza al `biometric_verified: true` de entregas anteriores. `dni`/`tramite`/`sexo` se leyeron del código de barras del documento (no lo que tipeó el usuario); `selfie` es la única imagen que sale del dispositivo en todo el flujo — la comparación contra el documento ya no la hace el device, la hace Identity/RENAPER. Si el código no se lee, si le falta el trámite o si la prueba de vida falla, la request no se envía.
 
-  > ⚠️ **Campo nuevo.** Identity tiene que aceptarlo. Decidir explícitamente si se persiste como atributo del usuario y si se rechaza un signup con `biometric_verified: false` — hoy la app nunca lo manda en `false`, pero el backend no debería confiar en eso.
+  > ⚠️ **Campos nuevos, cambio de contrato.** Identity tiene que: (1) aceptar `tramite`/`sexo`/`selfie` y dejar de esperar `biometric_verified`; (2) implementar la verificación contra RENAPER con la selfie recibida; (3) definir y documentar qué código HTTP devuelve un rechazo de esa verificación — hoy la app no tiene un `SignUpError` dedicado para eso y un 400 genérico (`InvalidData`) es lo único que lo cubriría hasta que se especifique algo más preciso.
 - **Respuestas**: `201 Created` / `400 Bad Request` / `403 Forbidden` / `409 Conflict`.
 - **Header `X-App-Attestation`**: token de vida corta que genera la app y valida el Gateway. Identity nunca lo revisa. Hay **dos modos**, elegidos en build con `ATTESTATION_MODE`; **el Gateway tiene que estar configurado en el mismo modo que la app**:
   - `mock` (desarrollo, default): JWT firmado HMAC-SHA256 con `APP_ATTESTATION_PSK`, simulando el veredicto de Play Integrity (claims equivalentes a `PLAY_RECOGNIZED`, `MEETS_DEVICE_INTEGRITY`). El Gateway verifica firma y expiración.
@@ -159,8 +163,7 @@ Dos causas posibles, y las dos se dieron acá:
 - MVVM + Clean layers (`presentation` / `domain` / `data`)
 - Hilt (DI)
 - CameraX — captura en memoria, sin escribir la foto a disco
-- ML Kit (unbundled, vía Play Services) — Barcode Scanning para el PDF417, Face Detection para recorte y liveness
-- TensorFlow Lite — embeddings faciales (modelo provisto aparte, ver `app/src/main/assets/README.md`)
+- ML Kit (unbundled, vía Play Services) — Barcode Scanning para PDF417/QR, Face Detection para presencia y liveness. Sin TensorFlow Lite: la verificación de identidad la hace el backend contra RENAPER.
 - Retrofit + OkHttp + Moshi
 - Google Tink — HPKE modo BASE, KEM X25519/HKDF-SHA256, AEAD AES-256-GCM
 - `SecureImageBuffer` propio para Zero Retention (buffer de imagen que se sobreescribe/libera explícitamente tras extraer datos)
@@ -175,31 +178,18 @@ Dos causas posibles, y las dos se dieron acá:
   /data/signup/            # SignUpRepository, DTOs, mappers
   /data/remote/            # Retrofit ApiService, interceptors
   /data/crypto/            # HpkeEncryptor (Tink), AttestationProvider (mock JWT | Play Integrity)
-  /data/edge/              # SecureImageBuffer/SecureBitmap, sesión de captura y provider local
-  /data/edge/document/     # PDF417 (ML Kit) + DocumentDataParser (legacy real, electrónico stub)
-  /data/edge/face/         # recorte (ML Kit), embedder (TFLite), similitud coseno
+  /data/edge/              # SecureImageBuffer/SecureBitmap, SelfieCompressor, sesión de captura
+  /data/edge/document/     # PDF417/QR (ML Kit) + DocumentDataParser (legacy real, electrónico stub),
+                            # DocumentFaceDetector (sólo presencia), MlKitDocumentPresenceSession
   /data/edge/liveness/     # desafío de vida sobre el stream de cámara
-  /data/renaper/           # provider contra el padrón del Estado (stub deliberado)
   /di/                     # módulos Hilt
 ```
 Regla dura: `domain` no importa Retrofit ni Compose. `presentation` solo llama a `domain`.
 
-### Patrón Estrategia en la verificación de identidad
-Hay dos responsabilidades separadas a propósito, y confundirlas es lo que haría frágil el Zero Retention:
-
-- **`IdentityVerificationService`** (puerto en `domain`, implementado por `EdgeIdentityVerificationService`) es la **sesión de captura**: sostiene las imágenes, lee el código de barras, y garantiza que nada sobreviva a `verifyAndDiscard()`. Es común a todas las estrategias — si el borrado dependiera de cada implementación, cada estrategia nueva sería una oportunidad nueva de filtrar imágenes.
-- **`IdentityVerificationProvider`** (puerto en `domain`) es la **estrategia de verificación**: dado un `DocumentIdentity` (número, sexo, trámite) y los dos JPEG, decide si es la misma persona. Recibe los bytes **prestados**: no debe conservarlos.
-
-Implementaciones:
-- `EdgeIdentityVerificationProvider` — la activa. ML Kit recorta, TFLite embebe, coseno decide. Nada sale del dispositivo.
-- `RenaperIdentityVerificationProvider` — **stub deliberado** que lanza `NotImplementedError("Pendiente de credenciales API del Estado")`, misma convención que `ElectronicDniQrParser`. Un stub que devolviera `Match` daría por verificada una identidad que nadie verificó; uno que devolviera `Unavailable` se confundiría con una caída real. Fijado en `RenaperIdentityVerificationProviderTest`.
-
-Cambiar de estrategia es una línea en `EdgeModule.provideIdentityVerificationProvider()`. **Pero no es una decisión sólo técnica**: conectar RENAPER implica que la selfie salga del dispositivo, lo que contradice frontalmente la garantía de que al backend sólo llegan el número de documento y un booleano. Cambia qué dato biométrico viaja, hacia dónde y con qué base legal — hay que decidirlo con producto y backend antes de implementar esa clase, no después.
-
 ## Flujo de datos US-01
-1. `presentation/signup`: formulario captura Email y Password. `presentation/camera`: pide el permiso `CAMERA` en runtime y toma 2 fotos con CameraX (frente del DNI y selfie), entregándolas **en memoria** (nunca a disco: por eso no se usa `ActivityResultContracts.TakePicture`, que exige URI de destino).
-2. `data/edge`: `SecureImageBuffer` toma posesión de los bytes, corre lectura de PDF417 + match facial + liveness → `EdgeResult.Verified(dni, faceSimilarity)` o `EdgeResult.Rejected(reason)`. Inmediatamente después libera/sobreescribe buffers, bitmaps y embeddings — sin cache en disco, sin referencias vivas post-uso (verificado con test).
-3. `domain/signup`: `RegisterUserUseCase` arma `{dni, email, password, biometric_verified}`.
+1. `presentation/signup`: formulario captura Email y Password. `presentation/camera`: pide el permiso `CAMERA` en runtime, escanea el documento (auto-disparo híbrido) y captura la selfie (automática, tras la prueba de vida) con CameraX, entregando los bytes **en memoria** (nunca a disco: por eso no se usa `ActivityResultContracts.TakePicture`, que exige URI de destino).
+2. `data/edge`: `SecureImageBuffer` toma posesión de los bytes; `EdgeIdentityVerificationService.verifyAndDiscard()` corre lectura de PDF417/QR + prueba de vida + compresión de la selfie → `EdgeResult.Verified(document, selfieBase64)` o `EdgeResult.Rejected(reason)`. Libera/sobreescribe el documento y los bitmaps intermedios siempre; de la selfie sólo sobrevive la versión ya comprimida, que es la que tiene que viajar — sin cache en disco (verificado con test).
+3. `domain/signup`: `RegisterUserUseCase` arma `{dni, tramite, sexo, email, password, selfie}`.
 4. `data/crypto`: `HpkeEncryptor` (Tink) cifra el payload contra `IDENTITY_HPKE_PUBLIC_KEY` → produce `{ephemeral_public_key, ciphertext}` (base64).
 5. `data/crypto`: `AttestationProvider` obtiene el veredicto de integridad ligado al hash del cuerpo — JWT firmado con la PSK en modo `mock`, token de Google en modo `play_integrity`.
 6. `data/remote`: `POST /api/v1/auth/signup`, header `X-App-Attestation`, body = `{ephemeral_public_key, ciphertext}`.
@@ -233,8 +223,8 @@ Rama base `dev`. Una rama por feature, `feature/<slug>`, PR + squash merge a `de
 - `APP_ATTESTATION_PSK` — sólo modo `mock`. PSK compartida con el Gateway, mínimo 32 bytes.
 - `ATTESTATION_TOKEN_TTL_SECONDS` (default `60`) — sólo modo `mock`.
 - `NETWORK_TIMEOUT_MS` (default `15000`)
-- `FACE_MATCH_THRESHOLD` (default `0.35`) — umbral de similitud coseno. **Sin calibrar, valor de demo**: aceptado sobre un techo de resolución de captura (1080×1440) que persistió en hardware de prueba pese a tres intentos de corrección — ver "Cuarta vuelta" en la sección de geometría del recorte facial.
-- `FACE_EMBEDDER_MODEL_ASSET` (default `mobilefacenet.tflite`) — nombre del modelo en `assets/`. Tiene que coincidir exacto con el archivo.
+
+`FACE_MATCH_THRESHOLD` y `FACE_EMBEDDER_MODEL_ASSET` existieron mientras la verificación de identidad corría on-device con TensorFlow Lite; se retiraron junto con esa lógica en el pivote RENAPER-Ready (ver "Pivote RENAPER-Ready" más arriba). Si aparecen en un `local.properties` viejo no rompen nada — `BuildConfig` simplemente ya no define esos campos.
 
 ## Comandos
 ```

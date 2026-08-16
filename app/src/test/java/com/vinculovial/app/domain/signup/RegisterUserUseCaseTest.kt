@@ -1,5 +1,6 @@
 package com.vinculovial.app.domain.signup
 
+import com.vinculovial.app.domain.signup.model.DocumentIdentity
 import com.vinculovial.app.domain.signup.model.EdgeResult
 import com.vinculovial.app.domain.signup.model.SignUpForm
 import kotlinx.coroutines.test.runTest
@@ -21,15 +22,17 @@ class RegisterUserUseCaseTest {
     )
 
     @Test
-    fun `registro exitoso manda el dni leido del documento y la marca biometrica`() = runTest {
+    fun `registro exitoso manda los datos del documento, las credenciales y la selfie`() = runTest {
         val result = useCase(form)
 
         assertEquals(SignUpResult.Registered, result)
         with(repository.received.single()) {
             assertEquals("12345678", dni)
+            assertEquals("00307513148", procedureNumber)
+            assertEquals("M", sex)
             assertEquals("usuario@ejemplo.com", email)
             assertEquals("Password123!", password)
-            assertTrue("la verificación biométrica no se informó", biometricVerified)
+            assertEquals("c2VsZmll", selfieBase64)
         }
     }
 
@@ -47,11 +50,8 @@ class RegisterUserUseCaseTest {
         val esperados = mapOf(
             EdgeResult.Reason.BARCODE_NOT_FOUND to SignUpError.DocumentUnreadable,
             EdgeResult.Reason.BARCODE_NOT_A_DNI to SignUpError.DocumentNotRecognized,
-            EdgeResult.Reason.NO_FACE_IN_DOCUMENT to SignUpError.FaceNotDetected,
-            EdgeResult.Reason.NO_FACE_IN_SELFIE to SignUpError.FaceNotDetected,
+            EdgeResult.Reason.MISSING_PROCEDURE_NUMBER to SignUpError.DocumentUnreadable,
             EdgeResult.Reason.LIVENESS_FAILED to SignUpError.LivenessFailed,
-            EdgeResult.Reason.FACE_MISMATCH to SignUpError.FaceMismatch,
-            EdgeResult.Reason.BIOMETRICS_UNAVAILABLE to SignUpError.BiometricsUnavailable,
             EdgeResult.Reason.INCOMPLETE_CAPTURE to SignUpError.DocumentUnreadable,
         )
 
@@ -69,8 +69,8 @@ class RegisterUserUseCaseTest {
     }
 
     @Test
-    fun `un rechazo biometrico nunca sale del dispositivo`() = runTest {
-        verification.result = EdgeResult.Rejected(EdgeResult.Reason.FACE_MISMATCH)
+    fun `un rechazo del edge nunca sale del dispositivo`() = runTest {
+        verification.result = EdgeResult.Rejected(EdgeResult.Reason.LIVENESS_FAILED)
 
         useCase(form)
 
@@ -79,7 +79,7 @@ class RegisterUserUseCaseTest {
 
     @Test
     fun `el dni del documento distinto al tipeado corta el registro`() = runTest {
-        verification.result = EdgeResult.Verified(dni = "87654321", faceSimilarity = 0.9f)
+        verification.result = verified(number = "87654321")
 
         val result = useCase(form)
 
@@ -90,7 +90,7 @@ class RegisterUserUseCaseTest {
     @Test
     fun `los ceros a la izquierda no cuentan como documentos distintos`() = runTest {
         // El PDF417 suele venir con relleno; el usuario casi nunca lo tipea.
-        verification.result = EdgeResult.Verified(dni = "01234567", faceSimilarity = 0.9f)
+        verification.result = verified(number = "01234567")
 
         val result = useCase(form.copy(dni = "1234567"))
 
@@ -118,4 +118,9 @@ class RegisterUserUseCaseTest {
 
         assertEquals(1, verification.verifications)
     }
+
+    private fun verified(number: String) = EdgeResult.Verified(
+        document = DocumentIdentity(number = number, sex = "M", procedureNumber = "00307513148"),
+        selfieBase64 = "c2VsZmll",
+    )
 }

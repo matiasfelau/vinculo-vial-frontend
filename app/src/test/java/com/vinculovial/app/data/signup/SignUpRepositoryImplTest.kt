@@ -54,9 +54,11 @@ class SignUpRepositoryImplTest {
 
     private val credentials = Credentials(
         dni = "12345678",
+        procedureNumber = "00307513148",
+        sex = "M",
         email = "usuario@ejemplo.com",
         password = "Password123!",
-        biometricVerified = true,
+        selfieBase64 = "c2VsZmll",
     )
 
     /** Por defecto el modo mock; los tests que necesitan fallar lo reemplazan. */
@@ -166,13 +168,15 @@ class SignUpRepositoryImplTest {
 
         val payload = JSONObject(String(plaintext))
         assertEquals(credentials.dni, payload.getString("dni"))
+        assertEquals(credentials.procedureNumber, payload.getString("tramite"))
+        assertEquals(credentials.sex, payload.getString("sexo"))
         assertEquals(credentials.email, payload.getString("email"))
         assertEquals(credentials.password, payload.getString("password"))
-        assertTrue(payload.getBoolean("biometric_verified"))
+        assertEquals(credentials.selfieBase64, payload.getString("selfie"))
     }
 
     @Test
-    fun `el payload cifrado no lleva datos biometricos`() = runTest {
+    fun `el payload cifrado lleva exactamente los campos del contrato`() = runTest {
         server.enqueue(MockResponse().setResponseCode(201))
 
         repository().signUp(credentials)
@@ -184,11 +188,11 @@ class SignUpRepositoryImplTest {
             .getPrimitive(RegistryConfiguration.get(), HybridDecrypt::class.java)
             .decrypt(enc + ciphertext, ByteArray(0))
 
-        // De toda la verificación biométrica sólo puede viajar el booleano: ni imágenes,
-        // ni embeddings, ni el puntaje de similitud.
+        // La selfie viaja adentro de este mismo payload cifrado: es la única imagen que
+        // sale del dispositivo en todo el flujo (ver CLAUDE.md, pivote RENAPER-Ready).
         val payload = JSONObject(String(plaintext))
         assertEquals(
-            setOf("dni", "email", "password", "biometric_verified"),
+            setOf("dni", "tramite", "sexo", "email", "password", "selfie"),
             payload.keys().asSequence().toSet(),
         )
     }
