@@ -92,22 +92,38 @@ producción.
 
 ## Antes de producción
 
-El umbral (`FACE_MATCH_THRESHOLD`, hoy `0.45`) está puesto como punto de partida, no
-calibrado. Comparar una foto **impresa** de DNI contra una selfie es más ruidoso que
-comparar dos selfies: el plástico, el holograma y la baja resolución de la foto del
-documento bajan la similitud de manera sistemática.
+El umbral (`FACE_MATCH_THRESHOLD`, hoy `0.35`) está puesto como valor de demo para el
+hardware de prueba disponible, no calibrado. Comparar una foto **impresa** de DNI
+contra una selfie es más ruidoso que comparar dos selfies: el plástico, el holograma y
+la baja resolución de la foto del documento bajan la similitud de manera sistemática.
 
-**Por qué 0.45 y no 0.62** (el valor original): una prueba en dispositivo real dio
-`0.479` en un caso que es un verdadero positivo (la misma persona, DNI propio) — pero
-con el recorte de documento todavía degradado a 145x145px por el cuello de botella de
-`ImageCapture` que existía en ese momento (ver `DocumentScanScreen`, ya corregido). Con
-la resolución de captura recuperada ese mismo score real probablemente suba bastante,
-tal vez por encima de 0.62 sin ajustar nada. **Un solo verdadero positivo no es una
-calibración**: falta la otra mitad del dato — la tasa de falsos positivos, es decir qué
-score da comparar el documento de una persona contra la selfie de otra —, y eso no se
-puede estimar con un solo usuario probando con su propio DNI. Antes de dar este valor
-por definitivo hay que volver a medir con la resolución de captura ya corregida, y
-después calibrar con las dos tasas de error, no con una muestra.
+**Historial de este valor, y por qué no es una calibración real:**
+
+1. `0.62` — valor original, punto de partida sin datos.
+2. `0.45` — tras una primera prueba real (`0.479`, verdadero positivo: DNI y selfie de
+   la misma persona), con el recorte de documento degradado a 145x145px por un cuello de
+   botella de resolución en `ImageCapture`.
+3. `0.35` — tras corregir ese cuello de botella con tres intentos distintos
+   (`ResolutionSelector`, separar la topología de streams de `ImageAnalysis`/
+   `ImageCapture`, un margen de asentamiento antes de disparar — ver
+   `DocumentScanScreen.kt` y `CLAUDE.md`), una prueba de campo siguió midiendo la misma
+   resolución baja (`0.365`). Se aceptó como límite del hardware de prueba disponible en
+   vez de seguir iterando a ciegas.
+
+**El mecanismo exacto de ese techo no se aisló de forma concluyente** — no se confirmó
+contra `CameraCharacteristics` si es un límite real del sensor o alguna otra
+restricción de la topología de streams en ese hardware puntual.
+`DocumentScanScreen.logSensorCapabilities()` deja un log opcional (`Log.d`, tag
+`CameraCapture`, sólo debug) con el `Hardware Level` real y la resolución JPEG máxima
+que el sensor anuncia, por si en algún momento se quiere confirmar la causa exacta —
+no es necesario para que la app funcione, es sólo para quien quiera profundizar el
+diagnóstico.
+
+**En cualquier caso, un solo verdadero positivo no es una calibración**: falta la otra
+mitad del dato — la tasa de falsos positivos, es decir qué score da comparar el
+documento de una persona contra la selfie de otra —, y eso no se puede estimar con un
+solo usuario probando con su propio DNI. Antes de producción hace falta esa
+calibración real, con las dos tasas de error medidas, no con una muestra.
 
 Hay que calibrarlo con documentos reales y medir las dos tasas de error, porque tienen
 costos opuestos:

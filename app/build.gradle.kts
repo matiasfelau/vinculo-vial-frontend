@@ -56,16 +56,23 @@ android {
         // Comparar una foto impresa de DNI contra una selfie es más ruidoso que
         // comparar dos selfies: calibrar con datos reales antes de mover este valor.
         //
-        // Bajado de 0.62 a 0.45 a partir de UNA sola muestra real (verdadero positivo, log
-        // BIOMETRY): 0.479 con el recorte de documento todavía degradado a 145x145px por el
-        // cuello de botella de resolución de ImageCapture (ver DocumentScanScreen). Con la
-        // resolución de captura ya recuperada (switchToCaptureMode/switchToAnalysisMode) el
-        // recorte va a ser sustancialmente más grande, y ese mismo score real puede terminar
-        // bien por encima de 0.62 sin que haga falta este ajuste. Un solo verdadero positivo
-        // no calibra nada: falta la otra mitad del dato, la tasa de falsos positivos (impostor
-        // con otro documento), y ese dato no se puede estimar con una persona. Volver a medir
-        // con la resolución nueva antes de dar este valor por definitivo.
-        buildConfigField("float", "FACE_MATCH_THRESHOLD", config("FACE_MATCH_THRESHOLD", "0.45") + "f")
+        // Bajado a 0.35 para el MVP/tesis, sobre un dispositivo de prueba concreto donde
+        // ImageCapture quedó atado a 1080x1440 (recorte de documento ~150px) pese a tres
+        // intentos de recuperar la resolución completa: ResolutionSelector(HIGHEST_AVAILABLE),
+        // separar la topología de streams (ImageAnalysis nunca bindeado junto a ImageCapture)
+        // y un margen de asentamiento entre el bind y el disparo. Ninguno cambió el número.
+        // El mecanismo exacto de ese techo no se aisló de forma concluyente — no se confirmó
+        // con CameraCharacteristics si es un límite real del sensor o alguna otra restricción
+        // de la topología en este hardware puntual (`DocumentScanScreen` deja un log opcional
+        // para eso). Documentado así, sin afirmar más de lo que se pudo verificar.
+        //
+        // Es un valor de demo, no una calibración: viene de un solo verdadero positivo (mismo
+        // usuario, su propio DNI) sobre una entrada degradada. Falta la otra mitad del dato —
+        // la tasa de falsos positivos, comparando el documento de una persona contra la selfie
+        // de otra — que no se puede estimar con un solo usuario. Antes de producción hace
+        // falta esa calibración real, con el pipeline sobre buena resolución si se resuelve el
+        // techo de este dispositivo, o aceptando conscientemente el trade-off si no.
+        buildConfigField("float", "FACE_MATCH_THRESHOLD", config("FACE_MATCH_THRESHOLD", "0.35") + "f")
         // Nombre del .tflite en app/src/main/assets/. Default alineado con el archivo
         // real que se usa en desarrollo (ver app/src/main/assets/README.md); si tu
         // modelo se llama distinto, sobreescribí FACE_EMBEDDER_MODEL_ASSET.

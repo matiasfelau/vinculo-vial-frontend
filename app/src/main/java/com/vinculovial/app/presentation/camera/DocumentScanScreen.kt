@@ -1,7 +1,12 @@
 package com.vinculovial.app.presentation.camera
 
+import android.graphics.ImageFormat
+import android.hardware.camera2.CameraCharacteristics
+import android.util.Log
 import android.util.Size
 import androidx.activity.compose.BackHandler
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
@@ -55,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vinculovial.app.BuildConfig
 import com.vinculovial.app.domain.signup.DocumentPresenceSession
 import com.vinculovial.app.domain.signup.model.DniFrontQuality
 import com.vinculovial.app.domain.signup.model.DocumentPresenceStage
@@ -156,6 +162,14 @@ internal fun DniFrontQuality.failureMessage(): String = when (this) {
  * [onScanned] si el resultado da bien.
  * @param onScanned entrega la foto del frente. Toma posesión de los bytes.
  */
+// El diagnóstico opcional de hardware (logSensorCapabilities, más abajo) usa
+// Camera2CameraInfo, que CameraX marca experimental vía el opt-in de AndroidX
+// (`androidx.annotation.RequiresOptIn`, no el de Kotlin) — @OptIn no tiene efecto sobre ese
+// mecanismo, y Lint tampoco reconoce la anotación directa cuando el llamador está anidado
+// dentro del lambda de un LaunchedEffect. Es un uso deliberado y acotado a un log de sólo
+// debug: se suprime acá en vez de seguir peleando con la propagación de opt-in de Lint a
+// través de lambdas anidadas.
+@Suppress("UnsafeOptInUsageError")
 @Composable
 fun DocumentScanScreen(
     presenceSession: DocumentPresenceSession,
@@ -277,6 +291,7 @@ fun DocumentScanScreen(
                 imageAnalysis,
             )
             cameraProvider = provider
+            camera?.let { logSensorCapabilities(it) }
             null
         } catch (e: Exception) {
             "No pudimos abrir la cámara. Cerrá otras apps que la estén usando e intentá de nuevo."
@@ -484,6 +499,53 @@ fun DocumentScanScreen(
             )
         }
     }
+}
+
+/**
+ * Diagnóstico de una sola vez, puramente informativo: qué resolución JPEG máxima anuncia
+ * realmente el sensor, y qué `Hardware Level` de Camera2 tiene el dispositivo.
+ *
+ * No condiciona nada del flujo — no bloquea, no cambia comportamiento, nadie espera su
+ * resultado. Existe porque el techo de resolución que se observó en pruebas de campo
+ * (`ImageCapture` entregando 1080x1440 pese a `ResolutionSelector`, separar la topología de
+ * streams y un margen de asentamiento) no se pudo aislar de forma concluyente: puede ser un
+ * límite real del sensor, o alguna otra restricción de la topología de streams en este
+ * hardware puntual, y sin consultar directamente `CameraCharacteristics` no hay forma de
+ * distinguir un caso del otro. `SCALER_STREAM_CONFIGURATION_MAP` es la fuente de verdad del
+ * propio Camera2 sobre qué resoluciones JPEG soporta el sensor, **independiente** de cualquier
+ * negociación de CameraX: si acá aparece algo bastante mayor a 1080x1440, el techo no es del
+ * sensor.
+ */
+@ExperimentalCamera2Interop
+private fun logSensorCapabilities(camera: Camera) {
+    if (!BuildConfig.DEBUG) return
+    try {
+        val characteristics = Camera2CameraInfo.from(camera.cameraInfo)
+        val hardwareLevel = characteristics
+            .getCameraCharacteristic(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
+            .toHardwareLevelLabel()
+        val maxJpeg = characteristics
+            .getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            ?.getOutputSizes(ImageFormat.JPEG)
+            ?.maxByOrNull { it.width.toLong() * it.height }
+
+        Log.d(
+            "CameraCapture",
+            "Sensor: hardware level=$hardwareLevel, JPEG máximo soportado=$maxJpeg " +
+                "(si ImageCapture entrega bastante menos que esto, el techo no es del sensor)",
+        )
+    } catch (e: Exception) {
+        Log.w("CameraCapture", "No se pudo leer CameraCharacteristics para diagnóstico", e)
+    }
+}
+
+private fun Int?.toHardwareLevelLabel(): String = when (this) {
+    CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY -> "LEGACY"
+    CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LIMITED -> "LIMITED"
+    CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_FULL -> "FULL"
+    CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_3 -> "LEVEL_3"
+    CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_EXTERNAL -> "EXTERNAL"
+    else -> "desconocido ($this)"
 }
 
 /** Qué se le dice al usuario según lo que ve la cámara. Nunca "acercate": ver [failureMessage]. */
