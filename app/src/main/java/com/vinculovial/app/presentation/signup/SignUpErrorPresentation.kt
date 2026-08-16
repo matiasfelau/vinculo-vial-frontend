@@ -29,10 +29,13 @@ data class SignUpErrorPresentation(
 )
 
 fun SignUpError.presentation(): SignUpErrorPresentation = when (this) {
+    // Se pide el FRENTE: el DNI tarjeta trae ahí el PDF417, y el paso de reverso se retiró
+    // del flujo. Tampoco se pide acercarse — el lente pierde el foco antes de que el
+    // documento llene la pantalla, así que la instrucción útil es apoyarlo y esperar el foco.
     SignUpError.DocumentUnreadable -> SignUpErrorPresentation(
         title = "No pudimos leer tu DNI",
-        message = "Fotografiá el reverso del documento con buena luz y sin reflejos, de modo " +
-            "que el código de barras entre completo en el recuadro.",
+        message = "Apoyá el frente del documento en una superficie plana, con buena luz y sin " +
+            "reflejos, y esperá a que se vea nítido antes de sacar la foto.",
         action = SignUpErrorAction.RETRY_CAPTURE,
     )
 

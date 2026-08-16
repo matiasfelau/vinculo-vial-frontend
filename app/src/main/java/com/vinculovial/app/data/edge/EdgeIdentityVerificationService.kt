@@ -206,9 +206,12 @@ class EdgeIdentityVerificationService @Inject constructor(
         /**
          * Piso de resolución al decodificar el documento. Lo dicta el PDF417, no la cara: un
          * decodificador de códigos de barras necesita del orden de 2-3 píxeles por módulo, y
-         * el código ocupa cerca de la mitad del ancho de la tarjeta. Para la cara sobra
-         * cualquier cosa —el embedder reduce a 112x112—, así que el que manda es el código.
+         * el código ocupa cerca de la mitad del ancho de la tarjeta.
+         *
+         * Tiene que acompañar al techo de la captura (`MAX_CAPTURE_DIMENSION_PX`): si acá se
+         * volviera a submuestrear, se tiraría exactamente la resolución que la captura acaba
+         * de conservar para permitir leer el documento a una distancia cómoda.
          */
-        const val DOCUMENT_DECODE_DIMENSION = 1_600
+        const val DOCUMENT_DECODE_DIMENSION = 3_000
     }
 }

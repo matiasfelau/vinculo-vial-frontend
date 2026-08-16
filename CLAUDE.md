@@ -25,6 +25,18 @@ Además, `InputImage.fromBitmap(bitmap, rotationDegrees)` con rotación no nula 
 
 **Fix**: `CameraInternals.captureJpegInternal()` rota los píxeles físicamente (decode → `Matrix.postRotate()` → recodifica a JPEG) apenas se captura la foto, usando `imageInfo.rotationDegrees`. De ahí en más todo el pipeline recibe una imagen genuinamente vertical y nunca necesita pasarle una rotación distinta de 0 a ML Kit. Corregido en un único punto compartido por la captura del DNI y la de la selfie — la selfie tenía el mismo bug latente, afectando la calidad del embedding para el match.
 
+### El círculo vicioso del encuadre (y por qué era de resolución)
+Síntoma de campo: la app pedía acercar el DNI, y al acercarse el lente cruzaba su **distancia focal mínima** y perdía el foco; la foto salía borrosa, se rechazaba, y el mensaje volvía a mandar a acercarse.
+
+Dos hallazgos al auditarlo:
+
+1. **Nunca hubo una validación de encuadre.** Nada medía qué porcentaje de pantalla ocupaba el documento. La exigencia venía del **dibujo y de la copy**: un rectángulo cerrado con la proporción exacta de la tarjeta, con velo oscuro alrededor, comunica "llename", y los mensajes lo decían literalmente. El único límite de tamaño real era `DOCUMENT_MIN_FACE_SIZE`.
+2. **Lo que realmente impedía leer a distancia cómoda era el techo de resolución.** A ~25cm la tarjeta ocupa ~27% del ancho del cuadro y el PDF417 ~13%; con ~205 módulos y un mínimo de ~2.5 px/módulo hacen falta ~500px sobre el código, o sea un cuadro de ~3800px. Con el techo en 2000px el código recibía la mitad de los píxeles necesarios y sólo era legible pegando la cámara al plástico — exactamente donde no enfoca.
+
+Correcciones: `MAX_CAPTURE_DIMENSION_PX` y `DOCUMENT_DECODE_DIMENSION` a 3000 (un sensor de 12MP pasa entero sin submuestrear); `DOCUMENT_MIN_FACE_SIZE` a 0.03 (la cara impresa es ~4% del ancho a 25cm); el rectángulo cerrado reemplazado por cuatro esquinas sin velo, que marcan zona sin sugerir tamaño; y toda la copy reescrita. `DocumentCaptureMessagesTest` prohíbe que "acercá"/"llená" vuelvan a aparecer en un mensaje de captura.
+
+**El warning de ML Kit sobre `Bitmap` no es la causa de nada.** Es un aviso de *rendimiento* dirigido a pipelines de video en vivo, donde conviene `InputImage.fromMediaImage()` sobre el `media.Image` del `ImageProxy` en vez de convertir cada frame a `Bitmap`. Acá se procesa **una sola imagen fija** que llega como JPEG desde `ImageCapture`: no hay `media.Image` que pasar, y las alternativas (`fromByteBuffer` con NV21/YV12) exigirían convertir JPEG→YUV a mano, que es más trabajo y más riesgo, no menos. `fromBitmap` es la entrada correcta para este caso.
+
 ### Resolución: lo único que decide si el PDF417 se lee
 Un decodificador de código de barras necesita del orden de **2-3 píxeles por módulo** (la barra más angosta). En un encuadre típico el PDF417 ocupa cerca de la mitad del ancho de la tarjeta, así que con el lado mayor de la imagen en ~1000px el código queda justo en el límite de lo indecodificable — y ninguna nitidez, iluminación ni encuadre lo compensa, porque el dato ya no está en los píxeles. La cara es indiferente a esto (el embedder reduce a 112×112 igual), así que **el que dicta la resolución de todo el pipeline del documento es el código de barras**.
 

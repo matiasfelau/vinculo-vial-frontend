@@ -123,14 +123,18 @@ class MlKitFaceLocator @Inject constructor() : FaceLocator {
         /**
          * Proporción mínima del ancho de la imagen que debe ocupar la cara del **documento**.
          *
-         * Deliberadamente muy permisivo. Con la tarjeta llenando el recuadro guía la cara
-         * impresa queda apenas por encima de 0.12, así que ese valor —el que había— sólo
-         * funcionaba con un encuadre perfecto y rechazaba capturas legítimas por unos pocos
-         * milímetros de margen. El costo de bajarlo es detección más lenta y algún candidato
-         * espurio, pero la cara dominante se elige por área, así que un falso positivo chico
-         * pierde contra la foto real.
+         * Es el único límite de tamaño que queda en todo el flujo del DNI, y está puesto para
+         * **no** ser el que decide. La cuenta que lo fija: con el documento sostenido a ~25cm
+         * —la distancia a la que el lente enfoca sin pelear— la tarjeta ocupa cerca del 27%
+         * del ancho del cuadro y la cara impresa apenas un 4%. Cualquier valor por encima de
+         * eso obliga a acercarse, que es exactamente el círculo vicioso que había que romper:
+         * de 0.12 sólo pasaba un encuadre perfecto, y de 0.05 todavía quedaba afuera la mesa.
+         *
+         * El costo de bajarlo es detección más lenta y algún candidato espurio, pero la cara
+         * dominante se elige por área, así que un falso positivo chico pierde contra la foto
+         * real.
          */
-        const val DOCUMENT_MIN_FACE_SIZE = 0.05f
+        const val DOCUMENT_MIN_FACE_SIZE = 0.03f
 
         /**
          * En una selfie la cara ocupa buena parte del cuadro, así que un piso alto es gratis

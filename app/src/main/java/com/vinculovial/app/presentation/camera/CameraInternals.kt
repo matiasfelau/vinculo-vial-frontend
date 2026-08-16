@@ -146,11 +146,22 @@ private const val JPEG_QUALITY = 95
 
 /**
  * Piso de resolución del lado mayor. No es un tope exacto — `inSampleSize` trabaja por
- * potencias de dos, así que el resultado queda entre este valor y su doble. Es holgado a
- * propósito: acota la memoria (un sensor de 108MP no puede materializarse entero) sin tocar
- * la resolución que el decodificador de PDF417 necesita.
+ * potencias de dos, así que el resultado queda entre este valor y su doble.
+ *
+ * **Este número es lo que decide a qué distancia se puede sostener el documento.** La cuenta,
+ * para un DNI leído a ~25cm (donde cualquier lente enfoca sin esfuerzo): a esa distancia la
+ * tarjeta ocupa del orden del 27% del ancho del cuadro, y el PDF417 alrededor de la mitad de
+ * la tarjeta, o sea ~13% del ancho. Con ~205 módulos y un mínimo de ~2.5 px por módulo hacen
+ * falta unos 500px sobre el código, lo que exige un cuadro de ~3800px de ancho. Con el valor
+ * anterior (2000) el código recibía la mitad de los píxeles que necesitaba y **era imposible
+ * de leer salvo pegando la cámara al plástico** — justo la distancia a la que el lente ya no
+ * enfoca. Ese era el círculo vicioso, y era de resolución, no de encuadre.
+ *
+ * En 3000 un sensor de 12MP (4000x3000) pasa entero sin submuestrear, y uno de 50MP se acota
+ * a 4000px. El bitmap resultante ronda los 48MB: es mucho, pero es una única imagen fija, de
+ * vida corta, y desde API 26 vive en el heap nativo.
  */
-private const val MAX_CAPTURE_DIMENSION_PX = 2000
+private const val MAX_CAPTURE_DIMENSION_PX = 3000
 
 /** `ProcessCameraProvider.getInstance` expone un `ListenableFuture`; acá se espera sin bloquear. */
 internal suspend fun Context.awaitCameraProviderInternal(): ProcessCameraProvider =

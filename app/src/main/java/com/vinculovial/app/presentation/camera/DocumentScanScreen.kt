@@ -40,14 +40,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -71,16 +67,20 @@ import java.util.concurrent.TimeUnit
  * existió — nada en el pipeline calcula enfoque. Lo único que se evalúa es si el código
  * decodifica y si se ve la foto del titular.
  */
-private fun DniFrontQuality.failureMessage(): String = when (this) {
+internal fun DniFrontQuality.failureMessage(): String = when (this) {
     DniFrontQuality.READABLE -> ""
 
+    // Ninguno de los dos mensajes pide acercarse. Pedirlo era contraproducente: el lente deja
+    // de enfocar antes de que el documento llene el cuadro, así que "acercate más" empujaba
+    // justo hacia la foto borrosa. Lo que sí ayuda de verdad es que esté quieto, plano y sin
+    // un reflejo encima.
     DniFrontQuality.BARCODE_UNREADABLE ->
-        "No pudimos leer el código de barras. Acercá el DNI hasta llenar el recuadro y " +
-            "evitá los reflejos sobre el plástico."
+        "No pudimos leer el código de barras. Apoyá el DNI en una superficie plana, " +
+            "esperá a que se vea nítido y evitá los reflejos."
 
     DniFrontQuality.PHOTO_NOT_FOUND ->
-        "No pudimos ver tu foto en el DNI. Asegurate de que entre el documento completo, " +
-            "derecho y sin sombras encima."
+        "No pudimos ver tu foto en el DNI. Que se vea el documento completo y derecho, " +
+            "sin sombras encima."
 }
 
 /**
@@ -295,7 +295,9 @@ fun DocumentScanScreen(
             }
 
             Text(
-                text = failure ?: "Encuadrá el frente de tu DNI dentro del recuadro y tocá el botón",
+                text = failure
+                    ?: "Poné el frente de tu DNI a la distancia que te resulte cómoda, " +
+                    "donde se vea nítido. Tocá la pantalla para enfocar.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (failure != null) VvOrange else Color.White,
                 textAlign = TextAlign.Center,
@@ -364,27 +366,41 @@ private fun FocusRing(center: Offset) {
 }
 
 /**
- * Rectángulo con proporción de tarjeta (ID-1), guía visual estática — no reacciona a
+ * Cuatro esquinas que marcan la zona de lectura. Guía visual estática — no reacciona a
  * ninguna detección en tiempo real, ya no hay ninguna corriendo sobre el preview.
+ *
+ * **Antes era un rectángulo cerrado, con la proporción exacta de la tarjeta y un velo oscuro
+ * alrededor, y eso era un problema de UX real aunque no validara nada.** Un marco de ese tipo
+ * comunica "llename", y el usuario obediente se acercaba hasta que el documento lo llenaba —
+ * cruzando en el camino la distancia focal mínima del lente y llegando a una foto borrosa. La
+ * app rechazaba, el usuario se acercaba todavía más, y el círculo se cerraba. Ninguna
+ * validación medía el encuadre: era el dibujo el que daba la instrucción equivocada.
+ *
+ * Las esquinas sueltas dicen "que entre acá adentro" sin sugerir ningún tamaño, y sin velo no
+ * hay un "afuera" que se sienta inválido. Es todo lo que hace falta: la única condición real
+ * es que el código de barras y la foto entren en el cuadro y estén enfocados.
  */
 @Composable
 private fun DocumentGuideOverlay() {
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            // Necesario para que BlendMode.Clear recorte sobre el velo y no la pantalla.
-            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen),
-    ) {
-        drawRect(Color.Black.copy(alpha = 0.55f))
-
-        // Proporción de tarjeta ID-1 (85.6 x 54 mm), la del DNI.
-        val width = size.width * 0.86f
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        // Proporción de tarjeta ID-1 (85.6 x 54 mm) sólo para orientar la forma; el área es
+        // generosa a propósito, para que sostener el DNI lejos siga cayendo adentro.
+        val width = size.width * 0.92f
         val height = width * (54f / 85.6f)
-        val topLeft = Offset((size.width - width) / 2f, (size.height - height) / 2f)
-        val area = Size(width, height)
-        val corner = CornerRadius(20f, 20f)
+        val left = (size.width - width) / 2f
+        val top = (size.height - height) / 2f
+        val arm = width * 0.09f
+        val stroke = Stroke(width = 5f, cap = StrokeCap.Round)
 
-        drawRoundRect(Color.Transparent, topLeft, area, corner, blendMode = BlendMode.Clear)
-        drawRoundRect(Color.White, topLeft, area, corner, style = Stroke(width = 4f))
+        listOf(
+            Offset(left, top) to Pair(arm, arm),
+            Offset(left + width, top) to Pair(-arm, arm),
+            Offset(left, top + height) to Pair(arm, -arm),
+            Offset(left + width, top + height) to Pair(-arm, -arm),
+        ).forEach { (corner, arms) ->
+            val (horizontal, vertical) = arms
+            drawLine(Color.White, corner, corner.copy(x = corner.x + horizontal), stroke.width, stroke.cap)
+            drawLine(Color.White, corner, corner.copy(y = corner.y + vertical), stroke.width, stroke.cap)
+        }
     }
 }

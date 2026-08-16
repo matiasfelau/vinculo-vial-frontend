@@ -114,7 +114,7 @@ class EdgeIdentityVerificationProvider @Inject constructor(
         var image: Bitmap? = null
         var crop: Bitmap? = null
         return try {
-            image = SecureBitmap.decode(jpeg) ?: return emptyList()
+            image = SecureBitmap.decode(jpeg, source.decodeDimension()) ?: return emptyList()
             crop = faceLocator.cropDominantFace(image, source) ?: return emptyList()
             trace("$source: imagen ${image.width}x${image.height}, recorte ${crop.width}x${crop.height}")
 
@@ -169,7 +169,23 @@ class EdgeIdentityVerificationProvider @Inject constructor(
         if (BuildConfig.DEBUG) Log.d(TAG, message)
     }
 
+    /**
+     * Cuánta resolución necesita cada punta, que no es la misma.
+     *
+     * En una selfie la cara ocupa medio cuadro: sobra con una imagen moderada, y decodificar
+     * menos es más rápido y menos memoria. En el documento la cara impresa puede ser un 4% del
+     * ancho si el DNI se sostiene a una distancia cómoda — a resolución baja ese recorte
+     * llegaría al embedder con demasiados pocos píxeles y el embedding perdería calidad justo
+     * en el caso que queremos soportar.
+     */
+    private fun FaceSource.decodeDimension(): Int = when (this) {
+        FaceSource.DOCUMENT -> DOCUMENT_DECODE_DIMENSION
+        FaceSource.SELFIE -> SELFIE_DECODE_DIMENSION
+    }
+
     private companion object {
         const val TAG = "BIOMETRY"
+        const val DOCUMENT_DECODE_DIMENSION = 3_000
+        const val SELFIE_DECODE_DIMENSION = 1_600
     }
 }
