@@ -30,11 +30,11 @@ fun config(key: String, default: String): String =
         ).trim()
 
 android {
-    namespace = "com.vinculovial.app"
+    namespace = "ar.felaufernandezbottaro.vinculovial"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.vinculovial.app"
+        applicationId = "ar.felaufernandezbottaro.vinculovial"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
