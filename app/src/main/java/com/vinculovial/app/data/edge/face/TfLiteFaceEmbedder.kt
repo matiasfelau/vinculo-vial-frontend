@@ -140,8 +140,16 @@ class TfLiteFaceEmbedder @Inject constructor(
     }
 
     /**
-     * Normaliza los píxeles al rango que espera el modelo. Para MobileFaceNet la
-     * convención habitual es `(pixel - 127.5) / 128`.
+     * Normaliza los píxeles al rango que espera el modelo.
+     *
+     * Con la convención de MobileFaceNet (`inputMean = 127.5`, `inputScale = 128`, cableadas
+     * en `EdgeModule`) la fórmula es `(pixel - 127.5) / 128`, que lleva el byte `0..255` a
+     * `-0.996..+0.996` — es decir, el `[-1, 1]` que espera InsightFace.
+     *
+     * **Orden de canales: RGB, sin alfa.** `getPixels` entrega enteros empaquetados como
+     * `AARRGGBB`, así que el byte más significativo de los tres de color es el rojo:
+     * `shr 16` = R, `shr 8` = G, sin desplazamiento = B. El alfa (`shr 24`) no se escribe
+     * nunca — el tensor declara 3 canales, y colarlo correría todo el resto de la imagen.
      */
     private fun Bitmap.toModelInput(size: Int): ByteBuffer {
         val buffer = ByteBuffer
@@ -152,9 +160,9 @@ class TfLiteFaceEmbedder @Inject constructor(
         getPixels(pixels, 0, size, 0, 0, size, size)
 
         for (pixel in pixels) {
-            buffer.putFloat(((pixel shr 16 and 0xFF) - inputMean) / inputScale)
-            buffer.putFloat(((pixel shr 8 and 0xFF) - inputMean) / inputScale)
-            buffer.putFloat(((pixel and 0xFF) - inputMean) / inputScale)
+            buffer.putFloat(((pixel shr RED_SHIFT and CHANNEL_MASK) - inputMean) / inputScale)
+            buffer.putFloat(((pixel shr GREEN_SHIFT and CHANNEL_MASK) - inputMean) / inputScale)
+            buffer.putFloat(((pixel and CHANNEL_MASK) - inputMean) / inputScale)
         }
 
         // Los píxeles de la cara viven en este array: se limpia antes de soltarlo.
@@ -167,5 +175,10 @@ class TfLiteFaceEmbedder @Inject constructor(
         const val TAG = "TfLiteFaceEmbedder"
         const val FLOAT_BYTES = 4
         const val CHANNELS = 3
+
+        // Desempaquetado de un pixel AARRGGBB de Bitmap.getPixels().
+        const val RED_SHIFT = 16
+        const val GREEN_SHIFT = 8
+        const val CHANNEL_MASK = 0xFF
     }
 }

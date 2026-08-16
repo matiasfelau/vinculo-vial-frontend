@@ -145,9 +145,19 @@ fun DocumentScanScreen(
     val imageCapture = remember {
         ImageCapture.Builder()
             // Un documento mal comprimido no se puede leer, ni el código ni la cara.
+            // MAXIMIZE_QUALITY además corre la secuencia de pre-captura (disparo de
+            // autoenfoque y pre-exposición) antes de sacar la foto.
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
             .setFlashMode(ImageCapture.FLASH_MODE_OFF)
             .build()
+        // NO se fija CONTROL_AF_MODE_CONTINUOUS_PICTURE por Camera2Interop acá, aunque sea
+        // tentador: CameraX ya usa ese modo por defecto en el preview, y Camera2Interop tiene
+        // MÁS prioridad que CameraX, así que fijarlo a mano rompería el tap-to-focus —
+        // startFocusAndMetering() necesita pasar a CONTROL_AF_MODE_AUTO mientras dura el
+        // enfoque manual y volver a continuo al cancelar. Es decir: sería redundante en el
+        // mejor caso y regresivo en el peor. (El equipo de CameraX desaconseja explícitamente
+        // configurar AF/AE/AWB por interop.) Además, los parámetros camera2 puestos en
+        // ImageCapture terminan aplicándose a toda la repeating request, no sólo al disparo.
     }
 
     // Sin ImageAnalysis: acá no corre ninguna detección en tiempo real sobre el preview,

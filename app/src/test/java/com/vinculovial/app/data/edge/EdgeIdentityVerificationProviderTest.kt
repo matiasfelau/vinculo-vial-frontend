@@ -3,6 +3,7 @@ package com.vinculovial.app.data.edge
 import android.graphics.Bitmap
 import com.vinculovial.app.data.edge.face.FaceEmbedder
 import com.vinculovial.app.data.edge.face.FaceLocator
+import com.vinculovial.app.data.edge.face.FaceSource
 import com.vinculovial.app.domain.signup.model.DocumentIdentity
 import com.vinculovial.app.domain.signup.model.IdentityVerificationOutcome
 import com.vinculovial.app.domain.signup.model.IdentityVerificationRequest
@@ -82,6 +83,6 @@ class EdgeIdentityVerificationProviderTest {
 
     /** Nunca llega a usarse: sin bitmap decodificado no hay nada que recortar. */
     private class FakeFaceLocator : FaceLocator {
-        override suspend fun cropDominantFace(image: Bitmap): Bitmap? = null
+        override suspend fun cropDominantFace(image: Bitmap, source: FaceSource): Bitmap? = null
     }
 }

@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import com.vinculovial.app.data.edge.document.ArgentineDni
 import com.vinculovial.app.data.edge.document.DniBarcodeReader
 import com.vinculovial.app.data.edge.face.FaceLocator
+import com.vinculovial.app.data.edge.face.FaceSource
 import com.vinculovial.app.di.DefaultDispatcher
 import com.vinculovial.app.domain.signup.IdentityVerificationProvider
 import com.vinculovial.app.domain.signup.IdentityVerificationService
@@ -165,7 +166,7 @@ class EdgeIdentityVerificationService @Inject constructor(
      * recién al verificar, cuando también existe la selfie.
      */
     private suspend fun hasDetectableFace(image: Bitmap): Boolean {
-        val crop = faceLocator.cropDominantFace(image) ?: return false
+        val crop = faceLocator.cropDominantFace(image, FaceSource.DOCUMENT) ?: return false
         SecureBitmap.wipe(crop)
         return true
     }
