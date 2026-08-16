@@ -3,6 +3,8 @@ package com.vinculovial.app.domain.signup
 import com.vinculovial.app.domain.signup.model.CameraFrame
 import com.vinculovial.app.domain.signup.model.Credentials
 import com.vinculovial.app.domain.signup.model.DniFrontQuality
+import com.vinculovial.app.domain.signup.model.DocumentPresence
+import com.vinculovial.app.domain.signup.model.DocumentPresenceStage
 import com.vinculovial.app.domain.signup.model.EdgeResult
 import com.vinculovial.app.domain.signup.model.LivenessChallenge
 import com.vinculovial.app.domain.signup.model.LivenessProgress
@@ -62,6 +64,41 @@ class FakeSignUpRepository(
     override suspend fun signUp(credentials: Credentials): SignUpResult {
         received += credentials
         return result
+    }
+}
+
+/** Sesión de presencia inerte: el ViewModel sólo la expone hacia la pantalla de documento. */
+class FakeDocumentPresenceSession : DocumentPresenceSession {
+
+    private val _presence = MutableStateFlow(DocumentPresence())
+    override val presence: StateFlow<DocumentPresence> = _presence
+
+    var starts = 0
+    var pauses = 0
+    var closes = 0
+
+    /** Simula que la cámara ya ve el documento quieto y encuadrado. */
+    fun emitSteady() {
+        _presence.value = DocumentPresence(
+            stage = DocumentPresenceStage.STEADY,
+            hasBarcode = true,
+            hasFace = true,
+        )
+    }
+
+    override fun start() {
+        starts++
+        _presence.value = DocumentPresence()
+    }
+
+    override suspend fun submitFrame(frame: CameraFrame) = Unit
+
+    override fun pause() {
+        pauses++
+    }
+
+    override fun close() {
+        closes++
     }
 }
 

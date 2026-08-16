@@ -13,6 +13,29 @@ Todo el procesamiento ocurre en el dispositivo. El backend recibe el número de 
 ### Un solo paso, sólo el DNI actual (MVP)
 Por decisión explícita (YAGNI): mientras RENAPER no publique el formato del DNI electrónico (QR en el reverso), la app **sólo acepta el DNI actual** (PDF417 en el mismo frente). No hay paso de reverso.
 
+1. **Frente del DNI** → **auto-disparo híbrido** (ver la sección siguiente). El texto que sigue describe la etapa manual anterior y se conserva porque explica por qué el auto-disparo está armado como está.
+
+#### Arquitectura híbrida de captura (la vigente)
+Dos requisitos que ningún caso de uso de CameraX satisface solo:
+- **Resolución**: decodificar un PDF417 exige ~2.5 px/módulo; a distancia cómoda el código ocupa ~13% del ancho, así que hacen falta varios megapíxeles. `ImageAnalysis` no llega ni cerca.
+- **Momento**: si el usuario dispara a mano, mueve el teléfono justo al presionar.
+
+Se usa cada caso de uso para lo que sirve, corriendo los tres en paralelo:
+- `ImageAnalysis` (~1280×960) **no lee nada**: `MlKitDocumentPresenceSession` sólo mira si hay la caja de un código de barras y una cara, y si dejaron de moverse durante 3 frames. La pieza que lo hace posible es `BarcodeScannerOptions.enableAllPotentialBarcodes()`, que devuelve la caja de un código **aunque no lo pueda decodificar** — sin eso el escáner es todo-o-nada y a esta resolución no decodificaría nunca, así que no habría señal.
+- Al detectar quietud se dispara `takePicture()` programáticamente. `ImageCapture` lleva `ResolutionSelector` con `HIGHEST_AVAILABLE_STRATEGY` + 4:3, y `takePicture()` corre su secuencia de pre-captura (incluido el disparo de autoenfoque) justo antes de exponer — que resultó ser la forma más confiable de conseguir foco en este hardware.
+- Esa foto fija de máxima resolución es la única que se decodifica.
+
+**Por qué esto no repite el fracaso de la detección en vivo**: aquella intentaba *leer* desde el preview. Ésta no decodifica nada; la responsabilidad es estrictamente más chica y es lo que la vuelve viable. El motivo real del fracaso anterior fue siempre la resolución del stream, no la heurística.
+
+**El obturador manual sigue existiendo pero oculto**: reaparece a los 12s si el auto-disparo no logró nada. La detección en vivo ya falló dos veces en hardware real acá, y quedarse sin salida sería peor que la fricción que se vino a eliminar. En el caso feliz nadie lo ve.
+
+##### El bug que motivó todo esto: `ImageCapture` a 1080×1440
+Sin `ResolutionSelector`, CameraX entregaba ~1.5MP (la resolución de la pantalla, no la del sensor). Con el documento a distancia cómoda eso dejaba el recorte de la cara impresa en **135×135 px** — ruido para el embedder, que hundía la similitud coseno a **0.33** contra una selfie de 613×613 — y el PDF417 muy por debajo de los px/módulo necesarios. Ningún cálculo aguas abajo recupera píxeles que la captura no entregó: por eso todos los ajustes de `MAX_CAPTURE_DIMENSION_PX` anteriores no movieron el amperímetro, estaban acotando una imagen que ya venía chica.
+
+---
+
+Descripción de la etapa manual anterior, que sigue vigente en todo lo demás:
+
 1. **Frente del DNI** → **100% manual, por decisión de producto.** Hubo una versión con detección automática en vivo (`ImageAnalysis` + ML Kit sobre el preview), pero el autoenfoque, la resolución del preview y los reflejos sobre el plástico la hacían fallar de forma inconsistente en hardware real — fragmentación de Android que ninguna heurística visual cubre del todo. Se retiró esa detección en vivo entera (`DocumentScanSession`, `MlKitDocumentScanSession` y los modelos que la acompañaban ya no existen en el código). `DocumentScanScreen` sólo bindea `Preview` + `ImageCapture` — nada de `ImageAnalysis` para esta pantalla —, muestra el marco como guía visual **estática** y el usuario dispara la foto con el obturador. La única pieza interactiva que sí quedó es **tap-to-focus** sobre el preview (`FocusMeteringAction` vía `camera.cameraControl`, con un anillo puramente visual como feedback) — es control manual de foco, no una heurística de encuadre, así que no contradice la decisión anterior. La foto sí pasa por el pipeline real igual: `IdentityVerificationService.canReadDniFront()` corre PDF417 + detección de cara sobre la imagen ya tomada, así que una foto mala se rechaza con un Toast y la cámara queda lista para reintentar.
 2. **Selfie** → prueba de vida activa sobre el preview (ML Kit Face Detection con clasificación); superada, se toma la foto sola. Este paso sigue siendo 100% automático por video — necesita seguir la transición de un gesto en el tiempo, no una foto sola, así que acá `ImageAnalysis` sigue corriendo.
 

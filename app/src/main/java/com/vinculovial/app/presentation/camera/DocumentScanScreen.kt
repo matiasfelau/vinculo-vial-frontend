@@ -1,12 +1,16 @@
 package com.vinculovial.app.presentation.camera
 
-import android.widget.Toast
+import android.util.Size
 import androidx.activity.compose.BackHandler
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
@@ -50,12 +54,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vinculovial.app.domain.signup.DocumentPresenceSession
 import com.vinculovial.app.domain.signup.model.DniFrontQuality
+import com.vinculovial.app.domain.signup.model.DocumentPresenceStage
 import com.vinculovial.app.presentation.components.VvCircleIconButton
+import com.vinculovial.app.presentation.theme.VvGreen
 import com.vinculovial.app.presentation.theme.VvNavy
 import com.vinculovial.app.presentation.theme.VvOrange
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
@@ -84,47 +93,62 @@ internal fun DniFrontQuality.failureMessage(): String = when (this) {
 }
 
 /**
- * Captura del frente del documento — **100% manual, por decisión de producto**.
+ * Captura del frente del documento: **auto-disparo híbrido**.
  *
- * Hubo una versión anterior con detección automática en vivo (`ImageAnalysis` +
- * detección de cara/código sobre el preview), pero el autoenfoque, la resolución del
- * preview y los reflejos sobre el plástico de la tarjeta la hacían fallar de forma
- * inconsistente en hardware real — fragmentación de Android que ninguna heurística
- * visual cubre del todo. Se retiró esa detección en vivo entera (no sólo el auto-disparo)
- * y quedó sólo el marco como guía visual estática: el usuario encuadra y toca el botón.
+ * ## La arquitectura, y por qué es híbrida
  *
- * La única pieza interactiva que sí quedó es el tap-to-focus sobre el preview: no es una
- * heurística de encuadre, es control manual de foco (`FocusMeteringAction`), para el caso en
- * que el autoenfoque no converja solo sobre el plástico del documento. No reintroduce nada
- * de lo que se sacó — nadie decide por el usuario si la foto está lista.
+ * Hay dos requisitos que ningún caso de uso de CameraX satisface solo:
  *
- * La foto sí pasa por el pipeline real de todos modos — [onManualCapture] corre PDF417 +
- * detección de cara sobre la imagen ya tomada, así que una foto mala (borrosa, sin cara,
- * sin código) se rechaza igual, sólo que después de una acción explícita del usuario en
- * vez de una heurística en tiempo real.
+ * - **Resolución.** Decodificar un PDF417 exige del orden de 2.5 píxeles por módulo. A una
+ *   distancia donde el lente enfoque, el código ocupa ~13% del ancho del cuadro, así que hace
+ *   falta una imagen de varios megapíxeles. `ImageAnalysis` no llega ni cerca — ese fue
+ *   siempre el motivo real por el que la detección en vivo fracasó dos veces en este
+ *   proyecto, y no la heurística que se le echaba la culpa.
+ * - **Momento.** Pedirle al usuario que dispare a mano no funciona: en el momento en que
+ *   presiona, mueve el teléfono.
  *
- * La selfie (`LivenessCaptureScreen`) es la contracara: sigue siendo 100% automática por
- * video, porque ahí sí hace falta seguir un gesto en el tiempo, no una foto sola.
+ * La solución estándar es usar cada caso de uso para lo que sirve. `ImageAnalysis` corre en
+ * paralelo pero **no lee nada**: sólo mira si hay la caja de un código de barras y una cara, y
+ * si dejaron de moverse (ver [DocumentPresenceSession]). Cuando eso pasa, se dispara
+ * programáticamente `ImageCapture` a **máxima resolución del sensor**, y esa foto fija es la
+ * que se decodifica. De yapa, `takePicture()` corre su secuencia de pre-captura —incluido el
+ * disparo de autoenfoque— justo antes de exponer, que es la forma más confiable de conseguir
+ * foco en este hardware.
  *
- * @param onManualCapture valida la foto contra el pipeline real. No la acepta: eso lo
- * hace [onScanned] si el resultado da bien.
+ * ## Sobre el obturador manual
+ *
+ * No aparece en el flujo normal: el usuario sostiene el teléfono y la app hace el resto. Pero
+ * reaparece si el auto-disparo no logró nada en [MANUAL_FALLBACK_DELAY_MS]. La detección en
+ * vivo ya falló dos veces en hardware real en este proyecto, y quedarse sin ninguna salida
+ * sería peor que la fricción que vinimos a eliminar. Es una red de seguridad que en el caso
+ * feliz nadie ve.
+ *
+ * La selfie (`LivenessCaptureScreen`) usa la misma idea desde siempre: analiza video, dispara
+ * sola.
+ *
+ * @param onCaptureTaken valida la foto contra el pipeline real. No la acepta: eso lo hace
+ * [onScanned] si el resultado da bien.
  * @param onScanned entrega la foto del frente. Toma posesión de los bytes.
  */
 @Composable
 fun DocumentScanScreen(
-    onManualCapture: suspend (image: ByteArray) -> DniFrontQuality,
+    presenceSession: DocumentPresenceSession,
+    onCaptureTaken: suspend (image: ByteArray) -> DniFrontQuality,
     onScanned: (frontImage: ByteArray) -> Unit,
     onCancel: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
+    val presence by presenceSession.presence.collectAsStateWithLifecycle()
 
     var capturing by remember { mutableStateOf(false) }
     var failure by remember { mutableStateOf<String?>(null) }
+    var rejection by remember { mutableStateOf<String?>(null) }
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var focusPoint by remember { mutableStateOf<Offset?>(null) }
+    var manualShutterAvailable by remember { mutableStateOf(false) }
     var showCancelDialog by remember { mutableStateOf(false) }
 
     // Siempre intercepta (no se deshabilita el handler): mientras se puede cancelar,
@@ -142,6 +166,7 @@ fun DocumentScanScreen(
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         }
     }
+
     val imageCapture = remember {
         ImageCapture.Builder()
             // Un documento mal comprimido no se puede leer, ni el código ni la cara.
@@ -149,25 +174,71 @@ fun DocumentScanScreen(
             // autoenfoque y pre-exposición) antes de sacar la foto.
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
             .setFlashMode(ImageCapture.FLASH_MODE_OFF)
+            // SIN esto CameraX elegía ~1080x1440 (1.5MP): la resolución de la pantalla, no la
+            // del sensor. Con el documento a distancia cómoda eso dejaba la foto impresa del
+            // titular en un recorte de 135x135px — ruido para el embedder, que hundía la
+            // similitud coseno a 0.33 — y el PDF417 muy por debajo de los píxeles por módulo
+            // que necesita. Ningún cálculo aguas abajo puede recuperar píxeles que la captura
+            // no entregó, así que este selector es la base de todo el pipeline.
+            .setResolutionSelector(
+                ResolutionSelector.Builder()
+                    .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+                    // 4:3 es la relación nativa del sensor: es el modo que aprovecha toda su
+                    // superficie, mientras que 16:9 recorta arriba y abajo.
+                    .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+                    .build(),
+            )
             .build()
         // NO se fija CONTROL_AF_MODE_CONTINUOUS_PICTURE por Camera2Interop acá, aunque sea
         // tentador: CameraX ya usa ese modo por defecto en el preview, y Camera2Interop tiene
-        // MÁS prioridad que CameraX, así que fijarlo a mano rompería el tap-to-focus —
-        // startFocusAndMetering() necesita pasar a CONTROL_AF_MODE_AUTO mientras dura el
-        // enfoque manual y volver a continuo al cancelar. Es decir: sería redundante en el
-        // mejor caso y regresivo en el peor. (El equipo de CameraX desaconseja explícitamente
-        // configurar AF/AE/AWB por interop.) Además, los parámetros camera2 puestos en
-        // ImageCapture terminan aplicándose a toda la repeating request, no sólo al disparo.
+        // MÁS prioridad que CameraX, así que fijarlo a mano rompería tanto el tap-to-focus
+        // como el disparo de autoenfoque que corre takePicture() antes de exponer.
     }
 
-    // Sin ImageAnalysis: acá no corre ninguna detección en tiempo real sobre el preview,
-    // sólo Preview (para que el usuario vea lo que encuadra) e ImageCapture (para la
-    // foto que dispara el botón).
+    val imageAnalysis = remember {
+        ImageAnalysis.Builder()
+            // Interesa el frame más reciente; acumular retrasaría la detección de quietud.
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            // El default (640x480) deja la cara impresa del DNI en ~26px a distancia cómoda,
+            // por debajo de lo que ML Kit detecta. Acá no hace falta resolución para *leer*,
+            // pero sí la suficiente para *ver* las dos geometrías.
+            .setResolutionSelector(
+                ResolutionSelector.Builder()
+                    .setResolutionStrategy(
+                        ResolutionStrategy(
+                            Size(1280, 960),
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+                        ),
+                    )
+                    .build(),
+            )
+            .build()
+    }
+
+    val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
+
     LaunchedEffect(Unit) {
+        presenceSession.start()
+
         failure = try {
             val provider = context.awaitCameraProviderInternal()
             val preview = Preview.Builder().build().apply {
                 setSurfaceProvider(previewView.surfaceProvider)
+            }
+
+            imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
+                // Cerrar ANTES de analizar libera el slot de la cámara enseguida; el frame ya
+                // está copiado a NV21. Sin el try/finally, CameraX se queda sin buffers a los
+                // pocos frames y el preview también se traba.
+                val frame = try {
+                    imageProxy.toCameraFrame()
+                } finally {
+                    imageProxy.close()
+                }
+                if (frame != null) {
+                    // El analyzer corre en su propio hilo y CameraX espera que sea bloqueante.
+                    kotlinx.coroutines.runBlocking { presenceSession.submitFrame(frame) }
+                }
             }
 
             provider.unbindAll()
@@ -175,6 +246,7 @@ fun DocumentScanScreen(
                 lifecycleOwner,
                 CameraSelector.DEFAULT_BACK_CAMERA,
                 preview,
+                imageAnalysis,
                 imageCapture,
             )
             cameraProvider = provider
@@ -188,21 +260,28 @@ fun DocumentScanScreen(
     // LivenessCaptureScreen — keyear con un estado que el propio efecto escribe hace que
     // el bind se desvincule solo, un instante después de bindear.
     DisposableEffect(Unit) {
-        onDispose { cameraProvider?.unbindAll() }
+        onDispose {
+            cameraProvider?.unbindAll()
+            analysisExecutor.shutdown()
+            presenceSession.close()
+        }
     }
 
-    // El anillo que confirma dónde se pidió enfocar se apaga solo, sin que nadie lo dispare
-    // a mano en cada punto donde podría cambiar `focusPoint`.
+    // El anillo que confirma dónde se pidió enfocar se apaga solo.
     LaunchedEffect(focusPoint) {
         if (focusPoint != null) {
-            delay(700)
+            delay(FOCUS_RING_MS)
             focusPoint = null
         }
     }
 
+    // Red de seguridad: si el auto-disparo no logró nada, aparece el obturador manual.
+    LaunchedEffect(Unit) {
+        delay(MANUAL_FALLBACK_DELAY_MS)
+        manualShutterAvailable = true
+    }
+
     fun focusAt(offset: Offset) {
-        // Mientras hay una captura en curso no tiene sentido re-enfocar: la foto ya se tomó
-        // o está por tomarse.
         val activeCamera = camera ?: return
         if (capturing) return
 
@@ -215,31 +294,47 @@ fun DocumentScanScreen(
         focusPoint = offset
     }
 
-    fun captureManually() {
+    fun capture() {
         if (capturing) return
         capturing = true
+        rejection = null
+        // Sin esto la sesión seguiría reportando STEADY y dispararía encima de esta captura.
+        presenceSession.pause()
+
         imageCapture.captureJpegInternal(
             context = context,
             onJpeg = { bytes ->
                 coroutineScope.launch {
                     val quality = try {
-                        onManualCapture(bytes)
+                        onCaptureTaken(bytes)
                     } catch (e: Exception) {
                         DniFrontQuality.BARCODE_UNREADABLE
                     }
+
                     if (quality.isReadable) {
                         onScanned(bytes)
                     } else {
+                        // No se le pide nada al usuario: se le cuenta qué pasó y la app sigue
+                        // intentando sola. La espera evita encadenar disparos sobre la misma
+                        // escena mala mientras el usuario reacciona.
+                        rejection = quality.failureMessage()
+                        delay(RETRY_COOLDOWN_MS)
                         capturing = false
-                        Toast.makeText(context, quality.failureMessage(), Toast.LENGTH_LONG).show()
+                        presenceSession.start()
                     }
                 }
             },
             onFailure = {
                 capturing = false
                 failure = "No pudimos tomar la foto. Intentá de nuevo."
+                presenceSession.start()
             },
         )
+    }
+
+    // El disparo automático: la sesión avisa que el documento está quieto y encuadrado.
+    LaunchedEffect(presence.isReadyToCapture) {
+        if (presence.isReadyToCapture) capture()
     }
 
     Box(
@@ -254,7 +349,7 @@ fun DocumentScanScreen(
                 .pointerInput(Unit) { detectTapGestures { offset -> focusAt(offset) } },
         )
 
-        DocumentGuideOverlay()
+        DocumentGuideOverlay(locked = presence.stage != DocumentPresenceStage.SEARCHING)
 
         focusPoint?.let { FocusRing(center = it) }
 
@@ -295,18 +390,19 @@ fun DocumentScanScreen(
             }
 
             Text(
-                text = failure
-                    ?: "Poné el frente de tu DNI a la distancia que te resulte cómoda, " +
-                    "donde se vea nítido. Tocá la pantalla para enfocar.",
+                text = failure ?: rejection ?: presence.stage.instruction(capturing),
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (failure != null) VvOrange else Color.White,
+                color = when {
+                    failure != null || rejection != null -> VvOrange
+                    presence.stage == DocumentPresenceStage.STEADY -> VvGreen
+                    else -> Color.White
+                },
                 textAlign = TextAlign.Center,
             )
 
-            // Se reemplaza por el spinner de arriba ni bien hay una captura en curso,
-            // en vez de quedar deshabilitado pero visible.
-            if (!capturing) {
-                ManualCaptureShutterButton(onClick = ::captureManually)
+            // Sólo si el auto-disparo no llegó a ninguna parte. En el caso feliz no aparece.
+            if (manualShutterAvailable && !capturing) {
+                ManualCaptureShutterButton(onClick = ::capture)
             }
         }
 
@@ -322,7 +418,16 @@ fun DocumentScanScreen(
     }
 }
 
-/** Botón obturador, único disparador de la captura del frente. */
+/** Qué se le dice al usuario según lo que ve la cámara. Nunca "acercate": ver [failureMessage]. */
+private fun DocumentPresenceStage.instruction(capturing: Boolean): String = when {
+    capturing -> "Tomando la foto, no muevas el documento"
+    this == DocumentPresenceStage.SEARCHING ->
+        "Mostrá el frente de tu DNI a la distancia que te resulte cómoda, donde se vea nítido"
+    this == DocumentPresenceStage.DETECTED -> "Sostené firme un segundo…"
+    else -> "¡Listo! Tomando la foto"
+}
+
+/** Obturador de respaldo: aparece sólo si el auto-disparo no logró nada. */
 @Composable
 private fun ManualCaptureShutterButton(onClick: () -> Unit) {
     Column(
@@ -345,7 +450,7 @@ private fun ManualCaptureShutterButton(onClick: () -> Unit) {
             )
         }
         Text(
-            text = "Capturar DNI",
+            text = "Capturar ahora",
             style = MaterialTheme.typography.labelLarge,
             color = Color.White,
         )
@@ -366,8 +471,8 @@ private fun FocusRing(center: Offset) {
 }
 
 /**
- * Cuatro esquinas que marcan la zona de lectura. Guía visual estática — no reacciona a
- * ninguna detección en tiempo real, ya no hay ninguna corriendo sobre el preview.
+ * Cuatro esquinas que marcan la zona de lectura, en verde cuando la cámara ya reconoció el
+ * documento.
  *
  * **Antes era un rectángulo cerrado, con la proporción exacta de la tarjeta y un velo oscuro
  * alrededor, y eso era un problema de UX real aunque no validara nada.** Un marco de ese tipo
@@ -377,11 +482,10 @@ private fun FocusRing(center: Offset) {
  * validación medía el encuadre: era el dibujo el que daba la instrucción equivocada.
  *
  * Las esquinas sueltas dicen "que entre acá adentro" sin sugerir ningún tamaño, y sin velo no
- * hay un "afuera" que se sienta inválido. Es todo lo que hace falta: la única condición real
- * es que el código de barras y la foto entren en el cuadro y estén enfocados.
+ * hay un "afuera" que se sienta inválido.
  */
 @Composable
-private fun DocumentGuideOverlay() {
+private fun DocumentGuideOverlay(locked: Boolean) {
     Canvas(modifier = Modifier.fillMaxSize()) {
         // Proporción de tarjeta ID-1 (85.6 x 54 mm) sólo para orientar la forma; el área es
         // generosa a propósito, para que sostener el DNI lejos siga cayendo adentro.
@@ -390,7 +494,8 @@ private fun DocumentGuideOverlay() {
         val left = (size.width - width) / 2f
         val top = (size.height - height) / 2f
         val arm = width * 0.09f
-        val stroke = Stroke(width = 5f, cap = StrokeCap.Round)
+        val color = if (locked) VvGreen else Color.White
+        val strokeWidth = 5f
 
         listOf(
             Offset(left, top) to Pair(arm, arm),
@@ -399,8 +504,16 @@ private fun DocumentGuideOverlay() {
             Offset(left + width, top + height) to Pair(-arm, -arm),
         ).forEach { (corner, arms) ->
             val (horizontal, vertical) = arms
-            drawLine(Color.White, corner, corner.copy(x = corner.x + horizontal), stroke.width, stroke.cap)
-            drawLine(Color.White, corner, corner.copy(y = corner.y + vertical), stroke.width, stroke.cap)
+            drawLine(color, corner, corner.copy(x = corner.x + horizontal), strokeWidth, StrokeCap.Round)
+            drawLine(color, corner, corner.copy(y = corner.y + vertical), strokeWidth, StrokeCap.Round)
         }
     }
 }
+
+/** Cuánto se espera antes de ofrecer el obturador manual como red de seguridad. */
+private const val MANUAL_FALLBACK_DELAY_MS = 12_000L
+
+/** Pausa tras una foto rechazada, para no encadenar disparos sobre la misma escena mala. */
+private const val RETRY_COOLDOWN_MS = 2_500L
+
+private const val FOCUS_RING_MS = 700L

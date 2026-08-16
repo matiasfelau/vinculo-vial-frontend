@@ -1,5 +1,6 @@
 package com.vinculovial.app.presentation.signup
 
+import com.vinculovial.app.domain.signup.FakeDocumentPresenceSession
 import com.vinculovial.app.domain.signup.FakeIdentityVerificationService
 import com.vinculovial.app.domain.signup.FakeLivenessSession
 import com.vinculovial.app.domain.signup.FakeSignUpRepository
@@ -27,11 +28,13 @@ class SignUpViewModelTest {
     private val verification = FakeIdentityVerificationService()
     private val repository = FakeSignUpRepository()
     private val livenessSession = FakeLivenessSession()
+    private val presenceSession = FakeDocumentPresenceSession()
 
     private fun viewModel() = SignUpViewModel(
         registerUser = RegisterUserUseCase(verification, repository),
         identityVerification = verification,
         livenessSession = livenessSession,
+        documentPresenceSession = presenceSession,
     )
 
     private fun SignUpViewModel.completarFormulario() {
