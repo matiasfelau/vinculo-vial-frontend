@@ -9,6 +9,7 @@ import com.vinculovial.app.domain.signup.SignUpError
 import com.vinculovial.app.domain.signup.SignUpResult
 import com.vinculovial.app.domain.signup.model.CredentialField
 import com.vinculovial.app.domain.signup.model.CredentialRules
+import com.vinculovial.app.domain.signup.model.DniFrontQuality
 import com.vinculovial.app.domain.signup.model.SignUpForm
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -77,11 +78,12 @@ class SignUpViewModel @Inject constructor(
     }
 
     /**
-     * Fallback de captura manual: valida una foto de alta resolución sin aceptarla. La
-     * pantalla decide qué hacer con el resultado — no toca `_uiState`, para no interferir
-     * con el escaneo en vivo que puede seguir corriendo en paralelo.
+     * Captura manual: revisa una foto sin aceptarla y devuelve el motivo si no sirve. La
+     * pantalla decide qué mensaje mostrar — no toca `_uiState`, porque es una respuesta a una
+     * acción puntual del usuario, no un cambio de estado del registro.
      */
-    suspend fun canReadDniFront(image: ByteArray): Boolean = identityVerification.canReadDniFront(image)
+    suspend fun canReadDniFront(image: ByteArray): DniFrontQuality =
+        identityVerification.canReadDniFront(image)
 
     /** La selfie, con el veredicto de la prueba de vida ya resuelto en la pantalla. */
     fun onSelfieCaptured(image: ByteArray, livenessPassed: Boolean) = acceptCapture(CaptureTarget.SELFIE) {

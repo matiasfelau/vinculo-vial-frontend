@@ -1,14 +1,17 @@
 package com.vinculovial.app.data.edge
 
 import android.graphics.Bitmap
+import com.vinculovial.app.data.edge.document.ArgentineDni
 import com.vinculovial.app.data.edge.document.DniBarcodeReader
-import com.vinculovial.app.data.edge.face.FaceEmbedder
-import com.vinculovial.app.data.edge.face.FaceEmbedderUnavailableException
 import com.vinculovial.app.data.edge.face.FaceLocator
-import com.vinculovial.app.data.edge.face.cosineSimilarity
 import com.vinculovial.app.di.DefaultDispatcher
+import com.vinculovial.app.domain.signup.IdentityVerificationProvider
 import com.vinculovial.app.domain.signup.IdentityVerificationService
+import com.vinculovial.app.domain.signup.model.DniFrontQuality
+import com.vinculovial.app.domain.signup.model.DocumentIdentity
 import com.vinculovial.app.domain.signup.model.EdgeResult
+import com.vinculovial.app.domain.signup.model.IdentityVerificationOutcome
+import com.vinculovial.app.domain.signup.model.IdentityVerificationRequest
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -17,25 +20,27 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Onboarding biométrico completo, 100 % en el dispositivo.
+ * Sesión de captura del onboarding biométrico: sostiene las imágenes, lee el documento y
+ * garantiza que nada sobreviva.
  *
- * Encadena las verificaciones y garantiza que ninguna imagen sobreviva:
- * 1. PDF417 del frente → número de documento (por ahora sólo el DNI actual; el
- *    electrónico, con código en el reverso, queda fuera de alcance del MVP);
- * 2. cara del frente del documento → embedding A;
- * 3. cara de la selfie (con prueba de vida ya superada) → embedding B;
- * 4. `coseno(A, B) ≥ umbral` → identidad verificada.
+ * Lo que **no** hace es decidir si las dos caras son de la misma persona: eso lo resuelve el
+ * [IdentityVerificationProvider] inyectado, que hoy es el local
+ * ([EdgeIdentityVerificationProvider], TensorFlow Lite sobre el dispositivo) y mañana podría
+ * ser el padrón del Estado. Esa separación es deliberada: el Zero Retention vive acá, en un
+ * único lugar común a todas las estrategias, para que agregar una estrategia nueva no sea
+ * también una oportunidad nueva de filtrar las imágenes.
  *
- * Hacia afuera sólo viaja [EdgeResult]. Ni las fotos ni los embeddings salen de acá: un
- * embedding es un dato biométrico y tratarlo como si fuera inocuo sería tan grave como
- * mandar la foto.
+ * El orden de las verificaciones es de más barato a más caro, y cada paso es una barrera:
+ * 1. están las dos capturas;
+ * 2. la prueba de vida se superó — una foto de una foto no debe llegar al match facial;
+ * 3. el código de barras da un documento;
+ * 4. recién ahí se paga la comparación biométrica.
  */
 @Singleton
 class EdgeIdentityVerificationService @Inject constructor(
     private val barcodeReader: DniBarcodeReader,
     private val faceLocator: FaceLocator,
-    private val faceEmbedder: FaceEmbedder,
-    private val faceMatchThreshold: Float,
+    private val verificationProvider: IdentityVerificationProvider,
     @DefaultDispatcher private val dispatcher: CoroutineDispatcher,
 ) : IdentityVerificationService {
 
@@ -51,16 +56,19 @@ class EdgeIdentityVerificationService @Inject constructor(
         dniFront = captured
     }
 
-    override suspend fun canReadDniFront(image: ByteArray): Boolean = withContext(dispatcher) {
+    override suspend fun canReadDniFront(image: ByteArray): DniFrontQuality = withContext(dispatcher) {
         // copyOf, no wrap: a diferencia de acceptDniFront, acá NO se toma posesión de
         // `image` — el llamador todavía necesita el array intacto para, si esto da bien,
         // pasarlo a acceptDniFront. wrap() lo hubiera dejado en ceros al liberarlo acá.
         val buffer = SecureImageBuffer.copyOf(image)
         try {
             buffer.readBitmap { bitmap ->
-                bitmap != null &&
-                    barcodeReader.readDniNumber(bitmap) != null &&
-                    hasDetectableFace(bitmap)
+                when {
+                    bitmap == null -> DniFrontQuality.BARCODE_UNREADABLE
+                    barcodeReader.readDni(bitmap) == null -> DniFrontQuality.BARCODE_UNREADABLE
+                    !hasDetectableFace(bitmap) -> DniFrontQuality.PHOTO_NOT_FOUND
+                    else -> DniFrontQuality.READABLE
+                }
             }
         } finally {
             buffer.clear()
@@ -80,8 +88,8 @@ class EdgeIdentityVerificationService @Inject constructor(
             try {
                 verify()
             } finally {
-                // Zero Retention: pase lo que pase (incluida una excepción de un motor),
-                // las imágenes no sobreviven a esta llamada.
+                // Zero Retention: pase lo que pase (incluida una excepción de un motor o de
+                // un provider no implementado), las imágenes no sobreviven a esta llamada.
                 releaseImages()
             }
         }
@@ -103,62 +111,63 @@ class EdgeIdentityVerificationService @Inject constructor(
             return EdgeResult.Rejected(EdgeResult.Reason.LIVENESS_FAILED)
         }
 
-        // Si falta el modelo se corta acá, antes de gastar el resto del pipeline. No
-        // poder calcular el match nunca equivale a que el match haya dado bien.
-        if (!faceEmbedder.isAvailable()) {
-            return EdgeResult.Rejected(EdgeResult.Reason.BIOMETRICS_UNAVAILABLE)
-        }
-
-        val dniNumber = frontBuffer.readBitmap { bitmap ->
-            bitmap?.let { barcodeReader.readDniNumber(it) }
+        val document = frontBuffer.readBitmap { bitmap ->
+            bitmap?.let { barcodeReader.readDni(it) }
         } ?: return EdgeResult.Rejected(EdgeResult.Reason.BARCODE_NOT_FOUND)
 
-        val documentEmbedding = frontBuffer.readBitmap { bitmap ->
-            bitmap?.let { embedFace(it) }
-        } ?: return EdgeResult.Rejected(EdgeResult.Reason.NO_FACE_IN_DOCUMENT)
-
-        val selfieEmbedding = selfieBuffer.readBitmap { bitmap ->
-            bitmap?.let { embedFace(it) }
-        } ?: return EdgeResult.Rejected(EdgeResult.Reason.NO_FACE_IN_SELFIE)
-
-        val similarity = try {
-            cosineSimilarity(documentEmbedding, selfieEmbedding)
-        } catch (e: IllegalArgumentException) {
-            return EdgeResult.Rejected(EdgeResult.Reason.BIOMETRICS_UNAVAILABLE)
-        } finally {
-            // Los embeddings son datos biométricos: se borran igual que las imágenes.
-            documentEmbedding.fill(0f)
-            selfieEmbedding.fill(0f)
+        // Los bytes se prestan anidados, no se copian: las únicas referencias vivas siguen
+        // siendo las de los buffers, que se borran en el `finally` de verifyAndDiscard().
+        val outcome = frontBuffer.readSuspending { frontJpeg ->
+            selfieBuffer.readSuspending { selfieJpeg ->
+                verificationProvider.verify(
+                    IdentityVerificationRequest(
+                        document = document.toDomain(),
+                        documentFrontJpeg = frontJpeg,
+                        selfieJpeg = selfieJpeg,
+                    ),
+                )
+            }
         }
 
-        return if (similarity >= faceMatchThreshold) {
-            EdgeResult.Verified(dni = dniNumber, faceSimilarity = similarity)
-        } else {
+        return outcome.toEdgeResult(document.number)
+    }
+
+    private fun ArgentineDni.toDomain() = DocumentIdentity(
+        number = number,
+        sex = sex,
+        procedureNumber = procedureNumber,
+    )
+
+    private fun IdentityVerificationOutcome.toEdgeResult(dniNumber: String): EdgeResult = when (this) {
+        is IdentityVerificationOutcome.Match ->
+            EdgeResult.Verified(dni = dniNumber, faceSimilarity = confidence)
+
+        is IdentityVerificationOutcome.NoMatch ->
             EdgeResult.Rejected(EdgeResult.Reason.FACE_MISMATCH)
-        }
+
+        is IdentityVerificationOutcome.Unavailable -> EdgeResult.Rejected(
+            when (reason) {
+                IdentityVerificationOutcome.Unavailable.Reason.NO_FACE_IN_DOCUMENT ->
+                    EdgeResult.Reason.NO_FACE_IN_DOCUMENT
+
+                IdentityVerificationOutcome.Unavailable.Reason.NO_FACE_IN_SELFIE ->
+                    EdgeResult.Reason.NO_FACE_IN_SELFIE
+
+                IdentityVerificationOutcome.Unavailable.Reason.ENGINE_UNAVAILABLE ->
+                    EdgeResult.Reason.BIOMETRICS_UNAVAILABLE
+            },
+        )
     }
 
     /**
      * Sólo presencia, no identidad: para [canReadDniFront] alcanza con saber que hay una
      * cara recortable. El embedding (caro, y sin nada todavía para compararlo) se calcula
-     * recién en [verify], cuando también existe la selfie.
+     * recién al verificar, cuando también existe la selfie.
      */
     private suspend fun hasDetectableFace(image: Bitmap): Boolean {
         val crop = faceLocator.cropDominantFace(image) ?: return false
         SecureBitmap.wipe(crop)
         return true
-    }
-
-    /** `null` si no hay cara utilizable o si el motor no está disponible. */
-    private suspend fun embedFace(image: Bitmap): FloatArray? {
-        val crop = faceLocator.cropDominantFace(image) ?: return null
-        return try {
-            faceEmbedder.embed(crop)
-        } catch (e: FaceEmbedderUnavailableException) {
-            null
-        } finally {
-            SecureBitmap.wipe(crop)
-        }
     }
 
     /**
@@ -168,7 +177,7 @@ class EdgeIdentityVerificationService @Inject constructor(
     private suspend fun <R> SecureImageBuffer.readBitmap(block: suspend (Bitmap?) -> R): R {
         var bitmap: Bitmap? = null
         return try {
-            bitmap = read { jpeg -> SecureBitmap.decode(jpeg) }
+            bitmap = readSuspending { jpeg -> SecureBitmap.decode(jpeg, DOCUMENT_DECODE_DIMENSION) }
             block(bitmap)
         } finally {
             SecureBitmap.wipe(bitmap)
@@ -190,5 +199,15 @@ class EdgeIdentityVerificationService @Inject constructor(
         dniFront = null
         selfie = null
         livenessPassed = false
+    }
+
+    private companion object {
+        /**
+         * Piso de resolución al decodificar el documento. Lo dicta el PDF417, no la cara: un
+         * decodificador de códigos de barras necesita del orden de 2-3 píxeles por módulo, y
+         * el código ocupa cerca de la mitad del ancho de la tarjeta. Para la cara sobra
+         * cualquier cosa —el embedder reduce a 112x112—, así que el que manda es el código.
+         */
+        const val DOCUMENT_DECODE_DIMENSION = 1_600
     }
 }

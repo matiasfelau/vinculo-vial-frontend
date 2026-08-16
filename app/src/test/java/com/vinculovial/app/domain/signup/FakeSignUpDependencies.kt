@@ -2,6 +2,7 @@ package com.vinculovial.app.domain.signup
 
 import com.vinculovial.app.domain.signup.model.CameraFrame
 import com.vinculovial.app.domain.signup.model.Credentials
+import com.vinculovial.app.domain.signup.model.DniFrontQuality
 import com.vinculovial.app.domain.signup.model.EdgeResult
 import com.vinculovial.app.domain.signup.model.LivenessChallenge
 import com.vinculovial.app.domain.signup.model.LivenessProgress
@@ -27,10 +28,10 @@ class FakeIdentityVerificationService(
         dniFrontCaptures++
     }
 
-    var canReadDniFrontResult = true
+    var canReadDniFrontResult = DniFrontQuality.READABLE
     var canReadDniFrontCalls = 0
 
-    override suspend fun canReadDniFront(image: ByteArray): Boolean {
+    override suspend fun canReadDniFront(image: ByteArray): DniFrontQuality {
         canReadDniFrontCalls++
         return canReadDniFrontResult
     }

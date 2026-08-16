@@ -44,6 +44,7 @@ class LegacyDniPdf417Parser @Inject constructor() : DocumentDataParser {
             surname = surname.uppercase(),
             givenNames = givenNames.uppercase(),
             sex = fields[sexIndex].uppercase(),
+            procedureNumber = fields.firstOrNull { PROCEDURE_NUMBER.matches(it) },
         )
     }
 
@@ -52,6 +53,15 @@ class LegacyDniPdf417Parser @Inject constructor() : DocumentDataParser {
         const val MIN_FIELDS = 6
 
         val DNI_NUMBER = Regex("^\\d{7,8}$")
+
+        /**
+         * El trámite se identifica por longitud, no por posición: va primero en la
+         * disposición A y después del sexo en la B, pero en las dos es netamente más largo
+         * que un número de documento (7-8 dígitos), así que el rango 9-11 lo separa sin
+         * ambigüedad y sin depender de la disposición.
+         */
+        val PROCEDURE_NUMBER = Regex("^\\d{9,11}$")
+
         val SEX = Regex("^[MF]$", RegexOption.IGNORE_CASE)
         val NAME = Regex("^[A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ '.-]*$", RegexOption.IGNORE_CASE)
     }

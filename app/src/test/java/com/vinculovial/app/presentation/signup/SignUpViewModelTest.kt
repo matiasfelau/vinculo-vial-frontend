@@ -8,6 +8,7 @@ import com.vinculovial.app.domain.signup.SignUpError
 import com.vinculovial.app.domain.signup.SignUpResult
 import com.vinculovial.app.domain.signup.model.CredentialField
 import com.vinculovial.app.domain.signup.model.CredentialProblem
+import com.vinculovial.app.domain.signup.model.DniFrontQuality
 import com.vinculovial.app.domain.signup.model.EdgeResult
 import com.vinculovial.app.util.MainDispatcherRule
 import kotlinx.coroutines.CancellationException
@@ -94,15 +95,25 @@ class SignUpViewModelTest {
 
     @Test
     fun `canReadDniFront delega en el edge sin tocar el estado`() = runTest {
-        verification.canReadDniFrontResult = false
+        verification.canReadDniFrontResult = DniFrontQuality.BARCODE_UNREADABLE
         val viewModel = viewModel()
 
-        val readable = viewModel.canReadDniFront(foto())
+        val quality = viewModel.canReadDniFront(foto())
 
-        assertFalse(readable)
+        assertFalse(quality.isReadable)
         assertEquals(1, verification.canReadDniFrontCalls)
         // Es sólo una consulta: no debe acumularse como si fuera una captura aceptada.
         assertTrue(viewModel.uiState.value.completedCaptures.isEmpty())
+    }
+
+    @Test
+    fun `canReadDniFront propaga el motivo para que la pantalla no invente el mensaje`() = runTest {
+        verification.canReadDniFrontResult = DniFrontQuality.PHOTO_NOT_FOUND
+        val viewModel = viewModel()
+
+        // Se lee el código pero no se ve la cara: se corrige distinto que un código ilegible,
+        // así que el motivo tiene que llegar intacto a la UI y no colapsar en un booleano.
+        assertEquals(DniFrontQuality.PHOTO_NOT_FOUND, viewModel.canReadDniFront(foto()))
     }
 
     @Test

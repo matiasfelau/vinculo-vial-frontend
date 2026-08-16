@@ -1,5 +1,6 @@
 package com.vinculovial.app.domain.signup
 
+import com.vinculovial.app.domain.signup.model.DniFrontQuality
 import com.vinculovial.app.domain.signup.model.EdgeResult
 
 /**
@@ -23,16 +24,19 @@ interface IdentityVerificationService {
     suspend fun acceptDniFront(image: ByteArray)
 
     /**
-     * Valida una foto ya tomada, sin aceptarla: ¿tiene un código PDF417 legible y una
-     * cara detectable? Es la verificación inmediata del fallback de captura manual — el
-     * escaneo en vivo puede fallar en hardware real por autoenfoque, resolución del
-     * preview o reflejos en el plástico, así que el usuario puede forzar una foto de
-     * alta resolución y saber en el momento si sirve.
+     * Revisa una foto ya tomada, sin aceptarla: ¿tiene un código PDF417 legible y se ve la
+     * foto impresa del titular? Es la verificación inmediata de la captura manual, para que
+     * el usuario sepa en el momento si la foto sirve en vez de enterarse al final del flujo.
      *
-     * No tiene efecto sobre lo que ya esté aceptado: si da `true`, el llamador todavía
-     * tiene que pasar la misma imagen a [acceptDniFront] para que cuente en el registro.
+     * Devuelve el motivo y no un booleano para que la pantalla pueda decir **qué** corregir:
+     * "no se lee el código" y "no se ve la foto del documento" se arreglan de formas
+     * distintas.
+     *
+     * No tiene efecto sobre lo que ya esté aceptado: si da [DniFrontQuality.READABLE], el
+     * llamador todavía tiene que pasar la misma imagen a [acceptDniFront] para que cuente en
+     * el registro.
      */
-    suspend fun canReadDniFront(image: ByteArray): Boolean
+    suspend fun canReadDniFront(image: ByteArray): DniFrontQuality
 
     /**
      * @param image JPEG de la selfie.

@@ -29,6 +29,17 @@ class SecureImageBuffer private constructor(
         return block(current)
     }
 
+    /**
+     * Igual que [read], para bloques que suspenden.
+     *
+     * Existe como método aparte y no como un `inline fun` porque el chequeo de liberación
+     * toca el campo privado `bytes`, y una función `inline` pública no puede leerlo.
+     */
+    suspend fun <R> readSuspending(block: suspend (ByteArray) -> R): R {
+        val current = checkNotNull(bytes) { "El buffer de imagen ya fue liberado" }
+        return block(current)
+    }
+
     /** Presta los bytes y libera el buffer inmediatamente después, incluso si falla. */
     fun <R> readAndClear(block: (ByteArray) -> R): R = try {
         read(block)

@@ -10,12 +10,10 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.scale
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.ByteArrayOutputStream
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.math.roundToInt
 
 /**
  * Piezas de CameraX compartidas por la captura de documento y la de selfie con liveness.
@@ -72,22 +70,39 @@ private fun ImageProxy.readJpegBytesInternal(): ByteArray {
 }
 
 /**
- * Decodifica, rota a vertical, la reduce a un tamaño manejable y vuelve a codificar en JPEG.
- *
- * El downscale corre siempre, no sólo cuando hace falta rotar: una foto sacada a pulso, de
- * cerca y con buena luz, tiene resolución de sobra para que las líneas de seguridad del DNI
- * generen moiré sobre el PDF417 y lo tapen — bajar la resolución antes de pasarla a ML Kit
- * saca ese ruido de alta frecuencia sin perder legibilidad. Ni el código de barras ni la cara
- * necesitan más que esto: el embedding facial en sí trabaja sobre 112x112.
+ * Deja el JPEG genuinamente vertical, acotando de paso cuánta memoria ocupa.
  *
  * Se rotan los píxeles en vez de pasarle el ángulo a `InputImage.fromBitmap(bitmap, deg)`
  * a propósito: ese parámetro tiene reportes conocidos de comportarse de forma inconsistente
  * en detección de caras/texto según el modelo de ML Kit. Rotar acá deja el bitmap
  * genuinamente vertical, así el resto del pipeline siempre pasa rotación 0 y no depende
  * de esa API.
+ *
+ * **Cuánta resolución se conserva es lo que decide si el PDF417 se lee o no.** Un decodificador
+ * de códigos de barras necesita del orden de 2-3 píxeles por módulo (la barra más angosta);
+ * por debajo de eso el código es irrecuperable por más nítida y bien iluminada que esté la
+ * foto. En un encuadre típico el PDF417 ocupa cerca de la mitad del ancho de la tarjeta, así
+ * que recortar el lado largo a ~1000px deja el código al borde de lo indecodificable. De ahí
+ * que el tope de acá sea alto: sólo existe para que un sensor de 50MP no materialice un bitmap
+ * de 200MB, no para "limpiar" la imagen.
+ *
+ * El moiré de las líneas de seguridad sobre el código es un problema real, pero se resuelve
+ * probando varias escalas al decodificar (ver `MlKitDniBarcodeReader`), no tirando resolución
+ * de entrada: bajar la resolución acá le saca al decodificador la única materia prima que no
+ * puede recuperar después.
  */
 private fun ByteArray.rotatedJpeg(rotationDegrees: Int): ByteArray {
-    val original = BitmapFactory.decodeByteArray(this, 0, size) ?: return this
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(this, 0, size, bounds)
+    val sampleSize = sampleSizeForCapture(bounds.outWidth, bounds.outHeight)
+
+    // Nada para hacer: ya está vertical y entra holgado. Se devuelven los bytes originales
+    // en vez de recomprimirlos, que sólo agregaría artefactos de JPEG sobre el código.
+    if (rotationDegrees == 0 && sampleSize == 1) return this
+
+    val original = BitmapFactory
+        .decodeByteArray(this, 0, size, BitmapFactory.Options().apply { inSampleSize = sampleSize })
+        ?: return this
 
     val upright = if (rotationDegrees == 0) {
         original
@@ -97,35 +112,45 @@ private fun ByteArray.rotatedJpeg(rotationDegrees: Int): ByteArray {
             .also { original.recycle() }
     }
 
-    val resized = upright.downscaledInternal(MAX_DIMENSION_PX)
-
     return try {
         ByteArrayOutputStream().use { out ->
-            resized.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+            upright.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
             out.toByteArray()
         }
     } finally {
-        if (resized !== upright) resized.recycle()
         upright.recycle()
     }
 }
 
-/** Nunca agranda: sólo achica cuando el lado más largo supera el máximo. */
-private fun Bitmap.downscaledInternal(maxDimensionPx: Int): Bitmap {
+/**
+ * Potencia de dos que mantiene el lado mayor **por encima** de [MAX_CAPTURE_DIMENSION_PX].
+ *
+ * El `while` corta antes de cruzar el umbral, no después: `inSampleSize` sólo admite
+ * potencias de dos, y bajar un escalón de más significa quedarse con la mitad de la
+ * resolución de la que se pidió — que es exactamente cómo se pierde un PDF417.
+ */
+private fun sampleSizeForCapture(width: Int, height: Int): Int {
     val largestSide = maxOf(width, height)
-    if (largestSide <= maxDimensionPx) return this
+    if (largestSide <= 0) return 1
 
-    val scaleFactor = maxDimensionPx.toFloat() / largestSide
-    val targetWidth = (width * scaleFactor).roundToInt().coerceAtLeast(1)
-    val targetHeight = (height * scaleFactor).roundToInt().coerceAtLeast(1)
-    return scale(targetWidth, targetHeight)
+    var sample = 1
+    while (largestSide / (sample * 2) >= MAX_CAPTURE_DIMENSION_PX) {
+        sample *= 2
+    }
+    return sample
 }
 
+// Calidad alta a propósito: el JPEG se recodifica una sola vez y los artefactos de
+// compresión caen justo sobre los bordes de alto contraste del código de barras.
 private const val JPEG_QUALITY = 95
 
-// Alcanza y sobra tanto para que ML Kit lea el PDF417 como para recortar una cara: el
-// embedding en sí termina reduciendo ese recorte a 112x112 igual.
-private const val MAX_DIMENSION_PX = 1000
+/**
+ * Piso de resolución del lado mayor. No es un tope exacto — `inSampleSize` trabaja por
+ * potencias de dos, así que el resultado queda entre este valor y su doble. Es holgado a
+ * propósito: acota la memoria (un sensor de 108MP no puede materializarse entero) sin tocar
+ * la resolución que el decodificador de PDF417 necesita.
+ */
+private const val MAX_CAPTURE_DIMENSION_PX = 2000
 
 /** `ProcessCameraProvider.getInstance` expone un `ListenableFuture`; acá se espera sin bloquear. */
 internal suspend fun Context.awaitCameraProviderInternal(): ProcessCameraProvider =

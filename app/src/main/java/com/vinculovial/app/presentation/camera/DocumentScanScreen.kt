@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.vinculovial.app.domain.signup.model.DniFrontQuality
 import com.vinculovial.app.presentation.components.VvCircleIconButton
 import com.vinculovial.app.presentation.theme.VvNavy
 import com.vinculovial.app.presentation.theme.VvOrange
@@ -61,8 +62,26 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
-private const val MANUAL_CAPTURE_FAILURE_MESSAGE =
-    "No pudimos leer el DNI. Evitá los reflejos y asegurate de que esté nítido."
+/**
+ * Un mensaje por modo de falla, porque se corrigen de formas distintas.
+ *
+ * Antes había uno solo ("no pudimos leer el DNI, asegurate de que esté nítido") para los dos
+ * casos, y era engañoso en las dos direcciones: mandaba a corregir la nitidez cuando el
+ * problema podía ser el encuadre, y sugería que existía una medición de nitidez que nunca
+ * existió — nada en el pipeline calcula enfoque. Lo único que se evalúa es si el código
+ * decodifica y si se ve la foto del titular.
+ */
+private fun DniFrontQuality.failureMessage(): String = when (this) {
+    DniFrontQuality.READABLE -> ""
+
+    DniFrontQuality.BARCODE_UNREADABLE ->
+        "No pudimos leer el código de barras. Acercá el DNI hasta llenar el recuadro y " +
+            "evitá los reflejos sobre el plástico."
+
+    DniFrontQuality.PHOTO_NOT_FOUND ->
+        "No pudimos ver tu foto en el DNI. Asegurate de que entre el documento completo, " +
+            "derecho y sin sombras encima."
+}
 
 /**
  * Captura del frente del documento — **100% manual, por decisión de producto**.
@@ -93,7 +112,7 @@ private const val MANUAL_CAPTURE_FAILURE_MESSAGE =
  */
 @Composable
 fun DocumentScanScreen(
-    onManualCapture: suspend (image: ByteArray) -> Boolean,
+    onManualCapture: suspend (image: ByteArray) -> DniFrontQuality,
     onScanned: (frontImage: ByteArray) -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -193,16 +212,16 @@ fun DocumentScanScreen(
             context = context,
             onJpeg = { bytes ->
                 coroutineScope.launch {
-                    val readable = try {
+                    val quality = try {
                         onManualCapture(bytes)
                     } catch (e: Exception) {
-                        false
+                        DniFrontQuality.BARCODE_UNREADABLE
                     }
-                    if (readable) {
+                    if (quality.isReadable) {
                         onScanned(bytes)
                     } else {
                         capturing = false
-                        Toast.makeText(context, MANUAL_CAPTURE_FAILURE_MESSAGE, Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, quality.failureMessage(), Toast.LENGTH_LONG).show()
                     }
                 }
             },

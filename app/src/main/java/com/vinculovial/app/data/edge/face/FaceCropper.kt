@@ -75,8 +75,18 @@ class MlKitFaceLocator @Inject constructor() : FaceLocator {
     }
 
     private companion object {
-        /** Proporción mínima del ancho de la imagen que debe ocupar la cara. */
-        const val MIN_FACE_SIZE = 0.12f
+        /**
+         * Proporción mínima del ancho de la imagen que debe ocupar la cara.
+         *
+         * Lo dimensiona el caso más chico de los dos, que es por lejos el documento: la foto
+         * impresa del DNI mide del orden de 19mm de ancho sobre una tarjeta de 85.6mm, y la
+         * cara adentro de esa foto todavía menos. Con la tarjeta llenando el recuadro guía
+         * (~86% del ancho del cuadro) la cara queda apenas por encima de 0.12 — es decir, el
+         * valor anterior sólo funcionaba con un encuadre perfecto, y cualquier margen de más
+         * la dejaba afuera. En una selfie la cara es enormemente más grande, así que bajar
+         * este piso no le afecta en nada.
+         */
+        const val MIN_FACE_SIZE = 0.07f
 
         /** Margen alrededor del bounding box, como fracción de su tamaño. */
         const val FACE_MARGIN = 0.20f
