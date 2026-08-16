@@ -32,6 +32,11 @@ Se usa cada caso de uso para lo que sirve, corriendo los tres en paralelo:
 ##### El bug que motivó todo esto: `ImageCapture` a 1080×1440
 Sin `ResolutionSelector`, CameraX entregaba ~1.5MP (la resolución de la pantalla, no la del sensor). Con el documento a distancia cómoda eso dejaba el recorte de la cara impresa en **135×135 px** — ruido para el embedder, que hundía la similitud coseno a **0.33** contra una selfie de 613×613 — y el PDF417 muy por debajo de los px/módulo necesarios. Ningún cálculo aguas abajo recupera píxeles que la captura no entregó: por eso todos los ajustes de `MAX_CAPTURE_DIMENSION_PX` anteriores no movieron el amperímetro, estaban acotando una imagen que ya venía chica.
 
+##### Segunda vuelta: `ResolutionSelector` solo no alcanzó
+Con `HIGHEST_AVAILABLE_STRATEGY` puesto, una prueba real siguió midiendo 1080×1440 (recorte de 145×145, score 0.479). La causa no era de configuración: en hardware con `Hardware Level` LIMITED o LEGACY (Camera2), el ISP negocia la resolución de **todos** los streams concurrentes como un conjunto — con `Preview` + `ImageAnalysis` + `ImageCapture` bindeados a la vez, el hardware puede forzar a los tres a la resolución más baja que garantiza para esa combinación de tres streams, sin importar qué `ResolutionSelector` se le pida a uno solo. Es una restricción real y documentada del propio Camera2 (tabla de configuraciones garantizadas por `Hardware Level`), no un bug de configuración.
+
+**Fix**: `imageAnalysis` e `imageCapture` nunca están bindeados a la vez (patrón recomendado por el propio equipo de CameraX). En reposo sólo está bindeado `imageAnalysis` junto con `preview` (que nunca se desbindea). Al momento de disparar, `DocumentScanScreen.switchToCaptureMode()` desbindea `imageAnalysis` y bindea `imageCapture` solo — con sólo dos streams, CameraX recalcula sin la restricción del tercero —, y al terminar `switchToAnalysisMode()` hace el camino inverso para que la detección de presencia retome. El pestañeo de reconfiguración cae en el momento en que ya se muestra "Tomando la foto…", así que no se nota. `CameraInternals.captureJpegInternal()` loguea (`Log.d`, tag `CameraCapture`, sólo debug) la resolución real entregada por cada captura, para diagnosticar sin acceso físico al dispositivo si esto vuelve a pasar en otro hardware.
+
 ---
 
 Descripción de la etapa manual anterior, que sigue vigente en todo lo demás:
@@ -81,7 +86,9 @@ El modelo recibe 112×112 y el recorte se estira hasta ese tamaño, así que **u
 
 **Espejado de la selfie**: MobileFaceNet no es invariante al espejado horizontal, y que el JPEG de la cámara frontal venga espejado o no depende del OEM (por eso existe `ImageCapture.Metadata.isReversedHorizontal`). `EdgeIdentityVerificationProvider` embebe la selfie **y su espejo** y se queda con la mejor similitud: cuesta una inferencia más y elimina una clase entera de falso negativo dependiente del teléfono. No afloja la seguridad — dos personas distintas no se parecen más porque una esté espejada.
 
-**Traza de calibración**: en builds de debug, `EdgeIdentityVerificationProvider` loguea con tag `BIOMETRY` el score de cada comparación, el score final, el umbral y el veredicto, más las dimensiones de los recortes. Nunca los embeddings ni el número de documento. Es lo que permite distinguir "el umbral está alto" de "el pipeline está roto" — `FACE_MATCH_THRESHOLD` sigue **sin calibrar**, y comparar una foto impresa contra una selfie da similitudes sistemáticamente más bajas que comparar dos selfies.
+**Traza de calibración**: en builds de debug, `EdgeIdentityVerificationProvider` loguea con tag `BIOMETRY` el score de cada comparación, el score final, el umbral y el veredicto, más las dimensiones de los recortes. Nunca los embeddings ni el número de documento. Es lo que permite distinguir "el umbral está alto" de "el pipeline está roto".
+
+**`FACE_MATCH_THRESHOLD` bajó de 0.62 a 0.45, y sigue sin calibrar de verdad.** El log de arriba mostró `0.479` en una prueba real que es un verdadero positivo (DNI y selfie de la misma persona) — pero medido *antes* de recuperar la resolución de captura (recorte de documento a 145x145px, ver la sección de `ImageAnalysis`/`ImageCapture` más abajo). Con la resolución ya corregida ese mismo score probablemente suba, quizás por encima de 0.62 sin tocar nada. Un solo verdadero positivo no calibra un umbral: falta la tasa de falsos positivos (documento de una persona contra la selfie de otra), que no se puede estimar con un solo usuario. **Hay que remedir con la resolución corregida antes de tratar 0.45 como definitivo** — está documentado con el mismo detalle en `app/src/main/assets/README.md`.
 
 **Principio abierto/cerrado en el parser**: `DocumentDataParser` es la interfaz (`parse(rawData: String): ArgentineDni?`); `LegacyDniPdf417Parser` la implementa de verdad, `ElectronicDniQrParser` es un **stub deliberado** que lanza `NotImplementedError("A la espera de definiciones oficiales del Renaper")`. No hay heurística de JSON/URL/delimitado inventada — no hay documentación pública del formato del QR, y adivinar es peor que rechazar explícitamente. `MlKitDniBarcodeReader` ya reconoce PDF417 y QR y despacha por formato; el día que RENAPER publique el formato, `ElectronicDniQrParser` es la única clase que hay que tocar (y recién ahí tiene sentido reintroducir el paso del reverso en `DocumentScanSession`/`DocumentScanScreen`, hoy retirado a propósito).
 
@@ -212,7 +219,7 @@ Rama base `dev`. Una rama por feature, `feature/<slug>`, PR + squash merge a `de
 - `APP_ATTESTATION_PSK` — sólo modo `mock`. PSK compartida con el Gateway, mínimo 32 bytes.
 - `ATTESTATION_TOKEN_TTL_SECONDS` (default `60`) — sólo modo `mock`.
 - `NETWORK_TIMEOUT_MS` (default `15000`)
-- `FACE_MATCH_THRESHOLD` (default `0.62`) — umbral de similitud coseno. **Sin calibrar**.
+- `FACE_MATCH_THRESHOLD` (default `0.45`) — umbral de similitud coseno. **Sin calibrar** (bajado de 0.62 a partir de una sola muestra real, medida antes de corregir la resolución de captura — ver la sección de geometría del recorte facial).
 - `FACE_EMBEDDER_MODEL_ASSET` (default `mobilefacenet.tflite`) — nombre del modelo en `assets/`. Tiene que coincidir exacto con el archivo.
 
 ## Comandos

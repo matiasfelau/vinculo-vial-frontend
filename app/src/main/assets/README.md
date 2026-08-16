@@ -92,10 +92,22 @@ producción.
 
 ## Antes de producción
 
-El umbral (`FACE_MATCH_THRESHOLD`, hoy `0.62`) está puesto como punto de partida, no
+El umbral (`FACE_MATCH_THRESHOLD`, hoy `0.45`) está puesto como punto de partida, no
 calibrado. Comparar una foto **impresa** de DNI contra una selfie es más ruidoso que
 comparar dos selfies: el plástico, el holograma y la baja resolución de la foto del
 documento bajan la similitud de manera sistemática.
+
+**Por qué 0.45 y no 0.62** (el valor original): una prueba en dispositivo real dio
+`0.479` en un caso que es un verdadero positivo (la misma persona, DNI propio) — pero
+con el recorte de documento todavía degradado a 145x145px por el cuello de botella de
+`ImageCapture` que existía en ese momento (ver `DocumentScanScreen`, ya corregido). Con
+la resolución de captura recuperada ese mismo score real probablemente suba bastante,
+tal vez por encima de 0.62 sin ajustar nada. **Un solo verdadero positivo no es una
+calibración**: falta la otra mitad del dato — la tasa de falsos positivos, es decir qué
+score da comparar el documento de una persona contra la selfie de otra —, y eso no se
+puede estimar con un solo usuario probando con su propio DNI. Antes de dar este valor
+por definitivo hay que volver a medir con la resolución de captura ya corregida, y
+después calibrar con las dos tasas de error, no con una muestra.
 
 Hay que calibrarlo con documentos reales y medir las dos tasas de error, porque tienen
 costos opuestos:

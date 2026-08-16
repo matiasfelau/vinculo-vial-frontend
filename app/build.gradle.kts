@@ -55,7 +55,17 @@ android {
         // Umbral de similitud coseno para dar por válido el match facial.
         // Comparar una foto impresa de DNI contra una selfie es más ruidoso que
         // comparar dos selfies: calibrar con datos reales antes de mover este valor.
-        buildConfigField("float", "FACE_MATCH_THRESHOLD", config("FACE_MATCH_THRESHOLD", "0.62") + "f")
+        //
+        // Bajado de 0.62 a 0.45 a partir de UNA sola muestra real (verdadero positivo, log
+        // BIOMETRY): 0.479 con el recorte de documento todavía degradado a 145x145px por el
+        // cuello de botella de resolución de ImageCapture (ver DocumentScanScreen). Con la
+        // resolución de captura ya recuperada (switchToCaptureMode/switchToAnalysisMode) el
+        // recorte va a ser sustancialmente más grande, y ese mismo score real puede terminar
+        // bien por encima de 0.62 sin que haga falta este ajuste. Un solo verdadero positivo
+        // no calibra nada: falta la otra mitad del dato, la tasa de falsos positivos (impostor
+        // con otro documento), y ese dato no se puede estimar con una persona. Volver a medir
+        // con la resolución nueva antes de dar este valor por definitivo.
+        buildConfigField("float", "FACE_MATCH_THRESHOLD", config("FACE_MATCH_THRESHOLD", "0.45") + "f")
         // Nombre del .tflite en app/src/main/assets/. Default alineado con el archivo
         // real que se usa en desarrollo (ver app/src/main/assets/README.md); si tu
         // modelo se llama distinto, sobreescribí FACE_EMBEDDER_MODEL_ASSET.

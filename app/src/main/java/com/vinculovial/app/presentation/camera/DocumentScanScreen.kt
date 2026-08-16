@@ -115,6 +115,25 @@ internal fun DniFrontQuality.failureMessage(): String = when (this) {
  * disparo de autoenfoque— justo antes de exponer, que es la forma más confiable de conseguir
  * foco en este hardware.
  *
+ * ## `ImageAnalysis` e `ImageCapture` nunca están bindeados a la vez
+ *
+ * En hardware con `Hardware Level` LIMITED o LEGACY (Camera2), el ISP negocia la resolución
+ * de **todos** los streams concurrentes como un conjunto: agregar un tercer stream (el de
+ * análisis) a la sesión de Preview + Captura puede forzar a los tres a la resolución más baja
+ * que el hardware garantiza para esa combinación — en un dispositivo real, eso midió 1080x1440
+ * (1.5MP, la del preview) donde la sola combinación Preview + Captura habría dado varios
+ * megapíxeles más. Es una restricción real del hardware, documentada en el propio Camera2
+ * (tabla de configuraciones garantizadas), no un bug de configuración.
+ *
+ * La salida, y el patrón que recomienda el propio equipo de CameraX: `imageAnalysis` e
+ * `imageCapture` **nunca conviven en el mismo `bindToLifecycle()`**. En reposo sólo está
+ * bindeado `imageAnalysis` (junto con `preview`, que nunca se toca). Al momento de disparar,
+ * [switchToCaptureMode] lo desbindea y bindea `imageCapture` solo — ahí CameraX recalcula la
+ * resolución para el par Preview + Captura, sin la restricción del tercer stream — y al
+ * terminar, [switchToAnalysisMode] hace el camino inverso para que la detección de presencia
+ * siga corriendo. El pestañeo de reconfiguración que esto produce cae exactamente en el
+ * momento en que ya se muestra "Tomando la foto…", así que no se nota.
+ *
  * ## Sobre el obturador manual
  *
  * No aparece en el flujo normal: el usuario sostiene el teléfono y la app hace el resto. Pero
@@ -241,13 +260,14 @@ fun DocumentScanScreen(
                 }
             }
 
+            // `imageCapture` NO se bindea acá: ver el KDoc de la función. Bindearlo junto con
+            // `imageAnalysis` es exactamente lo que degradaba la resolución de la foto.
             provider.unbindAll()
             camera = provider.bindToLifecycle(
                 lifecycleOwner,
                 CameraSelector.DEFAULT_BACK_CAMERA,
                 preview,
                 imageAnalysis,
-                imageCapture,
             )
             cameraProvider = provider
             null
@@ -294,17 +314,42 @@ fun DocumentScanScreen(
         focusPoint = offset
     }
 
+    /**
+     * Desbindea `imageAnalysis` y bindea `imageCapture` solo (con `preview`, que sigue
+     * bindeado sin tocarse). Es el momento en que CameraX recalcula la resolución de captura
+     * sin la restricción del tercer stream concurrente.
+     */
+    fun switchToCaptureMode() {
+        val provider = cameraProvider ?: return
+        provider.unbind(imageAnalysis)
+        camera = provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, imageCapture)
+    }
+
+    /** El camino inverso, para que la detección de presencia retome tras la captura. */
+    fun switchToAnalysisMode() {
+        val provider = cameraProvider ?: return
+        provider.unbind(imageCapture)
+        camera = provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, imageAnalysis)
+    }
+
     fun capture() {
         if (capturing) return
         capturing = true
         rejection = null
         // Sin esto la sesión seguiría reportando STEADY y dispararía encima de esta captura.
         presenceSession.pause()
+        switchToCaptureMode()
 
         imageCapture.captureJpegInternal(
             context = context,
             onJpeg = { bytes ->
                 coroutineScope.launch {
+                    // Se recupera la capacidad de análisis apenas se tiene la foto: la
+                    // validación que sigue trabaja sobre los bytes ya capturados, no sobre la
+                    // cámara, así que no hay motivo para tenerla desbindeada más tiempo del
+                    // necesario.
+                    switchToAnalysisMode()
+
                     val quality = try {
                         onCaptureTaken(bytes)
                     } catch (e: Exception) {
@@ -325,6 +370,7 @@ fun DocumentScanScreen(
                 }
             },
             onFailure = {
+                switchToAnalysisMode()
                 capturing = false
                 failure = "No pudimos tomar la foto. Intentá de nuevo."
                 presenceSession.start()

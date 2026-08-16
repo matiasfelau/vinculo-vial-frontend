@@ -5,11 +5,13 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
 import android.graphics.Matrix
+import android.util.Log
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
+import com.vinculovial.app.BuildConfig
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.ByteArrayOutputStream
 import kotlin.coroutines.resume
@@ -38,6 +40,15 @@ internal fun ImageCapture.captureJpegInternal(
                         if (proxy.format != ImageFormat.JPEG) {
                             onFailure(IllegalStateException("Formato inesperado: ${proxy.format}"))
                         } else {
+                            // Diagnóstico de resolución real, no de contenido: confirma si
+                            // ImageCapture entregó la resolución del sensor o si el hardware
+                            // (u otro stream concurrente bindeado a la vez) la degradó — es la
+                            // única forma de distinguir esos dos casos sin acceso físico al
+                            // dispositivo. Ver el KDoc de DocumentScanScreen.switchToCaptureMode.
+                            if (BuildConfig.DEBUG) {
+                                Log.d(TAG, "ImageCapture entregó ${proxy.width}x${proxy.height}")
+                            }
+
                             // OnImageCapturedCallback entrega el JPEG SIN rotar: el
                             // sensor suele estar montado apaisado, y lo que dice cuánto
                             // rotar para que quede vertical es imageInfo.rotationDegrees,
@@ -62,6 +73,8 @@ internal fun ImageCapture.captureJpegInternal(
         },
     )
 }
+
+private const val TAG = "CameraCapture"
 
 /** Para un JPEG, el primer plano contiene la imagen completa ya comprimida. */
 private fun ImageProxy.readJpegBytesInternal(): ByteArray {
