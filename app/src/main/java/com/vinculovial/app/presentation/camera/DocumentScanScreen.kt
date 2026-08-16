@@ -134,6 +134,13 @@ internal fun DniFrontQuality.failureMessage(): String = when (this) {
  * siga corriendo. El pestañeo de reconfiguración que esto produce cae exactamente en el
  * momento en que ya se muestra "Tomando la foto…", así que no se nota.
  *
+ * Entre desbindear/bindear y disparar hay además un margen fijo ([CAPTURE_SESSION_SETTLE_MS]):
+ * `bindToLifecycle()` vuelve antes de que la sesión de Camera2 termine de reconfigurarse en el
+ * hardware, y CameraX no expone una señal pública de "ya terminó". Sin ese margen, una prueba
+ * real en un segundo dispositivo siguió midiendo la misma resolución baja que antes de este
+ * cambio — indistinguible en el log de un límite real de hardware, porque el síntoma es
+ * idéntico. Es un margen empírico, no una garantía.
+ *
  * ## Sobre el obturador manual
  *
  * No aparece en el flujo normal: el usuario sostiene el teléfono y la app hace el resto. Pero
@@ -340,42 +347,57 @@ fun DocumentScanScreen(
         presenceSession.pause()
         switchToCaptureMode()
 
-        imageCapture.captureJpegInternal(
-            context = context,
-            onJpeg = { bytes ->
-                coroutineScope.launch {
-                    // Se recupera la capacidad de análisis apenas se tiene la foto: la
-                    // validación que sigue trabaja sobre los bytes ya capturados, no sobre la
-                    // cámara, así que no hay motivo para tenerla desbindeada más tiempo del
-                    // necesario.
+        coroutineScope.launch {
+            // `bindToLifecycle()` vuelve antes de que Camera2 termine de recrear la sesión de
+            // captura en el hardware: es un cambio asíncrono, y CameraX no expone ninguna señal
+            // pública de "la sesión ya se reconfiguró". Disparar `takePicture()` inmediatamente
+            // después de `switchToCaptureMode()` corre el riesgo real de alcanzar todavía a la
+            // sesión VIEJA (con `imageAnalysis` incluido en el grupo de streams) — que en el
+            // log es indistinguible de un límite genuino de hardware, porque el síntoma es
+            // exactamente el mismo número. Esta espera es un margen pragmático para que la
+            // reconfiguración tenga tiempo de completarse antes del disparo; no es una garantía
+            // (CameraX no ofrece una), así que si el log de `CameraCapture` sigue mostrando una
+            // resolución baja después de este cambio, recién ahí queda como explicación más
+            // probable un límite real del hardware, y no esta carrera.
+            delay(CAPTURE_SESSION_SETTLE_MS)
+
+            imageCapture.captureJpegInternal(
+                context = context,
+                onJpeg = { bytes ->
+                    coroutineScope.launch {
+                        // Se recupera la capacidad de análisis apenas se tiene la foto: la
+                        // validación que sigue trabaja sobre los bytes ya capturados, no sobre
+                        // la cámara, así que no hay motivo para tenerla desbindeada más tiempo
+                        // del necesario.
+                        switchToAnalysisMode()
+
+                        val quality = try {
+                            onCaptureTaken(bytes)
+                        } catch (e: Exception) {
+                            DniFrontQuality.BARCODE_UNREADABLE
+                        }
+
+                        if (quality.isReadable) {
+                            onScanned(bytes)
+                        } else {
+                            // No se le pide nada al usuario: se le cuenta qué pasó y la app
+                            // sigue intentando sola. La espera evita encadenar disparos sobre
+                            // la misma escena mala mientras el usuario reacciona.
+                            rejection = quality.failureMessage()
+                            delay(RETRY_COOLDOWN_MS)
+                            capturing = false
+                            presenceSession.start()
+                        }
+                    }
+                },
+                onFailure = {
                     switchToAnalysisMode()
-
-                    val quality = try {
-                        onCaptureTaken(bytes)
-                    } catch (e: Exception) {
-                        DniFrontQuality.BARCODE_UNREADABLE
-                    }
-
-                    if (quality.isReadable) {
-                        onScanned(bytes)
-                    } else {
-                        // No se le pide nada al usuario: se le cuenta qué pasó y la app sigue
-                        // intentando sola. La espera evita encadenar disparos sobre la misma
-                        // escena mala mientras el usuario reacciona.
-                        rejection = quality.failureMessage()
-                        delay(RETRY_COOLDOWN_MS)
-                        capturing = false
-                        presenceSession.start()
-                    }
-                }
-            },
-            onFailure = {
-                switchToAnalysisMode()
-                capturing = false
-                failure = "No pudimos tomar la foto. Intentá de nuevo."
-                presenceSession.start()
-            },
-        )
+                    capturing = false
+                    failure = "No pudimos tomar la foto. Intentá de nuevo."
+                    presenceSession.start()
+                },
+            )
+        }
     }
 
     // El disparo automático: la sesión avisa que el documento está quieto y encuadrado.
@@ -555,6 +577,12 @@ private fun DocumentGuideOverlay(locked: Boolean) {
         }
     }
 }
+
+/**
+ * Margen para que la sesión de Camera2 termine de reconfigurarse tras `switchToCaptureMode()`
+ * antes de disparar. Valor empírico, no una garantía — ver el comentario en `capture()`.
+ */
+private const val CAPTURE_SESSION_SETTLE_MS = 400L
 
 /** Cuánto se espera antes de ofrecer el obturador manual como red de seguridad. */
 private const val MANUAL_FALLBACK_DELAY_MS = 12_000L
