@@ -141,8 +141,19 @@ Dos causas posibles, y las dos se dieron acá:
   ```
   Pivote RENAPER-Ready: reemplaza al `biometric_verified: true` de entregas anteriores. `dni`/`tramite`/`sexo` se leyeron del código de barras del documento (no lo que tipeó el usuario); `selfie` es la única imagen que sale del dispositivo en todo el flujo — la comparación contra el documento ya no la hace el device, la hace Identity/RENAPER. Si el código no se lee, si le falta el trámite o si la prueba de vida falla, la request no se envía.
 
-  > ⚠️ **Campos nuevos, cambio de contrato.** Identity tiene que: (1) aceptar `tramite`/`sexo`/`selfie` y dejar de esperar `biometric_verified`; (2) implementar la verificación contra RENAPER con la selfie recibida; (3) definir y documentar qué código HTTP devuelve un rechazo de esa verificación — hoy la app no tiene un `SignUpError` dedicado para eso y un 400 genérico (`InvalidData`) es lo único que lo cubriría hasta que se especifique algo más preciso.
+  > ⚠️ **Campos nuevos, cambio de contrato.** Identity tiene que: (1) aceptar `tramite`/`sexo`/`selfie` y dejar de esperar `biometric_verified`; (2) implementar la verificación contra RENAPER con la selfie recibida. El punto (3) de esta advertencia —qué código HTTP devuelve un rechazo de RENAPER— ya se resolvió, ver el contrato del 400 más abajo.
 - **Respuestas**: `201 Created` / `400 Bad Request` / `403 Forbidden` / `409 Conflict`.
+- **Cuerpo del 400** (confirmado con el equipo de backend — es el único código de estado con cuerpo documentado; 403/409 se manejan sólo por código de estado):
+  ```json
+  { "code": "datos_invalidos", "details": [ { "field": "sexo", "code": "formato_invalido", "message": "texto para mostrar" } ] }
+  ```
+  ```json
+  { "code": "identidad_no_verificada" }
+  ```
+  - `code` de nivel superior identifica la categoría. `datos_invalidos` trae `details[]`; `identidad_no_verificada` (RENAPER no confirmó la selfie) no trae `details` — deliberadamente genérico, sin campo que señalar, para no distinguir "no es la misma persona" de "no se pudo verificar" (esa distinción es información que un atacante puede usar para calibrar intentos).
+  - `details[].code` es el valor **estable** para matchear en código: `requerido` / `formato_invalido` / `longitud_invalida` / `password_debil` / `password_predecible`. `details[].field` es uno de `email`/`dni`/`tramite`/`sexo`/`selfie`/`password`. `details[].message` es texto para mostrar, pensado para cambiar de redacción sin previo aviso — **nunca matchear contra él**.
+  - `details[]` puede traer más de un elemento en la misma respuesta: hay que iterarlo, no asumir un único error.
+  - Del lado de la app, `SignUpRepositoryImpl.handleBadRequest()` parsea esto a `SignUpError.DocumentDataRejected` (algún campo no es del formulario — `dni`/`tramite`/`sexo`/`selfie` — manda a repetir la captura, no a editar el formulario), `SignUpError.PasswordRejected` (`password_debil`/`password_predecible`, la única categoría de `datos_invalidos` con mensaje específico: es una validación que sólo puede hacerse server-side, el usuario no tiene forma de adivinarlo solo) o `SignUpError.InvalidData` (genérico, para lo demás) — o `SignUpError.IdentityNotVerified` para `identidad_no_verificada`.
 - **Header `X-App-Attestation`**: token de vida corta que genera la app y valida el Gateway. Identity nunca lo revisa. Hay **dos modos**, elegidos en build con `ATTESTATION_MODE`; **el Gateway tiene que estar configurado en el mismo modo que la app**:
   - `mock` (desarrollo, default): JWT firmado HMAC-SHA256 con `APP_ATTESTATION_PSK`, simulando el veredicto de Play Integrity (claims equivalentes a `PLAY_RECOGNIZED`, `MEETS_DEVICE_INTEGRITY`). El Gateway verifica firma y expiración.
   - `play_integrity` (producción): token opaco emitido por Google (Standard Request). El Gateway **no puede validarlo con una PSK**: tiene que llamar a `playintegrity.googleapis.com/v1/{packageName}:decodeIntegrityToken` con una cuenta de servicio del mismo proyecto de Cloud, y exigir `appRecognitionVerdict = PLAY_RECOGNIZED` y `deviceRecognitionVerdict` conteniendo `MEETS_DEVICE_INTEGRITY`.

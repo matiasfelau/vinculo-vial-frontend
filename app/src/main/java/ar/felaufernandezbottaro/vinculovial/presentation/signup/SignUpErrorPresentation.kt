@@ -67,6 +67,31 @@ fun SignUpError.presentation(): SignUpErrorPresentation = when (this) {
         action = SignUpErrorAction.EDIT_FORM,
     )
 
+    // dni/tramite/sexo/selfie no son de un formulario — no hay nada que "corregir" ahí
+    // salvo repetir la captura.
+    SignUpError.DocumentDataRejected -> SignUpErrorPresentation(
+        title = "No pudimos procesar tu documento",
+        message = "Volvé a escanear el DNI y a sacarte la selfie, con buena luz y sin reflejos.",
+        action = SignUpErrorAction.RETRY_CAPTURE,
+    )
+
+    SignUpError.PasswordRejected -> SignUpErrorPresentation(
+        title = "Elegí otra contraseña",
+        message = "La contraseña es demasiado predecible. Probá con una que no uses en otro " +
+            "lado y que no sea fácil de adivinar.",
+        action = SignUpErrorAction.EDIT_FORM,
+    )
+
+    // Ni "no es la misma persona" ni "no se pudo verificar": esa distinción es información
+    // que un atacante puede usar para calibrar intentos, y coincide con que ningún mensaje
+    // puede sonar acusatorio (ver el test correspondiente).
+    SignUpError.IdentityNotVerified -> SignUpErrorPresentation(
+        title = "No pudimos confirmar tu identidad",
+        message = "Volvé a escanear el DNI y a sacarte la selfie, con buena luz y de frente a " +
+            "la cámara.",
+        action = SignUpErrorAction.RETRY_CAPTURE,
+    )
+
     SignUpError.AttestationRejected -> SignUpErrorPresentation(
         title = "No pudimos validar la app",
         message = "Por seguridad sólo aceptamos registros desde una instalación oficial de ViVi " +

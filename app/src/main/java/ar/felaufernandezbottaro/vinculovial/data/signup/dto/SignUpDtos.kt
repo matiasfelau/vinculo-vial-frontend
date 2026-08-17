@@ -36,3 +36,30 @@ data class SignUpPayloadDto(
 ) {
     override fun toString(): String = "SignUpPayloadDto(***)"
 }
+
+/**
+ * Cuerpo de un 400, **sin cifrar** — a diferencia del payload de arriba, este viaja en
+ * claro, es el propio Gateway/Identity describiendo por qué rechazó la request.
+ *
+ * [code] identifica la categoría: `"datos_invalidos"` trae [details] con el desglose por
+ * campo; `"identidad_no_verificada"` (RENAPER no confirmó la selfie) no trae `details` —
+ * es deliberadamente genérico, sin campo que señalar.
+ */
+@JsonClass(generateAdapter = true)
+data class SignUpErrorResponseDto(
+    @Json(name = "code") val code: String,
+    @Json(name = "details") val details: List<SignUpErrorDetailDto>? = null,
+)
+
+/**
+ * Un elemento de `details[]`. [code] es el valor estable para matchear en código —
+ * `requerido` / `formato_invalido` / `longitud_invalida` / `password_debil` /
+ * `password_predecible` hoy. [message] es texto para mostrar, pensado para cambiar de
+ * redacción sin previo aviso: **nunca** matchear contra él.
+ */
+@JsonClass(generateAdapter = true)
+data class SignUpErrorDetailDto(
+    @Json(name = "field") val field: String,
+    @Json(name = "code") val code: String,
+    @Json(name = "message") val message: String? = null,
+)

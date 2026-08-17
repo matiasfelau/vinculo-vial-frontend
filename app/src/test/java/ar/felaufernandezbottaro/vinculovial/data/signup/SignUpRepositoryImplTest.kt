@@ -217,14 +217,104 @@ class SignUpRepositoryImplTest {
     }
 
     @Test
-    fun `un 400 con cuerpo de error no rompe el mapeo a dato invalido`() = runTest {
-        // El repositorio ahora lee el cuerpo del error (para loguearlo en debug); esto
-        // confirma que leerlo no interfiere con el resultado que ve el dominio, sea cual
-        // sea la forma que termine teniendo ese JSON del lado del backend.
+    fun `400 sin cuerpo parseable cae en dato invalido`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(400))
+
+        assertEquals(SignUpResult.Failed(SignUpError.InvalidData), repository().signUp(credentials))
+    }
+
+    @Test
+    fun `400 con cuerpo que no matchea el contrato tambien cae en dato invalido, sin excepcion`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(400).setBody("no es json"))
+
+        assertEquals(SignUpResult.Failed(SignUpError.InvalidData), repository().signUp(credentials))
+    }
+
+    @Test
+    fun `datos_invalidos con solo email o password es dato invalido generico`() = runTest {
         server.enqueue(
-            MockResponse()
-                .setResponseCode(400)
-                .setBody("""{"error":"campo invalido","field":"sexo"}"""),
+            MockResponse().setResponseCode(400).setBody(
+                """{"code":"datos_invalidos","details":[{"field":"email","code":"formato_invalido"}]}""",
+            ),
+        )
+
+        assertEquals(SignUpResult.Failed(SignUpError.InvalidData), repository().signUp(credentials))
+    }
+
+    @Test
+    fun `datos_invalidos con password_debil se distingue del generico`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody(
+                """{"code":"datos_invalidos","details":[{"field":"password","code":"password_debil"}]}""",
+            ),
+        )
+
+        assertEquals(SignUpResult.Failed(SignUpError.PasswordRejected), repository().signUp(credentials))
+    }
+
+    @Test
+    fun `datos_invalidos con un campo del documento manda a repetir la captura`() = runTest {
+        listOf("dni", "tramite", "sexo", "selfie").forEach { campo ->
+            server.enqueue(
+                MockResponse().setResponseCode(400).setBody(
+                    """{"code":"datos_invalidos","details":[{"field":"$campo","code":"formato_invalido"}]}""",
+                ),
+            )
+
+            assertEquals(
+                "campo '$campo' debería mandar a repetir la captura",
+                SignUpResult.Failed(SignUpError.DocumentDataRejected),
+                repository().signUp(credentials),
+            )
+        }
+    }
+
+    @Test
+    fun `un campo del documento pesa mas que un campo de formulario en el mismo 400`() = runTest {
+        // Arreglar la contraseña no sirve de nada si la captura igual se va a rechazar de
+        // nuevo: si hay un campo de captura entre los detalles, gana ese, sin importar el
+        // orden en que vengan.
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody(
+                """{"code":"datos_invalidos","details":[
+                    {"field":"password","code":"password_debil"},
+                    {"field":"dni","code":"formato_invalido"}
+                ]}""",
+            ),
+        )
+
+        assertEquals(SignUpResult.Failed(SignUpError.DocumentDataRejected), repository().signUp(credentials))
+    }
+
+    @Test
+    fun `datos_invalidos itera details en vez de asumir un solo error`() = runTest {
+        // Ningún elemento activa DocumentDataRejected ni PasswordRejected por separado, pero
+        // el segundo elemento sí, y no debe perderse por mirar sólo el primero.
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody(
+                """{"code":"datos_invalidos","details":[
+                    {"field":"email","code":"requerido"},
+                    {"field":"selfie","code":"longitud_invalida"}
+                ]}""",
+            ),
+        )
+
+        assertEquals(SignUpResult.Failed(SignUpError.DocumentDataRejected), repository().signUp(credentials))
+    }
+
+    @Test
+    fun `identidad_no_verificada es un 400 aparte, sin necesitar details`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody("""{"code":"identidad_no_verificada"}"""),
+        )
+
+        assertEquals(SignUpResult.Failed(SignUpError.IdentityNotVerified), repository().signUp(credentials))
+    }
+
+    @Test
+    fun `un code de nivel superior no documentado no inventa un mapeo especifico`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody("""{"code":"algo_que_no_existe_todavia"}"""),
         )
 
         assertEquals(SignUpResult.Failed(SignUpError.InvalidData), repository().signUp(credentials))

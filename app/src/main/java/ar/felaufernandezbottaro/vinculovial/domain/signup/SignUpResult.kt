@@ -26,8 +26,39 @@ sealed interface SignUpError {
     /** El DNI leído del documento no coincide con el que se tipeó. */
     data object DniMismatch : SignUpError
 
-    /** 400: el backend rechazó los datos. */
+    /**
+     * 400 genérico: el backend rechazó los datos y, o no trajo detalle por campo, o el
+     * único campo señalado es del formulario (`email`/`password`) sin ser una contraseña
+     * débil/predecible — algo que `CredentialRules` ya debería haber atajado del lado del
+     * cliente. Volver al formulario es la única acción con sentido.
+     */
     data object InvalidData : SignUpError
+
+    /**
+     * 400 (`datos_invalidos`) con al menos un campo que no viene del formulario — `dni`,
+     * `tramite`, `sexo` o `selfie`, todos leídos del documento/la selfie, no tipeados. No
+     * necesariamente significa que la foto esté mal (puede ser un dato que el backend
+     * esperaba en otro formato), pero no hay nada editable en un formulario para esto: la
+     * única acción posible es repetir la captura.
+     */
+    data object DocumentDataRejected : SignUpError
+
+    /**
+     * 400 (`datos_invalidos`) con la contraseña rechazada por débil o predecible (p. ej.
+     * filtrada en brechas conocidas) — una validación que sólo puede hacerse del lado del
+     * servidor, más estricta que `CredentialRules`. A diferencia de [InvalidData], acá sí
+     * vale la pena decir específicamente qué corregir: el usuario no tiene forma de
+     * adivinarlo solo.
+     */
+    data object PasswordRejected : SignUpError
+
+    /**
+     * 400 (`identidad_no_verificada`): RENAPER no pudo confirmar que la selfie corresponda
+     * al documento. Deliberadamente genérico, sin distinguir "no es la misma persona" de
+     * "no se pudo verificar" — esa distinción es información que un atacante puede usar
+     * para calibrar intentos, y el backend tampoco la manda (sin `details`).
+     */
+    data object IdentityNotVerified : SignUpError
 
     /** 403: el Gateway rechazó la App Attestation. */
     data object AttestationRejected : SignUpError

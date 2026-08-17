@@ -11,6 +11,8 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoOperationException
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeMessage
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
+import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpErrorDetailDto
+import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpErrorResponseDto
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpPayloadDto
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpRequestDto
 import ar.felaufernandezbottaro.vinculovial.di.IoDispatcher
@@ -42,6 +44,8 @@ class SignUpRepositoryImpl @Inject constructor(
 ) : SignUpRepository {
 
     private val payloadAdapter: JsonAdapter<SignUpPayloadDto> = moshi.adapter(SignUpPayloadDto::class.java)
+    private val errorResponseAdapter: JsonAdapter<SignUpErrorResponseDto> =
+        moshi.adapter(SignUpErrorResponseDto::class.java)
 
     override suspend fun signUp(credentials: Credentials): SignUpResult = withContext(dispatcher) {
         val encrypted = try {
@@ -61,11 +65,12 @@ class SignUpRepositoryImpl @Inject constructor(
             )
 
             // El contrato responde 201; cualquier 2xx significa que la cuenta quedó creada.
-            if (response.isSuccessful) {
-                SignUpResult.Registered
-            } else {
-                logRejection(response)
-                SignUpResult.Failed(response.code().toSignUpError())
+            when {
+                response.isSuccessful -> SignUpResult.Registered
+                // Sólo el 400 tiene un cuerpo con contrato documentado (code + details[]);
+                // 403/409/5xx se mapean sólo por código de estado, como siempre.
+                response.code() == HTTP_BAD_REQUEST -> SignUpResult.Failed(handleBadRequest(response))
+                else -> SignUpResult.Failed(response.code().toSignUpError())
             }
         } catch (e: CancellationException) {
             // El usuario abandonó la pantalla: cancelar no es un fallo del registro.
@@ -116,38 +121,96 @@ class SignUpRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Diagnóstico de sólo debug para probar el flujo de punta a punta: el backend puede
-     * describir en el cuerpo del 400 qué campo rechazó, y sin verlo no hay forma de saber
+     * Contrato real del 400, confirmado por el equipo de backend:
+     * ```json
+     * { "code": "datos_invalidos", "details": [ { "field": "sexo", "code": "formato_invalido", "message": "..." } ] }
+     * { "code": "identidad_no_verificada" }
+     * ```
+     * `details[].code` es el valor estable (`requerido` / `formato_invalido` /
+     * `longitud_invalida` / `password_debil` / `password_predecible`); `details[].message`
+     * es texto para mostrar, pensado para cambiar de redacción — nunca se matchea contra él.
+     * `identidad_no_verificada` (RENAPER no confirmó la selfie) es un 400 aparte, sin
+     * `details`, deliberadamente genérico.
+     */
+    private fun handleBadRequest(response: Response<Unit>): SignUpError {
+        val rawBody = try {
+            response.errorBody()?.string()
+        } catch (e: IOException) {
+            null
+        }
+        val parsed = rawBody?.let { parseErrorBody(it) }
+        logRejection(rawBody, parsed)
+
+        return parsed?.toSignUpError() ?: SignUpError.InvalidData
+    }
+
+    private fun parseErrorBody(rawBody: String): SignUpErrorResponseDto? =
+        try {
+            errorResponseAdapter.fromJson(rawBody)
+        } catch (e: Exception) {
+            // JSON inesperado: se degrada a InvalidData en vez de propagar la excepción.
+            // Un cuerpo de error mal formado no debería tumbar el manejo del error en sí.
+            null
+        }
+
+    private fun SignUpErrorResponseDto.toSignUpError(): SignUpError = when (code) {
+        CODE_IDENTITY_NOT_VERIFIED -> SignUpError.IdentityNotVerified
+        CODE_INVALID_DATA -> details.orEmpty().toSignUpError()
+        // Código de nivel superior no documentado todavía: no se inventa un mapeo específico.
+        else -> SignUpError.InvalidData
+    }
+
+    /**
+     * `dni`/`tramite`/`sexo`/`selfie` no son campos de un formulario — vienen del documento
+     * o de la selfie, y la única corrección posible es repetir esa captura. Si además hay
+     * un campo de formulario con la contraseña señalada por débil/predecible, ese detalle
+     * más específico gana sobre el genérico — pero sólo si **ningún** campo de captura
+     * también falló, porque arreglar la contraseña no sirve de nada si la captura igual se
+     * va a rechazar de nuevo.
+     */
+    private fun List<SignUpErrorDetailDto>.toSignUpError(): SignUpError = when {
+        isEmpty() -> SignUpError.InvalidData
+        any { it.field !in FORM_FIELDS } -> SignUpError.DocumentDataRejected
+        any { it.code in PASSWORD_REJECTION_CODES } -> SignUpError.PasswordRejected
+        else -> SignUpError.InvalidData
+    }
+
+    /**
+     * Diagnóstico de sólo debug: sin ver qué campo rechazó el backend no hay forma de saber
      * si el problema es el formato del payload o algo del lado del servidor.
      *
      * **Gateado a `BuildConfig.DEBUG`, nunca en release** — misma disciplina que el resto de
      * los logs de diagnóstico del proyecto (`TfLiteFaceEmbedder`, `CameraCapture`, `BIOMETRY`).
-     * Pero acá hay un riesgo real que esos otros logs no tienen: si el backend, al describir
-     * el campo inválido, **ecoa el valor recibido** (`"sexo recibido: 'Masculino'"` en vez de
-     * `"sexo: formato inválido"`), este log filtra ese dato a Logcat pese al gate de debug —
-     * Logcat no es un canal seguro, sobrevive en reportes de bug y queda accesible por ADB.
-     * La regla del proyecto es "nunca loguear DNI, password, PSK" sin excepción de build type;
-     * esto es una excepción deliberada y temporal para depurar la integración end-to-end, no
-     * una decisión de arquitectura — hay que insistir con el equipo de backend en que la
-     * respuesta describa el campo por **nombre o código**, nunca por valor.
+     * Cuando el cuerpo matchea el contrato documentado, sólo se loguean `field` y `code` —
+     * los dos son vocabulario cerrado y acotado (6 campos, 5 códigos posibles), así que no
+     * hay forma de que terminen filtrando un dato real. **Nunca se loguea `details[].message`
+     * ni el cuerpo crudo en este caso** — el texto para mostrar es libre, y ahí sí podría
+     * llegar a describir el valor rechazado.
      *
-     * El mensaje que ve el usuario no cambia: sigue siendo el genérico de
-     * `SignUpError.InvalidData`. Esto es sólo para quien está mirando el dispositivo conectado.
+     * Si el cuerpo NO matchea el contrato (parseo falló), ahí sí se loguea crudo, porque no
+     * hay forma de inspeccionarlo con seguridad — es la única rama de esta función con el
+     * riesgo que tenía el logging original: Logcat no es un canal seguro, sobrevive en
+     * reportes de bug y queda accesible por ADB. Debería ser un caso raro (el contrato ya
+     * está confirmado); si aparece seguido, es señal de que el backend se desvió de lo
+     * documentado.
      */
-    private fun logRejection(response: Response<Unit>) {
+    private fun logRejection(rawBody: String?, parsed: SignUpErrorResponseDto?) {
         if (!BuildConfig.DEBUG) return
 
-        val body = try {
-            response.errorBody()?.string()
-        } catch (e: IOException) {
-            "(no se pudo leer el cuerpo: ${e.message})"
+        val summary = when {
+            parsed != null -> {
+                val details = parsed.details.orEmpty().joinToString { "${it.field}:${it.code}" }
+                "code=${parsed.code}" + if (details.isNotEmpty()) ", details=[$details]" else ""
+            }
+            rawBody != null -> "no matchea el contrato documentado, cuerpo crudo: $rawBody"
+            else -> "sin cuerpo"
         }
 
-        Log.e(TAG, "El backend rechazó el registro (HTTP ${response.code()}): ${body ?: "(sin cuerpo)"}")
+        Log.e(TAG, "El backend rechazó el registro con 400 ($summary)")
     }
 
+    // 400 nunca llega acá: se maneja aparte en handleBadRequest(), con su propio contrato.
     private fun Int.toSignUpError(): SignUpError = when (this) {
-        HTTP_BAD_REQUEST -> SignUpError.InvalidData
         HTTP_FORBIDDEN -> SignUpError.AttestationRejected
         HTTP_CONFLICT -> SignUpError.AlreadyRegistered
         else -> SignUpError.Unexpected
@@ -166,5 +229,13 @@ class SignUpRepositoryImpl @Inject constructor(
         const val HTTP_BAD_REQUEST = 400
         const val HTTP_FORBIDDEN = 403
         const val HTTP_CONFLICT = 409
+
+        const val CODE_INVALID_DATA = "datos_invalidos"
+        const val CODE_IDENTITY_NOT_VERIFIED = "identidad_no_verificada"
+
+        /** Los únicos dos campos que el usuario puede corregir volviendo al formulario. */
+        val FORM_FIELDS = setOf("email", "password")
+
+        val PASSWORD_REJECTION_CODES = setOf("password_debil", "password_predecible")
     }
 }

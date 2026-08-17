@@ -13,6 +13,9 @@ class SignUpErrorPresentationTest {
         SignUpError.LivenessFailed,
         SignUpError.DniMismatch,
         SignUpError.InvalidData,
+        SignUpError.DocumentDataRejected,
+        SignUpError.PasswordRejected,
+        SignUpError.IdentityNotVerified,
         SignUpError.AttestationRejected,
         SignUpError.DeviceNotTrusted,
         SignUpError.AttestationUnavailable,
@@ -47,6 +50,8 @@ class SignUpErrorPresentationTest {
             SignUpError.DocumentUnreadable,
             SignUpError.DocumentNotRecognized,
             SignUpError.LivenessFailed,
+            SignUpError.DocumentDataRejected,
+            SignUpError.IdentityNotVerified,
         ).forEach { error ->
             assertEquals(
                 "$error debería invitar a recapturar",
@@ -72,7 +77,19 @@ class SignUpErrorPresentationTest {
     fun `los errores de datos mandan al formulario`() {
         assertEquals(SignUpErrorAction.EDIT_FORM, SignUpError.DniMismatch.presentation().action)
         assertEquals(SignUpErrorAction.EDIT_FORM, SignUpError.InvalidData.presentation().action)
+        assertEquals(SignUpErrorAction.EDIT_FORM, SignUpError.PasswordRejected.presentation().action)
         assertEquals(SignUpErrorAction.EDIT_FORM, SignUpError.AlreadyRegistered.presentation().action)
+    }
+
+    @Test
+    fun `identidad no verificada no distingue no es la misma persona de no se pudo verificar`() {
+        // El backend tampoco lo distingue (mismo code, sin details): esa distinción es
+        // información que un atacante puede usar para calibrar intentos.
+        val texto = SignUpError.IdentityNotVerified.presentation().message.lowercase()
+
+        listOf("misma persona", "no coincide", "otra persona", "no sos vos").forEach { termino ->
+            assertTrue("el mensaje de identidad no verificada usa '$termino'", !texto.contains(termino))
+        }
     }
 
     @Test
