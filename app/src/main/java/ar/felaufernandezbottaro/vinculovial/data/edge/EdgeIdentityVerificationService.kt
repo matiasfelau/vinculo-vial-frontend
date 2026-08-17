@@ -1,12 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.data.edge
 
-import android.graphics.Bitmap
-import ar.felaufernandezbottaro.vinculovial.data.edge.document.ArgentineDni
-import ar.felaufernandezbottaro.vinculovial.data.edge.document.DniBarcodeReader
-import ar.felaufernandezbottaro.vinculovial.data.edge.document.DocumentFaceDetector
 import ar.felaufernandezbottaro.vinculovial.di.DefaultDispatcher
 import ar.felaufernandezbottaro.vinculovial.domain.signup.IdentityVerificationService
-import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DniFrontQuality
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DocumentIdentity
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.EdgeResult
 import kotlinx.coroutines.CoroutineDispatcher
@@ -19,62 +14,50 @@ import javax.inject.Singleton
 /**
  * Onboarding local: lo único que corre en el dispositivo.
  *
- * **Pivote RENAPER-Ready**: la comparación de caras se movió al backend, que verifica la
- * selfie contra el padrón del Estado. Acá ya no se calcula ningún embedding ni similitud —
- * eso desapareció junto con `TfLiteFaceEmbedder`. Lo que queda del lado del Edge:
- * 1. lectura del código de barras del frente (PDF417 o QR, sin que el usuario elija formato);
- * 2. prueba de vida activa sobre la selfie, que sigue siendo 100% local — es la única
- *    defensa en el dispositivo contra una foto-de-una-foto antes de gastar una llamada de red;
- * 3. preparar la selfie para viajar (redimensionar, comprimir, Base64).
+ * **Pivote RENAPER-Ready**: la comparación de caras la hace el backend contra el padrón del
+ * Estado. **Escaneo en vivo**: el documento ya no se fotografía — `DocumentScanSession`
+ * decodifica su código del stream de la cámara y entrega los campos ya parseados, así que
+ * acá no hay ninguna imagen de documento que sostener ni que borrar.
  *
- * Zero Retention sigue aplicando al **documento**: la foto del frente nunca sale de acá,
- * sólo sus campos parseados. Para la **selfie** ya no aplica — [SelfieCompressor] produce
- * deliberadamente el único byte de imagen que cruza la red en todo US-01. Ver `CLAUDE.md`.
+ * Lo que queda del lado del Edge:
+ * 1. sostener los datos del documento hasta que esté también la selfie;
+ * 2. la prueba de vida, que sigue siendo 100% local — es la única defensa en el dispositivo
+ *    contra una foto-de-una-foto antes de gastar una llamada de red;
+ * 3. comprimir la selfie para que entre en el payload.
+ *
+ * Zero Retention: la única imagen que existe acá es la selfie, y sólo hasta que
+ * [SelfieCompressor] produce la versión que efectivamente viaja. La del documento no existe
+ * en absoluto — no es que se borre bien, es que nunca se materializa.
  */
 @Singleton
 class EdgeIdentityVerificationService @Inject constructor(
-    private val barcodeReader: DniBarcodeReader,
-    private val faceDetector: DocumentFaceDetector,
     private val selfieCompressor: SelfieCompressor,
     @DefaultDispatcher private val dispatcher: CoroutineDispatcher,
 ) : IdentityVerificationService {
 
-    /** Serializa capturas y verificación: nunca dos accesos concurrentes a las imágenes. */
+    /** Serializa capturas y verificación: nunca dos accesos concurrentes a la selfie. */
     private val mutex = Mutex()
 
-    private var dniFront: SecureImageBuffer? = null
+    private var document: DocumentIdentity? = null
     private var selfie: SecureImageBuffer? = null
     private var livenessPassed = false
 
-    override suspend fun acceptDniFront(image: ByteArray) = store(image) { captured ->
-        dniFront?.clear()
-        dniFront = captured
-    }
-
-    override suspend fun canReadDniFront(image: ByteArray): DniFrontQuality = withContext(dispatcher) {
-        // copyOf, no wrap: a diferencia de acceptDniFront, acá NO se toma posesión de
-        // `image` — el llamador todavía necesita el array intacto para, si esto da bien,
-        // pasarlo a acceptDniFront. wrap() lo hubiera dejado en ceros al liberarlo acá.
-        val buffer = SecureImageBuffer.copyOf(image)
-        try {
-            buffer.readBitmap { bitmap ->
-                when {
-                    bitmap == null -> DniFrontQuality.BARCODE_UNREADABLE
-                    barcodeReader.readDni(bitmap) == null -> DniFrontQuality.BARCODE_UNREADABLE
-                    !faceDetector.hasFace(bitmap) -> DniFrontQuality.PHOTO_NOT_FOUND
-                    else -> DniFrontQuality.READABLE
-                }
-            }
-        } finally {
-            buffer.clear()
+    override suspend fun acceptDocument(document: DocumentIdentity) {
+        withContext(dispatcher) {
+            mutex.withLock { this@EdgeIdentityVerificationService.document = document }
         }
     }
 
     override suspend fun acceptSelfie(image: ByteArray, livenessPassed: Boolean) {
-        store(image) { captured ->
-            selfie?.clear()
-            selfie = captured
-            this.livenessPassed = livenessPassed
+        // wrap() toma posesión de los bytes: la única referencia viva queda dentro del
+        // buffer, que se sabe borrar.
+        val captured = SecureImageBuffer.wrap(image)
+        withContext(dispatcher) {
+            mutex.withLock {
+                selfie?.clear()
+                selfie = captured
+                this@EdgeIdentityVerificationService.livenessPassed = livenessPassed
+            }
         }
     }
 
@@ -83,22 +66,21 @@ class EdgeIdentityVerificationService @Inject constructor(
             try {
                 verify()
             } finally {
-                // Zero Retention para el documento y para la selfie ORIGINAL: pase lo que
-                // pase, ninguna de las dos sobrevive a esta llamada. Lo único que sale de
-                // acá con vida es el string ya comprimido que devuelve verify(), y ese es
-                // exactamente el que está diseñado para viajar.
-                releaseImages()
+                // Zero Retention: pase lo que pase, la selfie original no sobrevive a esta
+                // llamada. Lo único que sale con vida es el string ya comprimido que
+                // devuelve verify(), que es exactamente el que está diseñado para viajar.
+                releaseCaptures()
             }
         }
     }
 
-    override fun discardCaptures() = releaseImages()
+    override fun discardCaptures() = releaseCaptures()
 
     private suspend fun verify(): EdgeResult {
-        val frontBuffer = dniFront
+        val document = document
         val selfieBuffer = selfie
 
-        if (frontBuffer == null || selfieBuffer == null) {
+        if (document == null || selfieBuffer == null) {
             return EdgeResult.Rejected(EdgeResult.Reason.INCOMPLETE_CAPTURE)
         }
 
@@ -108,68 +90,16 @@ class EdgeIdentityVerificationService @Inject constructor(
             return EdgeResult.Rejected(EdgeResult.Reason.LIVENESS_FAILED)
         }
 
-        // Lectura independiente de la de canReadDniFront(): esa fue sólo una consulta rápida
-        // para la UX ("¿sirve esta foto?"), esta es la única fuente de verdad para lo que
-        // efectivamente se manda.
-        val document = frontBuffer.readBitmap { bitmap ->
-            bitmap?.let { barcodeReader.readDni(it) }
-        } ?: return EdgeResult.Rejected(EdgeResult.Reason.BARCODE_NOT_FOUND)
-
-        val procedureNumber = document.procedureNumber
-            ?: return EdgeResult.Rejected(EdgeResult.Reason.MISSING_PROCEDURE_NUMBER)
-
         val selfieBase64 = selfieBuffer.readSuspending { jpeg -> selfieCompressor.compress(jpeg) }
-            ?: return EdgeResult.Rejected(EdgeResult.Reason.INCOMPLETE_CAPTURE)
+            ?: return EdgeResult.Rejected(EdgeResult.Reason.SELFIE_UNUSABLE)
 
-        return EdgeResult.Verified(
-            document = document.toDomain(procedureNumber),
-            selfieBase64 = selfieBase64,
-        )
+        return EdgeResult.Verified(document = document, selfieBase64 = selfieBase64)
     }
 
-    private fun ArgentineDni.toDomain(procedureNumber: String) = DocumentIdentity(
-        number = number,
-        sex = sex,
-        procedureNumber = procedureNumber,
-    )
-
-    /**
-     * Decodifica el JPEG del buffer, ejecuta [block] y borra el bitmap después.
-     * Los píxeles descomprimidos son una segunda copia de la cara y viven lo mínimo.
-     */
-    private suspend fun <R> SecureImageBuffer.readBitmap(block: suspend (Bitmap?) -> R): R {
-        var bitmap: Bitmap? = null
-        return try {
-            bitmap = readSuspending { jpeg -> SecureBitmap.decode(jpeg, DOCUMENT_DECODE_DIMENSION) }
-            block(bitmap)
-        } finally {
-            SecureBitmap.wipe(bitmap)
-        }
-    }
-
-    private suspend fun store(image: ByteArray, assign: (SecureImageBuffer) -> Unit) {
-        // wrap() toma posesión de los bytes: la única referencia viva queda dentro del
-        // buffer, que se sabe borrar.
-        val captured = SecureImageBuffer.wrap(image)
-        withContext(dispatcher) {
-            mutex.withLock { assign(captured) }
-        }
-    }
-
-    private fun releaseImages() {
-        dniFront?.clear()
+    private fun releaseCaptures() {
         selfie?.clear()
-        dniFront = null
         selfie = null
+        document = null
         livenessPassed = false
-    }
-
-    private companion object {
-        /**
-         * Piso de resolución al decodificar el documento. Lo dicta el PDF417, no la cara: un
-         * decodificador de códigos de barras necesita del orden de 2-3 píxeles por módulo, y
-         * el código ocupa cerca de la mitad del ancho de la tarjeta.
-         */
-        const val DOCUMENT_DECODE_DIMENSION = 3_000
     }
 }

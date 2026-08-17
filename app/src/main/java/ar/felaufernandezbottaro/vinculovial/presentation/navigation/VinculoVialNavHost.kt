@@ -123,10 +123,9 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
 
                 CameraPermissionGate(onDenied = { navController.popBackStack() }) {
                     DocumentScanScreen(
-                        presenceSession = viewModel.documentPresenceSession,
-                        onCaptureTaken = viewModel::canReadDniFront,
-                        onScanned = { front ->
-                            viewModel.onDocumentScanned(front)
+                        scanSession = viewModel.documentScanSession,
+                        onScanned = { document ->
+                            viewModel.onDocumentScanned(document)
                             navController.popBackStack()
                         },
                         onCancel = { navController.popBackStack() },

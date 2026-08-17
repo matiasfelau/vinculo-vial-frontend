@@ -2,7 +2,7 @@ package ar.felaufernandezbottaro.vinculovial.presentation.signup
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import ar.felaufernandezbottaro.vinculovial.domain.signup.DocumentPresenceSession
+import ar.felaufernandezbottaro.vinculovial.domain.signup.DocumentScanSession
 import ar.felaufernandezbottaro.vinculovial.domain.signup.IdentityVerificationService
 import ar.felaufernandezbottaro.vinculovial.domain.signup.LivenessSession
 import ar.felaufernandezbottaro.vinculovial.domain.signup.RegisterUserUseCase
@@ -10,7 +10,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpError
 import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpResult
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.CredentialField
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.CredentialRules
-import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DniFrontQuality
+import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DocumentIdentity
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.SignUpForm
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -39,10 +39,10 @@ class SignUpViewModel @Inject constructor(
      */
     val livenessSession: LivenessSession,
     /**
-     * Detección de presencia del documento, que dispara la foto sola. No lee nada: la
-     * lectura sigue ocurriendo sobre la foto fija, vía [canReadDniFront].
+     * Escaneo del DNI en vivo: decodifica el código directo del stream y entrega los campos
+     * ya parseados. No produce ninguna imagen del documento.
      */
-    val documentPresenceSession: DocumentPresenceSession,
+    val documentScanSession: DocumentScanSession,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SignUpUiState())
@@ -75,20 +75,12 @@ class SignUpViewModel @Inject constructor(
     }
 
     /**
-     * El escaneo del frente terminó con un código legible. El ViewModel **no** guarda la
-     * imagen: la pasa y suelta la referencia en el acto.
+     * El escaneo en vivo leyó el código. Lo que llega son tres campos de texto, no una
+     * imagen: del documento nunca se produce una.
      */
-    fun onDocumentScanned(frontImage: ByteArray) = acceptCapture(CaptureTarget.DOCUMENT) {
-        identityVerification.acceptDniFront(frontImage)
+    fun onDocumentScanned(document: DocumentIdentity) = acceptCapture(CaptureTarget.DOCUMENT) {
+        identityVerification.acceptDocument(document)
     }
-
-    /**
-     * Captura manual: revisa una foto sin aceptarla y devuelve el motivo si no sirve. La
-     * pantalla decide qué mensaje mostrar — no toca `_uiState`, porque es una respuesta a una
-     * acción puntual del usuario, no un cambio de estado del registro.
-     */
-    suspend fun canReadDniFront(image: ByteArray): DniFrontQuality =
-        identityVerification.canReadDniFront(image)
 
     /** La selfie, con el veredicto de la prueba de vida ya resuelto en la pantalla. */
     fun onSelfieCaptured(image: ByteArray, livenessPassed: Boolean) = acceptCapture(CaptureTarget.SELFIE) {

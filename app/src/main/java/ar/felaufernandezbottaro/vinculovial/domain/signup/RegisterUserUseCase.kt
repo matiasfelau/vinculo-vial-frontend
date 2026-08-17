@@ -53,11 +53,13 @@ class RegisterUserUseCase @Inject constructor(
         CredentialRules.normalizeDni(this) == CredentialRules.normalizeDni(declared)
 
     private fun EdgeResult.Reason.toSignUpError(): SignUpError = when (this) {
-        EdgeResult.Reason.BARCODE_NOT_FOUND,
-        EdgeResult.Reason.MISSING_PROCEDURE_NUMBER,
-        -> SignUpError.DocumentUnreadable
-        EdgeResult.Reason.BARCODE_NOT_A_DNI -> SignUpError.DocumentNotRecognized
         EdgeResult.Reason.LIVENESS_FAILED -> SignUpError.LivenessFailed
-        EdgeResult.Reason.INCOMPLETE_CAPTURE -> SignUpError.DocumentUnreadable
+        // Las dos restantes sólo se dan si algo se perdió entre pantallas (o la selfie salió
+        // ilegible): en los dos casos la salida es rehacer la captura, no editar el
+        // formulario. Los motivos de lectura del documento ya no llegan hasta acá — el
+        // escaneo en vivo no deja avanzar sin un documento utilizable.
+        EdgeResult.Reason.INCOMPLETE_CAPTURE,
+        EdgeResult.Reason.SELFIE_UNUSABLE,
+        -> SignUpError.DocumentUnreadable
     }
 }

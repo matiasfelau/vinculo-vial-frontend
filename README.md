@@ -78,9 +78,8 @@ app/
                   SignUpResult/SignUpError, CredentialRules, EdgeResult, DocumentIdentity
   data/
     edge/         SecureImageBuffer, SecureBitmap, SelfieCompressor
-      document/   PDF417/QR con ML Kit, DocumentDataParser (legacy real, electrónico stub),
-                  DocumentFaceDetector (sólo presencia, gate de calidad del documento),
-                  MlKitDocumentPresenceSession (auto-disparo del escaneo)
+      document/   MlKitDocumentScanSession (escaneo en vivo + auto-zoom de ML Kit),
+                  DniBarcodeInterpreter, DocumentDataParser (legacy real, electrónico stub)
       liveness/   desafío de vida sobre el stream de cámara
     crypto/       HpkeEncryptor (Tink), AttestationProvider (Play Integrity | mock JWT)
     remote/       AuthApiService (Retrofit), AttestationInterceptor
@@ -142,25 +141,30 @@ el único paso que ya no es local. Ver el pivote completo en `CLAUDE.md`.
 
 | Paso | Cómo se dispara | Motor | Resultado |
 |---|---|---|---|
-| 1. Documento | **auto-disparo híbrido** — `ImageAnalysis` detecta PDF417 o QR en vivo (sin elegir formato) y, al verlo quieto, dispara sola una foto de alta resolución | ML Kit Barcode + Face Detection | número, sexo y trámite del documento |
+| 1. Documento | **escaneo en vivo, sin foto** — el usuario apunta y la app decodifica del stream; si el código está lejos, ML Kit pide zoom y la cámara se acerca sola | ML Kit Barcode (auto-zoom) | número, sexo y trámite — **nunca una imagen** |
 | 2. Selfie | automático — prueba de vida sobre el preview en vivo | ML Kit Face Detection | JPEG redimensionado/comprimido, listo para el payload |
 
 **El escaneo detecta PDF417 (DNI tarjeta) y QR (DNI con chip) al mismo tiempo**, sin que el
-usuario elija qué versión de documento tiene. La *detección* de los dos ya funciona; la
+usuario elija qué versión de documento tiene. La *detección* de los dos funciona; la
 *decodificación* del contenido del QR todavía no — RENAPER no publicó ese formato (ver
-`ElectronicDniQrParser`, más abajo). Detalle completo de la arquitectura híbrida
-(por qué `ImageAnalysis` sola no alcanza para decodificar, y cómo se dispara la foto de
-alta resolución sin que el usuario toque un botón) en `CLAUDE.md`.
+`ElectronicDniQrParser`, más abajo) —, pero eso ahora se le informa al usuario en vez de
+dejarlo escaneando sin explicación.
 
-Sea cual sea el resultado, `IdentityVerificationService.canReadDniFront()` corre el
-pipeline real (barcode + presencia de la foto del titular) sobre la imagen recién tomada
-antes de aceptarla. Si no sirve, la app sigue intentando sola — no hay botón que tocar en
-el camino feliz, y el mensaje nunca pide "acercarse más" (ver por qué en `CLAUDE.md`).
+**Del documento no se saca ninguna foto.** Los cuadros se analizan y se sueltan; lo único
+que sobrevive al escaneo son tres campos de texto. Eso es posible por dos cosas: desde el
+pivote RENAPER-Ready la foto impresa del DNI no se usa para nada, y el auto-zoom de ML Kit
+resuelve ópticamente los píxeles por módulo que antes exigían una captura de alta
+resolución. Detalle completo, y por qué esto invalida la arquitectura híbrida anterior, en
+`CLAUDE.md`.
+
+La única acción manual en la pantalla es la **linterna** — el plástico del DNI refleja y con
+poca luz el código se pierde. Ningún mensaje pide "acercarse más" (ver por qué en
+`CLAUDE.md`).
 
 ### Bug de captura: rotación perdida en `ImageCapture`
 
-Si el DNI está perfectamente enfocado, iluminado y sin reflejos y aun así
-`canReadDniFront()` falla siempre, la causa casi segura es esta, no la calidad de la foto:
+> Aplica hoy a la **selfie**, que es la única captura fija que queda. Se documenta acá
+> porque el fix vive en `CameraInternals`, compartido por cualquier captura futura.
 
 `ImageCapture.OnImageCapturedCallback` entrega el JPEG **sin rotar** — el sensor suele
 estar montado apaisado, y lo que indica cuánto rotar para que la imagen quede vertical es
@@ -196,12 +200,12 @@ interpretación ni dependencia de la tipografía o el desgaste del plástico.
   `NotImplementedError("A la espera de definiciones oficiales del Renaper")` en vez de
   adivinar con JSON/URL/delimitado.
 
-`MlKitDniBarcodeReader` ya reconoce los dos formatos (PDF417 y QR) y despacha por
-`Barcode.getFormat()`; si detecta un QR, lo manda al stub y captura el
-`NotImplementedError` como "código no reconocido" (no deja que tumbe el registro). El día
-que RENAPER publique el formato, `ElectronicDniQrParser` es la única clase que hay que
-tocar — el despacho no cambia. Recién ahí tiene sentido reintroducir el paso del reverso
-en `DocumentScanSession`/`DocumentScanScreen`, hoy retirado a propósito.
+`DniBarcodeInterpreter` reconoce los dos formatos (PDF417 y QR) y despacha por
+`Barcode.getFormat()`; si detecta un QR, lo manda al stub y traduce el `NotImplementedError`
+a "DNI que todavía no leemos" — un estado distinto de "esto no es un DNI", que es lo que le
+permite a la pantalla decir algo útil en vez de seguir buscando en silencio. El día que
+RENAPER publique el formato, `ElectronicDniQrParser` es la única clase que hay que tocar:
+el despacho no cambia.
 
 **Prueba de vida**: se exige una *transición* observada en vivo — de cara neutra a sonrisa, o
 de ojos abiertos a cerrados — y no un gesto aislado. Comprobar sólo "está sonriendo" lo pasaría

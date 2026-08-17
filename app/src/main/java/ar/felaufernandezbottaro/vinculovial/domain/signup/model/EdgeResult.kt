@@ -28,25 +28,21 @@ sealed interface EdgeResult {
 
     data class Rejected(val reason: Reason) : EdgeResult
 
+    /**
+     * Los motivos que tenían que ver con leer el código (no se encontró, no era un DNI, le
+     * faltaba el trámite) ya no están: con el escaneo en vivo esas condiciones se resuelven
+     * **durante** el escaneo, con feedback inmediato en pantalla, y el flujo no avanza hasta
+     * tener un documento utilizable. Llegar hasta acá sin poder leerlo dejó de ser posible.
+     */
     enum class Reason {
-        /** No se encontró un PDF417/QR legible en el frente del documento. */
-        BARCODE_NOT_FOUND,
-
-        /** Se leyó el código pero su contenido no es un DNI argentino válido. */
-        BARCODE_NOT_A_DNI,
-
-        /**
-         * El código se leyó pero no trae número de trámite. RENAPER lo necesita para
-         * identificar contra qué registro verificar — sin él, mandar el registro es mandar
-         * algo que el backend no va a poder resolver.
-         */
-        MISSING_PROCEDURE_NUMBER,
-
         /** La prueba de vida no se completó. */
         LIVENESS_FAILED,
 
-        /** Falta alguna de las capturas. */
+        /** Falta el documento o la selfie. */
         INCOMPLETE_CAPTURE,
+
+        /** La selfie no se pudo decodificar ni comprimir para el envío. */
+        SELFIE_UNUSABLE,
     }
 }
 

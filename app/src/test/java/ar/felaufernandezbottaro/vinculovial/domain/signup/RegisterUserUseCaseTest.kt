@@ -47,12 +47,13 @@ class RegisterUserUseCaseTest {
 
     @Test
     fun `cada rechazo del edge tiene su error de dominio`() = runTest {
+        // Los motivos de lectura del documento ya no existen: con el escaneo en vivo esas
+        // condiciones se resuelven en pantalla y el flujo no avanza sin un documento
+        // utilizable, así que nunca pueden llegar hasta el use case.
         val esperados = mapOf(
-            EdgeResult.Reason.BARCODE_NOT_FOUND to SignUpError.DocumentUnreadable,
-            EdgeResult.Reason.BARCODE_NOT_A_DNI to SignUpError.DocumentNotRecognized,
-            EdgeResult.Reason.MISSING_PROCEDURE_NUMBER to SignUpError.DocumentUnreadable,
             EdgeResult.Reason.LIVENESS_FAILED to SignUpError.LivenessFailed,
             EdgeResult.Reason.INCOMPLETE_CAPTURE to SignUpError.DocumentUnreadable,
+            EdgeResult.Reason.SELFIE_UNUSABLE to SignUpError.DocumentUnreadable,
         )
 
         esperados.forEach { (reason, expectedError) ->

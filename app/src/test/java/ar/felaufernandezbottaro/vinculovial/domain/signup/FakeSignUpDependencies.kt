@@ -2,10 +2,9 @@ package ar.felaufernandezbottaro.vinculovial.domain.signup
 
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.CameraFrame
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.Credentials
-import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DniFrontQuality
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DocumentIdentity
-import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DocumentPresence
-import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DocumentPresenceStage
+import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DocumentScanStage
+import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DocumentScanState
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.EdgeResult
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.LivenessChallenge
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.LivenessProgress
@@ -20,7 +19,8 @@ class FakeIdentityVerificationService(
     ),
 ) : IdentityVerificationService {
 
-    var dniFrontCaptures = 0
+    var documentCaptures = 0
+    var lastDocument: DocumentIdentity? = null
     var selfieCaptures = 0
     var lastLivenessPassed: Boolean? = null
     var verifications = 0
@@ -29,17 +29,10 @@ class FakeIdentityVerificationService(
     /** Si no es `null`, aceptar una captura falla con esta excepción. */
     var captureFailure: Exception? = null
 
-    override suspend fun acceptDniFront(image: ByteArray) {
+    override suspend fun acceptDocument(document: DocumentIdentity) {
         captureFailure?.let { throw it }
-        dniFrontCaptures++
-    }
-
-    var canReadDniFrontResult = DniFrontQuality.READABLE
-    var canReadDniFrontCalls = 0
-
-    override suspend fun canReadDniFront(image: ByteArray): DniFrontQuality {
-        canReadDniFrontCalls++
-        return canReadDniFrontResult
+        documentCaptures++
+        lastDocument = document
     }
 
     override suspend fun acceptSelfie(image: ByteArray, livenessPassed: Boolean) {
@@ -71,35 +64,31 @@ class FakeSignUpRepository(
     }
 }
 
-/** Sesión de presencia inerte: el ViewModel sólo la expone hacia la pantalla de documento. */
-class FakeDocumentPresenceSession : DocumentPresenceSession {
+/** Sesión de escaneo inerte: el ViewModel sólo la expone hacia la pantalla de documento. */
+class FakeDocumentScanSession : DocumentScanSession {
 
-    private val _presence = MutableStateFlow(DocumentPresence())
-    override val presence: StateFlow<DocumentPresence> = _presence
+    private val _state = MutableStateFlow(DocumentScanState())
+    override val state: StateFlow<DocumentScanState> = _state
 
     var starts = 0
-    var pauses = 0
     var closes = 0
+    var attachedZoomControllers = 0
 
-    /** Simula que la cámara ya ve el documento quieto y encuadrado. */
-    fun emitSteady() {
-        _presence.value = DocumentPresence(
-            stage = DocumentPresenceStage.STEADY,
-            hasBarcode = true,
-            hasFace = true,
-        )
+    /** Simula que el escáner ya leyó el código. */
+    fun emitDecoded(document: DocumentIdentity) {
+        _state.value = DocumentScanState(stage = DocumentScanStage.DECODED, document = document)
+    }
+
+    override fun attachZoomController(controller: ZoomController) {
+        attachedZoomControllers++
     }
 
     override fun start() {
         starts++
-        _presence.value = DocumentPresence()
+        _state.value = DocumentScanState()
     }
 
     override suspend fun submitFrame(frame: CameraFrame) = Unit
-
-    override fun pause() {
-        pauses++
-    }
 
     override fun close() {
         closes++

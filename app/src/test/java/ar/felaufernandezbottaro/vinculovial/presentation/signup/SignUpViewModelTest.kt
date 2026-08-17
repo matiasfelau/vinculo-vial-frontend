@@ -1,6 +1,6 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.signup
 
-import ar.felaufernandezbottaro.vinculovial.domain.signup.FakeDocumentPresenceSession
+import ar.felaufernandezbottaro.vinculovial.domain.signup.FakeDocumentScanSession
 import ar.felaufernandezbottaro.vinculovial.domain.signup.FakeIdentityVerificationService
 import ar.felaufernandezbottaro.vinculovial.domain.signup.FakeLivenessSession
 import ar.felaufernandezbottaro.vinculovial.domain.signup.FakeSignUpRepository
@@ -9,7 +9,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpError
 import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpResult
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.CredentialField
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.CredentialProblem
-import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DniFrontQuality
+import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DocumentIdentity
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.EdgeResult
 import ar.felaufernandezbottaro.vinculovial.util.MainDispatcherRule
 import kotlinx.coroutines.CancellationException
@@ -28,13 +28,13 @@ class SignUpViewModelTest {
     private val verification = FakeIdentityVerificationService()
     private val repository = FakeSignUpRepository()
     private val livenessSession = FakeLivenessSession()
-    private val presenceSession = FakeDocumentPresenceSession()
+    private val scanSession = FakeDocumentScanSession()
 
     private fun viewModel() = SignUpViewModel(
         registerUser = RegisterUserUseCase(verification, repository),
         identityVerification = verification,
         livenessSession = livenessSession,
-        documentPresenceSession = presenceSession,
+        documentScanSession = scanSession,
     )
 
     private fun SignUpViewModel.completarFormulario() {
@@ -47,8 +47,12 @@ class SignUpViewModelTest {
     /** La cámara real entrega bytes; en los tests alcanza con cualquier contenido. */
     private fun foto() = ByteArray(64) { it.toByte() }
 
+    /** El escaneo en vivo entrega campos ya parseados, no una imagen. */
+    private fun documento() =
+        DocumentIdentity(number = "12345678", sex = "M", procedureNumber = "00307513148")
+
     private fun SignUpViewModel.capturarTodo(livenessPassed: Boolean = true) {
-        onDocumentScanned(foto())
+        onDocumentScanned(documento())
         onSelfieCaptured(foto(), livenessPassed)
     }
 
@@ -85,38 +89,26 @@ class SignUpViewModelTest {
     }
 
     @Test
-    fun `escanear el documento le entrega el frente al edge`() = runTest {
+    fun `escanear el documento le entrega los campos leidos al edge`() = runTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onDocumentScanned(foto())
+        viewModel.onDocumentScanned(documento())
 
-        assertEquals(1, verification.dniFrontCaptures)
+        assertEquals(1, verification.documentCaptures)
         assertTrue(viewModel.uiState.value.isCaptured(CaptureTarget.DOCUMENT))
         assertEquals(null, viewModel.uiState.value.capturing)
     }
 
     @Test
-    fun `canReadDniFront delega en el edge sin tocar el estado`() = runTest {
-        verification.canReadDniFrontResult = DniFrontQuality.BARCODE_UNREADABLE
+    fun `del documento viajan los campos leidos, no una imagen`() = runTest {
+        // El escaneo en vivo nunca produce una foto del documento: lo que cruza esta
+        // frontera son tres campos de texto, y ese es el contrato que hay que preservar.
         val viewModel = viewModel()
 
-        val quality = viewModel.canReadDniFront(foto())
+        viewModel.onDocumentScanned(documento())
 
-        assertFalse(quality.isReadable)
-        assertEquals(1, verification.canReadDniFrontCalls)
-        // Es sólo una consulta: no debe acumularse como si fuera una captura aceptada.
-        assertTrue(viewModel.uiState.value.completedCaptures.isEmpty())
-    }
-
-    @Test
-    fun `canReadDniFront propaga el motivo para que la pantalla no invente el mensaje`() = runTest {
-        verification.canReadDniFrontResult = DniFrontQuality.PHOTO_NOT_FOUND
-        val viewModel = viewModel()
-
-        // Se lee el código pero no se ve la cara: se corrige distinto que un código ilegible,
-        // así que el motivo tiene que llegar intacto a la UI y no colapsar en un booleano.
-        assertEquals(DniFrontQuality.PHOTO_NOT_FOUND, viewModel.canReadDniFront(foto()))
+        assertEquals(documento(), verification.lastDocument)
     }
 
     @Test
@@ -133,7 +125,7 @@ class SignUpViewModelTest {
     fun `no se puede enviar hasta tener las dos capturas`() = runTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
-        viewModel.onDocumentScanned(foto())
+        viewModel.onDocumentScanned(documento())
 
         viewModel.submit()
 
@@ -221,7 +213,7 @@ class SignUpViewModelTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onDocumentScanned(foto())
+        viewModel.onDocumentScanned(documento())
 
         val state = viewModel.uiState.value
         assertEquals(SignUpError.DocumentUnreadable, state.error)
@@ -237,7 +229,7 @@ class SignUpViewModelTest {
         val viewModel = viewModel()
         viewModel.completarFormulario()
 
-        viewModel.onDocumentScanned(foto())
+        viewModel.onDocumentScanned(documento())
 
         assertEquals(null, viewModel.uiState.value.error)
     }
