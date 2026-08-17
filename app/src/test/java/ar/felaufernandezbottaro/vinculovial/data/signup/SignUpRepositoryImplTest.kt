@@ -217,6 +217,20 @@ class SignUpRepositoryImplTest {
     }
 
     @Test
+    fun `un 400 con cuerpo de error no rompe el mapeo a dato invalido`() = runTest {
+        // El repositorio ahora lee el cuerpo del error (para loguearlo en debug); esto
+        // confirma que leerlo no interfiere con el resultado que ve el dominio, sea cual
+        // sea la forma que termine teniendo ese JSON del lado del backend.
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(400)
+                .setBody("""{"error":"campo invalido","field":"sexo"}"""),
+        )
+
+        assertEquals(SignUpResult.Failed(SignUpError.InvalidData), repository().signUp(credentials))
+    }
+
+    @Test
     fun `403 es attestation rechazada`() = runTest {
         server.enqueue(MockResponse().setResponseCode(403))
 

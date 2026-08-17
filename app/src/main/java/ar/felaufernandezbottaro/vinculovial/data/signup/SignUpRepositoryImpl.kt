@@ -1,8 +1,10 @@
 package ar.felaufernandezbottaro.vinculovial.data.signup
 
+import android.util.Log
 import com.squareup.moshi.JsonAdapter
 import com.squareup.moshi.JsonWriter
 import com.squareup.moshi.Moshi
+import ar.felaufernandezbottaro.vinculovial.BuildConfig
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationUnavailableException
 import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoConfigurationException
 import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoOperationException
@@ -20,6 +22,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import okio.Buffer
+import retrofit2.Response
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -61,6 +64,7 @@ class SignUpRepositoryImpl @Inject constructor(
             if (response.isSuccessful) {
                 SignUpResult.Registered
             } else {
+                logRejection(response)
                 SignUpResult.Failed(response.code().toSignUpError())
             }
         } catch (e: CancellationException) {
@@ -111,6 +115,37 @@ class SignUpRepositoryImpl @Inject constructor(
         }
     }
 
+    /**
+     * Diagnóstico de sólo debug para probar el flujo de punta a punta: el backend puede
+     * describir en el cuerpo del 400 qué campo rechazó, y sin verlo no hay forma de saber
+     * si el problema es el formato del payload o algo del lado del servidor.
+     *
+     * **Gateado a `BuildConfig.DEBUG`, nunca en release** — misma disciplina que el resto de
+     * los logs de diagnóstico del proyecto (`TfLiteFaceEmbedder`, `CameraCapture`, `BIOMETRY`).
+     * Pero acá hay un riesgo real que esos otros logs no tienen: si el backend, al describir
+     * el campo inválido, **ecoa el valor recibido** (`"sexo recibido: 'Masculino'"` en vez de
+     * `"sexo: formato inválido"`), este log filtra ese dato a Logcat pese al gate de debug —
+     * Logcat no es un canal seguro, sobrevive en reportes de bug y queda accesible por ADB.
+     * La regla del proyecto es "nunca loguear DNI, password, PSK" sin excepción de build type;
+     * esto es una excepción deliberada y temporal para depurar la integración end-to-end, no
+     * una decisión de arquitectura — hay que insistir con el equipo de backend en que la
+     * respuesta describa el campo por **nombre o código**, nunca por valor.
+     *
+     * El mensaje que ve el usuario no cambia: sigue siendo el genérico de
+     * `SignUpError.InvalidData`. Esto es sólo para quien está mirando el dispositivo conectado.
+     */
+    private fun logRejection(response: Response<Unit>) {
+        if (!BuildConfig.DEBUG) return
+
+        val body = try {
+            response.errorBody()?.string()
+        } catch (e: IOException) {
+            "(no se pudo leer el cuerpo: ${e.message})"
+        }
+
+        Log.e(TAG, "El backend rechazó el registro (HTTP ${response.code()}): ${body ?: "(sin cuerpo)"}")
+    }
+
     private fun Int.toSignUpError(): SignUpError = when (this) {
         HTTP_BAD_REQUEST -> SignUpError.InvalidData
         HTTP_FORBIDDEN -> SignUpError.AttestationRejected
@@ -127,6 +162,7 @@ class SignUpRepositoryImpl @Inject constructor(
     }
 
     private companion object {
+        const val TAG = "SignupError"
         const val HTTP_BAD_REQUEST = 400
         const val HTTP_FORBIDDEN = 403
         const val HTTP_CONFLICT = 409

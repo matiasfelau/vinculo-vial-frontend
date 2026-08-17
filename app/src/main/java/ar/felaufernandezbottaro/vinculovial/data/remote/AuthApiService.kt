@@ -8,8 +8,10 @@ import retrofit2.http.POST
 interface AuthApiService {
 
     /**
-     * Registro síncrono. Devuelve `Response<Unit>` porque lo que importa es el código:
-     * 201 / 400 / 403 / 409. El cuerpo de error no se usa (mensajes genéricos en UI).
+     * Registro síncrono. Devuelve `Response<Unit>` porque el cuerpo de éxito no trae nada
+     * que deserializar: lo que importa es el código, 201 / 400 / 403 / 409. El de error sí
+     * se lee — ver [SignUpRepositoryImpl] — pero sólo para diagnóstico en Logcat; el mensaje
+     * que ve el usuario sigue siendo genérico en los dos casos.
      *
      * El header `X-App-Attestation` lo agrega [AttestationInterceptor].
      */
