@@ -12,3 +12,9 @@ captures/
 *.aab
 *.keystore
 !debug.keystore
+
+# Artefactos de un crash del daemon de Gradle/JVM (quedan en la raíz del proyecto cuando
+# el proceso se cae por falta de memoria); nunca son parte del código.
+hs_err_pid*.log
+replay_pid*.log
+*.stackdump

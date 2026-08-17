@@ -255,6 +255,20 @@ PreviewView.ImplementationMode.COMPATIBLE` (TextureView) lo evita. Las dos panta
 cámara ya lo tienen, por las dudas, aunque la causa raíz haya sido la (1); si se agrega
 una tercera pantalla con preview, aplicar lo mismo.
 
+### El escáner deja de responder al volver a entrar a la pantalla
+
+Síntoma: se sale del escáner o de la selfie (back propio o físico) y al volver a entrar el
+preview se ve, pero nunca se detecta nada más — sólo se recupera matando la app. **No era
+un bug de CameraX** (`DisposableEffect(Unit)` + `unbindAll()` en `onDispose` ya estaba bien
+en las dos pantallas). La causa real: `MlKitDocumentScanSession` y `MlKitLivenessSession`
+son `@Singleton` de Hilt, y el cliente de ML Kit (`BarcodeScanner`/`FaceDetector`) se
+construía con `by lazy` — se cierra correctamente al salir de la pantalla, pero `lazy` no
+lo vuelve a construir nunca (la instancia es el singleton, vive todo el proceso), así que
+la segunda visita analiza contra un cliente ya cerrado y falla en silencio para siempre.
+**Fix**: el cliente ahora es un `var` nullable que se reconstruye en `start()` (llamado en
+cada visita a la pantalla) y se limpia en `close()`, siguiendo el ciclo de vida de la
+*pantalla* en vez del *proceso*. Detalle completo en `CLAUDE.md`.
+
 ### Pivote RENAPER-Ready: la selfie viaja, el reconocimiento facial local no
 
 Hasta esta entrega la comparación de caras corría en el dispositivo, con TensorFlow Lite

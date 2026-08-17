@@ -53,44 +53,60 @@ class MlKitDocumentScanSession @Inject constructor(
     private var zoomController: ZoomController? = null
 
     /**
-     * Se construye perezosamente pero una sola vez: el callback de zoom lee
-     * [zoomController] en cada invocación, así que conectar el control después de crear el
-     * escáner funciona igual — y de hecho es el orden real, porque la cámara se bindea
-     * después de que la pantalla compone.
+     * NO es `by lazy`. Esta sesión es `@Singleton` — vive todo lo que vive el proceso —,
+     * pero el cliente de ML Kit tiene que vivir sólo lo que dura **una visita** a la
+     * pantalla de escaneo. Con `by lazy` el cliente se construye una única vez para todo
+     * el proceso; [close] lo cierra al salir de la pantalla (correcto: es lo que evita
+     * retener el detector con la cámara ya desvinculada), pero `lazy` nunca lo vuelve a
+     * construir. La segunda vez que el usuario entra a esta pantalla, [submitFrame] llama
+     * a `process()` sobre un cliente ya cerrado: ML Kit lanza, la excepción cae en el
+     * `catch` silencioso de abajo, y el escaneo queda mudo para siempre — sin crashear y
+     * sin ningún síntoma visible más que "la cámara no responde". Sólo se recupera
+     * matando el proceso, porque eso es lo único que recrea el singleton de Hilt. Por eso
+     * el cliente se reconstruye explícitamente en [start] (que la pantalla llama en cada
+     * composición nueva) en vez de dejar que un delegate decida cuándo existe.
      */
-    private val scanner: BarcodeScanner by lazy {
-        BarcodeScanning.getClient(
-            BarcodeScannerOptions.Builder()
-                .setBarcodeFormats(Barcode.FORMAT_PDF417, Barcode.FORMAT_QR_CODE)
-                .enableAllPotentialBarcodes()
-                .setZoomSuggestionOptions(
-                    ZoomSuggestionOptions.Builder { ratio ->
-                        // Devolver false le dice a ML Kit que el zoom no se aplicó, para que
-                        // no espere un acercamiento que nunca va a ocurrir y siga probando.
-                        zoomController?.requestZoom(ratio) ?: false
-                    }.build(),
-                )
-                .build(),
-        )
-    }
+    @Volatile
+    private var scanner: BarcodeScanner? = null
+
+    private fun newScanner(): BarcodeScanner = BarcodeScanning.getClient(
+        BarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_PDF417, Barcode.FORMAT_QR_CODE)
+            .enableAllPotentialBarcodes()
+            .setZoomSuggestionOptions(
+                ZoomSuggestionOptions.Builder { ratio ->
+                    // Devolver false le dice a ML Kit que el zoom no se aplicó, para que
+                    // no espere un acercamiento que nunca va a ocurrir y siga probando.
+                    zoomController?.requestZoom(ratio) ?: false
+                }.build(),
+            )
+            .build(),
+    )
 
     override fun attachZoomController(controller: ZoomController) {
         zoomController = controller
     }
 
     override fun start() {
+        // Por si start() se llamara dos veces sin un close() en el medio: así nunca queda
+        // más de un cliente vivo a la vez.
+        scanner?.close()
+        scanner = newScanner()
         running = true
         _state.value = DocumentScanState()
     }
 
     override suspend fun submitFrame(frame: CameraFrame) {
+        val client = scanner
         // Una vez decodificado no se sigue analizando: el resultado ya no puede mejorar y
         // seguir procesando sólo gastaría batería mientras la pantalla hace su transición.
-        if (!running || _state.value.isDone) return
+        // `client == null` cubre además un cuadro que llega tarde desde el hilo del
+        // analyzer, después de que la pantalla ya se fue y close() ya corrió.
+        if (!running || client == null || _state.value.isDone) return
         if (!inFlight.tryLock()) return
 
         try {
-            val barcodes = scanner.process(frame.toInputImage()).await()
+            val barcodes = client.process(frame.toInputImage()).await()
             if (running) _state.value = evaluate(barcodes)
         } catch (e: Exception) {
             // Un cuadro que falla no invalida el intento: se ignora y sigue el siguiente.
@@ -102,7 +118,8 @@ class MlKitDocumentScanSession @Inject constructor(
     override fun close() {
         running = false
         zoomController = null
-        scanner.close()
+        scanner?.close()
+        scanner = null
     }
 
     /**

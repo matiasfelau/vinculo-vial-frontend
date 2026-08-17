@@ -1,5 +1,6 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.signup
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,14 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 /** Cierre del flujo US-01: la cuenta quedó creada, pero todavía no hay sesión. */
 @Composable
 fun SignUpSuccessScreen(onFinish: () -> Unit) {
+    // Punto sin retorno del flujo: dejar caer el botón físico "Atrás" al comportamiento
+    // por defecto de navegación llevaría a la pantalla anterior en el back stack — con el
+    // registro ya completado, eso significa reabrir una pantalla de un flujo que ya
+    // terminó. Se intercepta y se hace exactamente lo mismo que "Finalizar": todavía no
+    // existe una pantalla de Inicio/Login (eso es US-02), así que reiniciar el grafo de
+    // registro es lo más parecido a "volver al inicio" que hay hoy.
+    BackHandler(onBack = onFinish)
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = { VvBottomBar() },

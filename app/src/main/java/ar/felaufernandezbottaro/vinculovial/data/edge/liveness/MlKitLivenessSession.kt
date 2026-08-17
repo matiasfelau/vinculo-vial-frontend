@@ -3,6 +3,7 @@ package ar.felaufernandezbottaro.vinculovial.data.edge.liveness
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceDetector
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import ar.felaufernandezbottaro.vinculovial.domain.signup.LivenessSession
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.CameraFrame
@@ -42,19 +43,33 @@ class MlKitLivenessSession @Inject constructor() : LivenessSession {
     private var lastAnalyzedAt = 0L
     private var baselineEstablished = false
 
-    private val detector by lazy {
-        FaceDetection.getClient(
-            FaceDetectorOptions.Builder()
-                // Tiempo real: el preview manda muchos frames y hay que seguirle el ritmo.
-                .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
-                // Las probabilidades de sonrisa y ojos abiertos son justo el insumo del desafío.
-                .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
-                .setMinFaceSize(MIN_FACE_SIZE)
-                .build(),
-        )
-    }
+    /**
+     * NO es `by lazy`. La razón es la misma que en `MlKitDocumentScanSession.scanner`
+     * (ver esa nota): esta sesión también es `@Singleton`, así que un detector cacheado
+     * una sola vez para todo el proceso quedaría cerrado para siempre después de la
+     * primera visita a la pantalla de selfie — [close] lo cierra al salir (correcto, para
+     * no retener el detector con la cámara ya desvinculada), pero sin reconstrucción
+     * explícita la segunda visita analizaría contra un cliente muerto, fallando en
+     * silencio en el `catch` de [submitFrame]. Por eso se reconstruye en cada [start].
+     */
+    @Volatile
+    private var detector: FaceDetector? = null
+
+    private fun newDetector(): FaceDetector = FaceDetection.getClient(
+        FaceDetectorOptions.Builder()
+            // Tiempo real: el preview manda muchos frames y hay que seguirle el ritmo.
+            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+            // Las probabilidades de sonrisa y ojos abiertos son justo el insumo del desafío.
+            .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
+            .setMinFaceSize(MIN_FACE_SIZE)
+            .build(),
+    )
 
     override fun start() {
+        // Por si start() se llamara dos veces sin un close() en el medio: así nunca queda
+        // más de un cliente vivo a la vez.
+        detector?.close()
+        detector = newDetector()
         baselineEstablished = false
         lastAnalyzedAt = 0L
         // El gesto se sortea en cada intento: uno fijo se podría grabar una sola vez y reusar.
@@ -65,6 +80,9 @@ class MlKitLivenessSession @Inject constructor() : LivenessSession {
 
     override suspend fun submitFrame(frame: CameraFrame) {
         if (_progress.value.isPassed) return
+        // Cubre un frame que llega tarde desde el hilo del analyzer, después de que la
+        // pantalla ya se fue y close() ya corrió.
+        val client = detector ?: return
 
         val now = System.currentTimeMillis()
         if (now - lastAnalyzedAt < MIN_INTERVAL_MS) return
@@ -73,7 +91,7 @@ class MlKitLivenessSession @Inject constructor() : LivenessSession {
 
         try {
             lastAnalyzedAt = now
-            val faces = detector.process(frame.toInputImage()).await()
+            val faces = client.process(frame.toInputImage()).await()
             _progress.value = evaluate(_progress.value, faces, frame)
         } catch (e: Exception) {
             // Un frame que falla no invalida el intento: se ignora y sigue el siguiente.
@@ -83,7 +101,8 @@ class MlKitLivenessSession @Inject constructor() : LivenessSession {
     }
 
     override fun close() {
-        detector.close()
+        detector?.close()
+        detector = null
     }
 
     private fun evaluate(
