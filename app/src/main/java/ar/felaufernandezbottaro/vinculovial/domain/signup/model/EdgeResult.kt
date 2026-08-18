@@ -8,7 +8,8 @@ package ar.felaufernandezbottaro.vinculovial.domain.signup.model
  *
  * Es lo único que sobrevive a las imágenes: los bytes de las dos capturas se sobreescriben
  * apenas se produce este objeto — con una única excepción deliberada, [Verified.selfieBase64],
- * que por diseño **tiene** que salir del dispositivo (ver `CLAUDE.md`, sección de RENAPER).
+ * que por diseño **tiene** que salir del dispositivo: es la selfie, y la verifica el
+ * backend contra el padrón de RENAPER (pivote RENAPER-Ready).
  */
 sealed interface EdgeResult {
 
