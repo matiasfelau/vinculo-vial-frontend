@@ -189,7 +189,7 @@ class SignUpRepositoryImplTest {
             .decrypt(enc + ciphertext, ByteArray(0))
 
         // La selfie viaja adentro de este mismo payload cifrado: es la única imagen que
-        // sale del dispositivo en todo el flujo (ver CLAUDE.md, pivote RENAPER-Ready).
+        // sale del dispositivo en todo el flujo (pivote RENAPER-Ready).
         val payload = JSONObject(String(plaintext))
         assertEquals(
             setOf("dni", "tramite", "sexo", "email", "password", "selfie"),

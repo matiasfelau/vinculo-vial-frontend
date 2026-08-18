@@ -56,7 +56,7 @@ android {
         // configurar acá — la verificación de identidad (comparar la selfie contra el
         // documento) se movió al backend, contra el padrón del Estado. FACE_MATCH_THRESHOLD
         // y FACE_EMBEDDER_MODEL_ASSET existieron mientras esa comparación corría on-device
-        // con TensorFlow Lite; los dos se retiraron junto con esa lógica. Ver CLAUDE.md.
+        // con TensorFlow Lite; los dos se retiraron junto con esa lógica.
 
         // `play_integrity` = veredicto real de Google (default); `mock` = JWT firmado con
         // la PSK compartida, para emuladores y CI. El Gateway tiene que estar preparado
