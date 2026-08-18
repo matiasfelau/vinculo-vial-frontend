@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Configuración de producción: TLS obligatorio para todo el tráfico.
+  El registro viaja cifrado con HPKE, pero el canal igual tiene que ser HTTPS:
+  sin TLS un intermediario ve el header de attestation y puede reproducir requests.
+
+  La variante debug (src/debug/res/xml) habilita cleartext SÓLO contra el host local.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
