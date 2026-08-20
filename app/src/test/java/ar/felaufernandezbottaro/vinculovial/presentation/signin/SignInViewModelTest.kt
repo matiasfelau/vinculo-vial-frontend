@@ -97,4 +97,28 @@ class SignInViewModelTest {
 
         assertEquals(SignInStatus.Idle, viewModel.uiState.value.status)
     }
+
+    @Test
+    fun `400 401 y 403 del backend llegan tal cual al estado, sin marcar campos`() = runTest {
+        // A diferencia de la validación local (fieldErrors por campo), un rechazo del
+        // backend siempre es un mensaje genérico único — nunca señala cuál de los dos
+        // campos falló, ni siquiera para el 400.
+        listOf(
+            SignInError.InvalidData,
+            SignInError.InvalidCredentials,
+            SignInError.AttestationRejected,
+        ).forEach { error ->
+            repository.result = SignInResult.Failed(error)
+            val viewModel = viewModel()
+            viewModel.completarFormulario()
+
+            viewModel.submit()
+
+            assertEquals("mapeo incorrecto para $error", error, viewModel.uiState.value.error)
+            assertTrue(
+                "$error no debería marcar campos individuales",
+                viewModel.uiState.value.fieldErrors.isEmpty(),
+            )
+        }
+    }
 }
