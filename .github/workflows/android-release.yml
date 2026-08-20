@@ -41,8 +41,8 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --console=plain
 
-      - name: Locate generated APK
-        id: apk
+      - name: Locate generated debug APK
+        id: debug_apk
         run: |
           apk_path=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
           if [ -z "$apk_path" ]; then
@@ -51,25 +51,55 @@ jobs:
           fi
           echo "path=$apk_path" >> "$GITHUB_OUTPUT"
 
-      - name: Upload APK as workflow artifact
+      - name: Upload debug APK as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: ${{ steps.apk.outputs.path }}
+          path: ${{ steps.debug_apk.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      # Release Build: solo se arma para un push de tag "vX.Y.Z" -- es el que se publica
+      # como Asset del GitHub Release. isMinifyEnabled/isShrinkResources ya estan activados
+      # en el buildType release (ver app/build.gradle.kts); la firma hoy es la de debug
+      # (autogenerada por AGP, sin secretos) para que el APK sea instalable -- todavia no es
+      # apta para Play Store, ver el comentario junto a esa linea en build.gradle.kts.
+      - name: Assemble release APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: ./gradlew assembleRelease --console=plain
+
+      - name: Locate generated release APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: release_apk
+        run: |
+          apk_path=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          if [ -z "$apk_path" ]; then
+            echo "No se encontro ningun APK en app/build/outputs/apk/release" >&2
+            exit 1
+          fi
+          echo "path=$apk_path" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release APK as workflow artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: ${{ steps.release_apk.outputs.path }}
           if-no-files-found: error
           retention-days: 30
 
       # Release versionado: solo corre cuando el push trae un tag "vX.Y.Z". El nombre y las
-      # notas del release usan el tag tal cual, sin generar contenido adicional.
+      # notas del release usan el tag tal cual, sin generar contenido adicional. El Asset es
+      # el Release Build (minificado y firmado), no el de debug.
       - name: Publish tagged release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.apk.outputs.path }}
+          files: ${{ steps.release_apk.outputs.path }}
           generate_release_notes: true
 
       # Build continuo de main: mantiene un unico release movil ("latest-main") con el
-      # APK mas reciente, separado de los releases versionados por tag.
+      # APK de debug mas reciente, separado de los releases versionados por tag.
       - name: Publish rolling main build
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
@@ -77,4 +107,4 @@ jobs:
           tag_name: latest-main
           name: "Build mas reciente de main"
           prerelease: true
-          files: ${{ steps.apk.outputs.path }}
+          files: ${{ steps.debug_apk.outputs.path }}

@@ -430,6 +430,11 @@ class SignUpRepositoryImplTest {
         val cancelada = object : AuthApiService {
             override suspend fun signUp(body: SignUpRequestDto): Response<Unit> =
                 throw CancellationException("pantalla abandonada")
+
+            override suspend fun signIn(
+                body: ar.felaufernandezbottaro.vinculovial.data.signin.dto.SignInRequestDto,
+            ): Response<ar.felaufernandezbottaro.vinculovial.data.signin.dto.SignInResponseDto> =
+                throw UnsupportedOperationException("no usado en este test")
         }
         val repository = SignUpRepositoryImpl(
             api = cancelada,

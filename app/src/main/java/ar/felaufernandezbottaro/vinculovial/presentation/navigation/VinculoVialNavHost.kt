@@ -17,6 +17,9 @@ import androidx.compose.ui.platform.LocalContext
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.CameraPermissionGate
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.DocumentScanScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.LivenessCaptureScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.signin.SignInScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.signin.SignInStatus
+import ar.felaufernandezbottaro.vinculovial.presentation.signin.SignInViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.CaptureTarget
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpCaptureScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpConsentScreen
@@ -28,6 +31,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.splash.SplashScreen
 
 object Route {
     const val SPLASH = "splash"
+    const val SIGN_IN = "signin"
     const val SIGN_UP_GRAPH = "signup"
     const val SIGN_UP_FORM = "signup/form"
     const val SIGN_UP_CONSENT = "signup/consent"
@@ -47,10 +51,35 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
         composable(Route.SPLASH) {
             SplashScreen(
                 onFinished = {
-                    navController.navigate(Route.SIGN_UP_GRAPH) {
+                    // El login pasa a ser la puerta de entrada de la app (US-02). El caso
+                    // "ya hay una sesión guardada" queda pendiente de una Home/Dashboard que
+                    // todavía no existe (fuera del alcance de este CU) — por ahora se
+                    // aterriza siempre en Login, sin distinguir si hay sesión o no.
+                    navController.navigate(Route.SIGN_IN) {
                         popUpTo(Route.SPLASH) { inclusive = true }
                     }
                 },
+            )
+        }
+
+        composable(Route.SIGN_IN) { entry ->
+            val viewModel = hiltViewModel<SignInViewModel>(entry)
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+            // Todavía no hay Home: a dónde ir con la sesión ya iniciada lo define la
+            // próxima entrega (gestión de sesión). Por ahora sólo se confirma el login.
+            LaunchedEffect(state.status) {
+                if (state.status is SignInStatus.SignedIn) {
+                    Toast.makeText(context, "Sesión iniciada.", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            SignInScreen(
+                state = state,
+                onDniChange = viewModel::onDniChange,
+                onPasswordChange = viewModel::onPasswordChange,
+                onSubmit = viewModel::submit,
+                onGoToSignUp = { navController.navigate(Route.SIGN_UP_GRAPH) },
             )
         }
 
@@ -69,10 +98,7 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                     onValidateIdentity = {
                         if (viewModel.validateForm()) navController.navigate(Route.SIGN_UP_CONSENT)
                     },
-                    onGoToLogin = {
-                        // El login es US-02; por ahora sólo avisamos.
-                        Toast.makeText(context, "El inicio de sesión llega en la próxima entrega.", Toast.LENGTH_SHORT).show()
-                    },
+                    onGoToLogin = { navController.navigate(Route.SIGN_IN) },
                 )
             }
 
