@@ -37,8 +37,8 @@ android {
         applicationId = "ar.felaufernandezbottaro.vinculovial"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -77,6 +77,13 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Sin esto el Release Build queda sin firmar (Gradle lo arma igual, pero Android
+            // se niega a instalarlo). Todavía no hay un keystore de producción, así que se
+            // firma con el de debug -- lo autogenera AGP, no requiere secretos -- para que
+            // el APK que sube CI a los GitHub Releases sea instalable. No es apto para Play
+            // Store: cuando exista un keystore real, reemplazar esta línea por un
+            // signingConfigs.create("release") con las credenciales en GitHub Secrets.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
