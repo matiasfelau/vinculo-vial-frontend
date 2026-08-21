@@ -157,4 +157,50 @@ class SessionManagerTest {
         assertEquals(null, tokenStore.read())
         assertEquals(0, refreshApi.callCount)
     }
+
+    @Test
+    fun `logout llama al endpoint con el refresh token y limpia la sesion`() = runTest {
+        tokenStore.save(tokenViejo)
+
+        manager().logout()
+
+        assertEquals(listOf(tokenViejo.refreshToken), refreshApi.receivedLogoutTokens)
+        assertEquals(null, tokenStore.read())
+    }
+
+    @Test
+    fun `logout no llama a refresh`() = runTest {
+        tokenStore.save(tokenViejo)
+
+        manager().logout()
+
+        assertEquals(0, refreshApi.callCount)
+    }
+
+    @Test
+    fun `logout limpia la sesion aun cuando la llamada de red falla`() = runTest {
+        tokenStore.save(tokenViejo)
+        refreshApi.logoutExceptionToThrow = IOException("sin conexion")
+
+        manager().logout()
+
+        assertEquals(null, tokenStore.read())
+    }
+
+    @Test
+    fun `logout limpia la sesion aun cuando el backend responde con error`() = runTest {
+        tokenStore.save(tokenViejo)
+        refreshApi.logoutResponse = Response.error(500, "".toResponseBody("application/json".toMediaType()))
+
+        manager().logout()
+
+        assertEquals(null, tokenStore.read())
+    }
+
+    @Test
+    fun `logout sin sesion guardada no llama a la red`() = runTest {
+        manager().logout()
+
+        assertEquals(0, refreshApi.logoutCallCount)
+    }
 }

@@ -98,6 +98,32 @@ class SessionManager @Inject constructor(
         tokenStore.clear()
     }
 
+    /**
+     * Llama a `/logout` sin exigir attestation (best-effort, ver `AttestationInterceptor`) y,
+     * sea cual sea el resultado -- 200, sin sesión que cerrar, error de red -- limpia la
+     * sesión local igual. El usuario nunca queda atrapado en una sesión que quiso cerrar.
+     *
+     * Comparte el [Mutex] con [refreshSession]: si hay un refresh en vuelo, el logout espera a
+     * que termine y limpia sobre el resultado final, en vez de arriesgarse a que un refresh
+     * que gana la carrera después del clear resucite la sesión.
+     */
+    suspend fun logout() = mutex.withLock {
+        withContext(dispatcher) {
+            tokenStore.read()?.let { current ->
+                try {
+                    refreshApi.logout(RefreshTokenRequestDto(current.refreshToken))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: IOException) {
+                    // Sin conexión: no importa, se limpia igual.
+                } catch (e: RuntimeException) {
+                    // Cualquier otro fallo tampoco debe trabar el logout.
+                }
+            }
+            clearSession()
+        }
+    }
+
     private companion object {
         const val HTTP_UNAUTHORIZED = 401
         const val HTTP_FORBIDDEN = 403

@@ -1,6 +1,5 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.navigation
 
-import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -14,11 +13,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
-import androidx.compose.ui.platform.LocalContext
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.CameraPermissionGate
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.DocumentScanScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.LivenessCaptureScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionViewModel
+import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.signin.SignInScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signin.SignInStatus
 import ar.felaufernandezbottaro.vinculovial.presentation.signin.SignInViewModel
@@ -34,6 +34,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.splash.SplashScreen
 object Route {
     const val SPLASH = "splash"
     const val SIGN_IN = "signin"
+    const val SETTINGS = "settings"
     const val SIGN_UP_GRAPH = "signup"
     const val SIGN_UP_FORM = "signup/form"
     const val SIGN_UP_CONSENT = "signup/consent"
@@ -46,8 +47,6 @@ object Route {
 
 @Composable
 fun VinculoVialNavHost(navController: NavHostController = rememberNavController()) {
-    val context = LocalContext.current
-
     // RTR fallido (401/403 al refrescar) borra la sesión local en segundo plano, sin que la
     // pantalla que disparó la request original se entere -- SessionManager ni sabe qué
     // pantalla es. Este observer es el único lugar que reacciona a esa caída y saca al
@@ -86,11 +85,14 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
             val viewModel = hiltViewModel<SignInViewModel>(entry)
             val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-            // Todavía no hay Home: a dónde ir con la sesión ya iniciada lo define la
-            // próxima entrega (gestión de sesión). Por ahora sólo se confirma el login.
+            // Todavía no hay Home/Dashboard (fuera del alcance de US-02/US-03): Settings
+            // hace de parada temporal tras el login, ya que es la única pantalla
+            // autenticada que existe hoy.
             LaunchedEffect(state.status) {
                 if (state.status is SignInStatus.SignedIn) {
-                    Toast.makeText(context, "Sesión iniciada.", Toast.LENGTH_SHORT).show()
+                    navController.navigate(Route.SETTINGS) {
+                        popUpTo(Route.SIGN_IN) { inclusive = true }
+                    }
                 }
             }
 
@@ -101,6 +103,13 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                 onSubmit = viewModel::submit,
                 onGoToSignUp = { navController.navigate(Route.SIGN_UP_GRAPH) },
             )
+        }
+
+        composable(Route.SETTINGS) { entry ->
+            val viewModel = hiltViewModel<SettingsViewModel>(entry)
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+            SettingsScreen(state = state, onLogout = viewModel::logout)
         }
 
         navigation(startDestination = Route.SIGN_UP_FORM, route = Route.SIGN_UP_GRAPH) {

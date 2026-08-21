@@ -1,6 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.data.remote
 
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationProvider
+import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationUnavailableException
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.Response
@@ -11,6 +12,10 @@ import javax.inject.Singleton
 /**
  * Agrega el veredicto de integridad a cada request. El token se pide por request y se
  * liga al cuerpo, así nunca viaja uno vencido ni reutilizable en otra llamada.
+ *
+ * En `/logout` es best-effort (contrato US-03): si no se puede generar, la request sigue sin
+ * el header en vez de abortar -- el usuario tiene que poder cerrar sesión aunque la
+ * attestation esté rota. En cualquier otro endpoint, ese mismo fallo sigue siendo bloqueante.
  */
 @Singleton
 class AttestationInterceptor @Inject constructor(
@@ -23,7 +28,12 @@ class AttestationInterceptor @Inject constructor(
         // Los interceptores de OkHttp son bloqueantes y ya corren fuera del hilo
         // principal, así que acá `runBlocking` es la forma habitual de consumir un
         // proveedor suspendido (Play Integrity expone su API como Task asíncrona).
-        val token = runBlocking { attestationProvider.tokenFor(request.bodyBytes()) }
+        val token = try {
+            runBlocking { attestationProvider.tokenFor(request.bodyBytes()) }
+        } catch (e: AttestationUnavailableException) {
+            if (request.url.encodedPath == LOGOUT_PATH) return chain.proceed(request)
+            throw e
+        }
 
         return chain.proceed(request.newBuilder().header(HEADER, token).build())
     }
@@ -39,5 +49,6 @@ class AttestationInterceptor @Inject constructor(
 
     companion object {
         const val HEADER = "X-App-Attestation"
+        private const val LOGOUT_PATH = "/api/v1/auth/logout"
     }
 }

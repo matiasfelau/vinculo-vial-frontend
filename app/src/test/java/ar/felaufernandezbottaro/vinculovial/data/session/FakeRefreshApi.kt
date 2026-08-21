@@ -30,4 +30,21 @@ class FakeRefreshApi : RefreshApi {
         exceptionToThrow?.let { throw it }
         return response
     }
+
+    var logoutResponse: Response<Unit> = Response.success(Unit)
+    var logoutExceptionToThrow: Throwable? = null
+
+    private val logoutCounter = AtomicInteger(0)
+    val logoutCallCount: Int get() = logoutCounter.get()
+
+    private val receivedLogout = mutableListOf<String>()
+    val receivedLogoutTokens: List<String>
+        get() = synchronized(receivedLogout) { receivedLogout.toList() }
+
+    override suspend fun logout(body: RefreshTokenRequestDto): Response<Unit> {
+        logoutCounter.incrementAndGet()
+        synchronized(receivedLogout) { receivedLogout.add(body.refreshToken) }
+        logoutExceptionToThrow?.let { throw it }
+        return logoutResponse
+    }
 }

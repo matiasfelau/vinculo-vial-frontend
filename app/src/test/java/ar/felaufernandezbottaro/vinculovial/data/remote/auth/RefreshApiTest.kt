@@ -116,4 +116,26 @@ class RefreshApiTest {
 
     private fun tokenBody(access: String = "access-abc", refresh: String = "refresh-xyz") =
         """{"access_token":"$access","refresh_token":"$refresh"}"""
+
+    @Test
+    fun `logout publica en el endpoint del contrato`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        api.logout(RefreshTokenRequestDto("un-refresh-token"))
+
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/auth/logout", request.path)
+    }
+
+    @Test
+    fun `logout manda el mismo payload plano que refresh`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        api.logout(RefreshTokenRequestDto("un-refresh-token"))
+
+        val body = JSONObject(server.takeRequest().body.readUtf8())
+        assertEquals(1, body.length())
+        assertEquals("un-refresh-token", body.getString("refresh_token"))
+    }
 }

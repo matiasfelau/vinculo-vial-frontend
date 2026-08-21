@@ -19,4 +19,13 @@ interface RefreshApi {
      */
     @POST("api/v1/auth/refresh")
     suspend fun refresh(@Body body: RefreshTokenRequestDto): Response<RefreshResponseDto>
+
+    /**
+     * A diferencia de `/refresh`, acá el header de attestation es best-effort: el interceptor
+     * lo agrega si puede generarlo, pero nunca bloquea la llamada si falla -- el usuario tiene
+     * que poder cerrar sesión aunque la attestation esté rota. El backend siempre responde
+     * `200`, incluso si el refresh token no existía o ya estaba revocado (anti-enumeración).
+     */
+    @POST("api/v1/auth/logout")
+    suspend fun logout(@Body body: RefreshTokenRequestDto): Response<Unit>
 }
