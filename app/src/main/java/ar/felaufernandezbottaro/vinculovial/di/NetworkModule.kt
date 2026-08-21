@@ -4,6 +4,7 @@ import com.squareup.moshi.Moshi
 import ar.felaufernandezbottaro.vinculovial.BuildConfig
 import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
+import ar.felaufernandezbottaro.vinculovial.data.remote.auth.RefreshApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -64,4 +65,9 @@ object NetworkModule {
     @Singleton
     fun provideAuthApiService(retrofit: Retrofit): AuthApiService =
         retrofit.create(AuthApiService::class.java)
+
+    @Provides
+    @Singleton
+    fun provideRefreshApi(retrofit: Retrofit): RefreshApi =
+        retrofit.create(RefreshApi::class.java)
 }
