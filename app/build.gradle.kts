@@ -48,6 +48,14 @@ android {
             "IDENTITY_HPKE_PUBLIC_KEY",
             "\"${config("IDENTITY_HPKE_PUBLIC_KEY", "")}\"",
         )
+        // Par nuevo de US-04 (Vinculación de Vehículo): cifra la patente contra
+        // `vinculo-vial-vehicle`, nunca contra Identity -- ver el cifrado diferenciado en
+        // HpkeEncryptor.
+        buildConfigField(
+            "String",
+            "VEHICLE_HPKE_PUBLIC_KEY",
+            "\"${config("VEHICLE_HPKE_PUBLIC_KEY", "")}\"",
+        )
         buildConfigField("String", "APP_ATTESTATION_PSK", "\"${config("APP_ATTESTATION_PSK", "")}\"")
         buildConfigField("long", "ATTESTATION_TOKEN_TTL_SECONDS", config("ATTESTATION_TOKEN_TTL_SECONDS", "60") + "L")
         buildConfigField("long", "NETWORK_TIMEOUT_MS", config("NETWORK_TIMEOUT_MS", "15000") + "L")

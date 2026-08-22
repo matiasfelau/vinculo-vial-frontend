@@ -110,7 +110,8 @@ class SignInRepositoryImplTest {
 
     private fun TestScope.repository(publicKey: String = identityPublicKeyBase64) = SignInRepositoryImpl(
         api = api,
-        encryptor = HpkeEncryptor(publicKey),
+        encryptor = HpkeEncryptor(),
+        identityPublicKey = publicKey,
         tokenStore = tokenStore,
         moshi = Moshi.Builder().build(),
         dispatcher = UnconfinedTestDispatcher(testScheduler),

@@ -9,9 +9,11 @@ import com.google.crypto.tink.hybrid.HpkePublicKey
 import com.google.crypto.tink.util.Bytes
 import java.security.GeneralSecurityException
 import java.util.Base64
+import javax.inject.Inject
 
 /**
- * Mensaje HPKE listo para viajar por HTTP, tal como lo espera `vinculo-vial-identity`.
+ * Mensaje HPKE listo para viajar por HTTP, tal como lo esperan `vinculo-vial-identity` y
+ * `vinculo-vial-vehicle`.
  *
  * Es el encoding estándar de HPKE modo BASE partido en sus dos mitades:
  * `enc` (clave pública efímera del KEM) y el ciphertext AEAD.
@@ -22,29 +24,38 @@ data class HpkeMessage(
 )
 
 /**
- * Cifra el payload de registro contra la Public Key X25519 de Identity.
+ * Un único criptograma HPKE (`enc` + ciphertext concatenados y codificados juntos), tal
+ * como lo espera el contrato de US-04: `{ "dni_enc": "<criptograma>", "pat_enc": "<criptograma>" }`.
+ * A diferencia de `HpkeMessage`, acá no viajan dos campos separados por HTTP, sino uno solo.
+ */
+fun HpkeMessage.toCryptogram(): String = Base64.getEncoder().encodeToString(
+    Base64.getDecoder().decode(ephemeralPublicKey) + Base64.getDecoder().decode(ciphertext),
+)
+
+/**
+ * Cifra un payload contra una Public Key X25519 HPKE.
  *
  * HPKE modo BASE — KEM DHKEM(X25519, HKDF-SHA256), KDF HKDF-SHA256, AEAD AES-256-GCM.
  * Cada llamada genera una clave efímera nueva: dos cifrados del mismo texto no se parecen.
  *
- * @param identityPublicKeyBase64 clave pública cruda (32 bytes) en base64 estándar.
+ * La clave pública de destino se recibe **por llamada**, nunca por constructor: en US-04
+ * la misma instancia cifra `dni` contra Identity y `patente` contra Vehicle (cifrado
+ * diferenciado), y un default global haría trivial cruzarlas por error.
  */
-class HpkeEncryptor(
-    private val identityPublicKeyBase64: String,
-) {
-
-    /** Se construye una sola vez: parsear la clave en cada request no aporta nada. */
-    private val hybridEncrypt: HybridEncrypt by lazy { buildEncrypt() }
+class HpkeEncryptor @Inject constructor() {
 
     /**
-     * @param plaintext payload interno `{dni, email, password}` serializado.
-     * @param contextInfo info asociada de HPKE; vacía por contrato con Identity.
+     * @param plaintext payload interno serializado.
+     * @param publicKeyBase64 clave pública cruda (32 bytes) del destinatario, en base64 estándar.
+     * @param contextInfo info asociada de HPKE; vacía por contrato.
      */
-    fun encrypt(plaintext: ByteArray, contextInfo: ByteArray = EMPTY_CONTEXT): HpkeMessage {
+    fun encrypt(plaintext: ByteArray, publicKeyBase64: String, contextInfo: ByteArray = EMPTY_CONTEXT): HpkeMessage {
+        val hybridEncrypt = buildEncrypt(publicKeyBase64)
+
         val sealed = try {
             hybridEncrypt.encrypt(plaintext, contextInfo)
         } catch (e: GeneralSecurityException) {
-            throw CryptoOperationException("No se pudo cifrar el payload de registro", e)
+            throw CryptoOperationException("No se pudo cifrar el payload", e)
         }
 
         if (sealed.size <= X25519_ENC_LENGTH) {
@@ -57,22 +68,22 @@ class HpkeEncryptor(
         )
     }
 
-    private fun buildEncrypt(): HybridEncrypt {
-        if (identityPublicKeyBase64.isBlank()) {
+    private fun buildEncrypt(publicKeyBase64: String): HybridEncrypt {
+        if (publicKeyBase64.isBlank()) {
             throw CryptoConfigurationException(
-                "IDENTITY_HPKE_PUBLIC_KEY no está configurada (ver local.properties.example)",
+                "La clave pública HPKE de destino no está configurada (ver local.properties.example)",
             )
         }
 
         val rawKey = try {
-            Base64.getDecoder().decode(identityPublicKeyBase64.trim())
+            Base64.getDecoder().decode(publicKeyBase64.trim())
         } catch (e: IllegalArgumentException) {
-            throw CryptoConfigurationException("IDENTITY_HPKE_PUBLIC_KEY no es base64 válido", e)
+            throw CryptoConfigurationException("La clave pública HPKE de destino no es base64 válido", e)
         }
 
         if (rawKey.size != X25519_KEY_LENGTH) {
             throw CryptoConfigurationException(
-                "IDENTITY_HPKE_PUBLIC_KEY debe ser una clave X25519 de $X25519_KEY_LENGTH bytes",
+                "La clave pública HPKE de destino debe ser una clave X25519 de $X25519_KEY_LENGTH bytes",
             )
         }
 
@@ -84,7 +95,7 @@ class HpkeEncryptor(
                 .build()
                 .getPrimitive(RegistryConfiguration.get(), HybridEncrypt::class.java)
         } catch (e: GeneralSecurityException) {
-            throw CryptoConfigurationException("No se pudo inicializar HPKE con la clave de Identity", e)
+            throw CryptoConfigurationException("No se pudo inicializar HPKE con la clave pública de destino", e)
         }
     }
 

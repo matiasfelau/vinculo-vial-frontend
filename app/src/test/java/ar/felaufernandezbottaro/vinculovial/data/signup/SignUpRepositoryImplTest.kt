@@ -111,7 +111,8 @@ class SignUpRepositoryImplTest {
 
     private fun TestScope.repository(publicKey: String = identityPublicKeyBase64) = SignUpRepositoryImpl(
         api = api,
-        encryptor = HpkeEncryptor(publicKey),
+        encryptor = HpkeEncryptor(),
+        identityPublicKey = publicKey,
         moshi = Moshi.Builder().build(),
         dispatcher = UnconfinedTestDispatcher(testScheduler),
     )
@@ -438,7 +439,8 @@ class SignUpRepositoryImplTest {
         }
         val repository = SignUpRepositoryImpl(
             api = cancelada,
-            encryptor = HpkeEncryptor(identityPublicKeyBase64),
+            encryptor = HpkeEncryptor(),
+            identityPublicKey = identityPublicKeyBase64,
             moshi = Moshi.Builder().build(),
             dispatcher = UnconfinedTestDispatcher(testScheduler),
         )

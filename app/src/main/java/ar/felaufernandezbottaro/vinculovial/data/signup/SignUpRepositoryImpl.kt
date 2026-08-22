@@ -15,6 +15,7 @@ import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpErrorDetailDto
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpErrorResponseDto
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpPayloadDto
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpRequestDto
+import ar.felaufernandezbottaro.vinculovial.di.IdentityHpkePublicKey
 import ar.felaufernandezbottaro.vinculovial.di.IoDispatcher
 import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpError
 import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpRepository
@@ -39,6 +40,7 @@ import javax.inject.Singleton
 class SignUpRepositoryImpl @Inject constructor(
     private val api: AuthApiService,
     private val encryptor: HpkeEncryptor,
+    @IdentityHpkePublicKey private val identityPublicKey: String,
     moshi: Moshi,
     @IoDispatcher private val dispatcher: CoroutineDispatcher,
 ) : SignUpRepository {
@@ -113,7 +115,7 @@ class SignUpRepositoryImpl @Inject constructor(
                 ),
             )
             plaintext = buffer.readByteArray()
-            encryptor.encrypt(plaintext)
+            encryptor.encrypt(plaintext, identityPublicKey)
         } finally {
             plaintext.fill(0)
             buffer.clear()
