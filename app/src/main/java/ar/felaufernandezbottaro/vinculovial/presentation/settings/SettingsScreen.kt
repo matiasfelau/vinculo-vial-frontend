@@ -20,14 +20,16 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 
 /**
  * Parada temporal tras el login: todavía no existe una Home/Dashboard (fuera del alcance de
- * US-02/US-03), así que esta es la única pantalla autenticada de la app y la que aloja la
- * acción de Logout. El nav host reacciona solo al logout -- ver `VinculoVialNavHost` -- así
- * que acá no hay nada que navegar.
+ * US-02/US-03), así que esta es la única pantalla autenticada de la app y aloja tanto la
+ * entrada a la vinculación de vehículo (US-04) como la acción de Logout. El nav host
+ * reacciona solo al logout -- ver `VinculoVialNavHost` -- así que esa acción en particular
+ * no tiene nada que navegar acá.
  */
 @Composable
 fun SettingsScreen(
     state: SettingsUiState,
     onLogout: () -> Unit,
+    onLinkVehicle: () -> Unit,
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -49,6 +51,12 @@ fun SettingsScreen(
             )
 
             VvPrimaryButton(
+                text = "Vincular vehículo",
+                onClick = onLinkVehicle,
+                enabled = !state.isLoggingOut,
+            )
+
+            VvPrimaryButton(
                 text = "Cerrar sesión",
                 onClick = onLogout,
                 enabled = !state.isLoggingOut,
@@ -62,6 +70,6 @@ fun SettingsScreen(
 @Composable
 private fun SettingsScreenPreview() {
     VinculoVialTheme {
-        SettingsScreen(state = SettingsUiState(), onLogout = {})
+        SettingsScreen(state = SettingsUiState(), onLogout = {}, onLinkVehicle = {})
     }
 }

@@ -30,6 +30,8 @@ import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpStatus
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpSuccessScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.splash.SplashScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.ScanCedulaScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.VehicleViewModel
 
 object Route {
     const val SPLASH = "splash"
@@ -43,6 +45,8 @@ object Route {
 
     const val SIGN_UP_DOCUMENT_SCAN = "signup/document-scan"
     const val SIGN_UP_LIVENESS = "signup/liveness"
+
+    const val LINK_VEHICLE = "vehicle/link"
 }
 
 @Composable
@@ -109,7 +113,34 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
             val viewModel = hiltViewModel<SettingsViewModel>(entry)
             val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-            SettingsScreen(state = state, onLogout = viewModel::logout)
+            SettingsScreen(
+                state = state,
+                onLogout = viewModel::logout,
+                onLinkVehicle = { navController.navigate(Route.LINK_VEHICLE) },
+            )
+        }
+
+        composable(Route.LINK_VEHICLE) { entry ->
+            val viewModel = hiltViewModel<VehicleViewModel>(entry)
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+            CameraPermissionGate(
+                onDenied = { navController.popBackStack() },
+                deniedRationale = "Sin cámara no podemos leer el QR de tu cédula. Los cuadros se " +
+                    "analizan en tu dispositivo y se descartan al instante.",
+                permanentlyDeniedRationale = "Activá el permiso de cámara desde los ajustes del " +
+                    "sistema para vincular tu vehículo. Los cuadros se analizan en tu dispositivo " +
+                    "y se descartan al instante.",
+            ) {
+                ScanCedulaScreen(
+                    scanSession = viewModel.qrCedulaScanner,
+                    uiState = state,
+                    onCedulaScanned = viewModel::onCedulaScanned,
+                    onErrorDismissed = viewModel::onErrorDismissed,
+                    onLinked = { navController.popBackStack() },
+                    onCancel = { navController.popBackStack() },
+                )
+            }
         }
 
         navigation(startDestination = Route.SIGN_UP_FORM, route = Route.SIGN_UP_GRAPH) {
