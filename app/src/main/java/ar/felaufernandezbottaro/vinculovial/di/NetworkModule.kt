@@ -6,6 +6,7 @@ import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.RefreshApi
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.TokenAuthenticator
+import ar.felaufernandezbottaro.vinculovial.data.vehicle.VehicleApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -104,6 +105,15 @@ object NetworkModule {
     @Singleton
     fun provideAuthApiService(retrofit: Retrofit): AuthApiService =
         retrofit.create(AuthApiService::class.java)
+
+    /**
+     * Mismo cliente que `AuthApiService`, con `TokenAuthenticator` instalado: el 401 en
+     * `/vehicles` dispara el refresh automático sin trabajo extra en este repositorio.
+     */
+    @Provides
+    @Singleton
+    fun provideVehicleApi(retrofit: Retrofit): VehicleApi =
+        retrofit.create(VehicleApi::class.java)
 
     @Provides
     @Singleton

@@ -16,9 +16,9 @@ import org.junit.Test
 import java.io.IOException
 
 /**
- * Cubre la excepción del contrato US-03: el header de attestation es best-effort en
- * `/logout` (nunca bloquea la request) pero sigue siendo obligatorio en cualquier otro
- * endpoint, incluido `/refresh`.
+ * Cubre la excepción de los contratos US-03 y US-04: el header de attestation es
+ * best-effort en `/logout` y `/vehicles` (nunca bloquea la request) pero sigue siendo
+ * obligatorio en cualquier otro endpoint, incluido `/refresh`.
  */
 class AttestationInterceptorTest {
 
@@ -73,6 +73,16 @@ class AttestationInterceptorTest {
         }
 
         assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `si la attestation falla en vehicles la request sigue sin el header`() {
+        server.enqueue(MockResponse().setResponseCode(201))
+
+        val response = clientWith(failingProvider()).newCall(requestTo("/api/v1/vehicles")).execute()
+
+        assertEquals(201, response.code)
+        assertNull(server.takeRequest().getHeader(AttestationInterceptor.HEADER))
     }
 
     @Test
