@@ -6,13 +6,18 @@ import com.squareup.moshi.JsonClass
 /**
  * Payload interno: los datos del vehículo leídos de la cédula. Se serializa y cifra junto
  * -- nunca sale de la app en claro. Sin DNI: el backend lo resuelve consultando una API
- * externa (RENAPER/DNRPA) a partir de estos datos.
+ * externa (RENAPER/DNRPA) a partir de estos datos. Sin número de control: el backend sólo
+ * necesita chasis y patente para vincular.
+ *
+ * [chasis] y [patente] viajan en base64 (no texto plano): el DTO del backend los tipa
+ * `[]byte` para poder purgarlos de memoria explícitamente (Zero Retention), y `encoding/json`
+ * de Go exige que un campo `[]byte` venga codificado en base64 -- un string plano ahí
+ * produce un error de parseo del lado del servidor.
  */
 @JsonClass(generateAdapter = true)
 data class VehiclePayloadDto(
-    @Json(name = "chasis") val chasis: String,
-    @Json(name = "patente") val patente: String,
-    @Json(name = "nro_control") val nroControl: String,
+    @Json(name = "chasis") val chasisBase64: String,
+    @Json(name = "patente") val patenteBase64: String,
 ) {
     override fun toString(): String = "VehiclePayloadDto(***)"
 }

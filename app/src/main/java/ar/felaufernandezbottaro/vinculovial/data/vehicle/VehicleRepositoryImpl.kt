@@ -21,6 +21,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import okio.Buffer
 import java.io.IOException
+import java.util.Base64
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -87,6 +88,10 @@ class VehicleRepositoryImpl @Inject constructor(
      * Serializa los datos del vehículo y los cifra sin que el JSON en claro llegue a
      * existir como `String`: se escribe directo a un buffer de bytes que se puede
      * sobreescribir -- mismo criterio que `SignUpRepositoryImpl.serializeAndEncrypt`.
+     *
+     * `chasis` y `patente` se codifican en base64 antes de entrar al JSON: el backend los
+     * tipa `[]byte`, y `encoding/json` de Go decodifica esos campos como base64 siempre,
+     * nunca como texto plano.
      */
     private fun serializeAndEncrypt(cedula: CedulaData): String {
         val buffer = Buffer()
@@ -94,7 +99,10 @@ class VehicleRepositoryImpl @Inject constructor(
         return try {
             payloadAdapter.toJson(
                 JsonWriter.of(buffer),
-                VehiclePayloadDto(chasis = cedula.chasis, patente = cedula.patente, nroControl = cedula.nroControl),
+                VehiclePayloadDto(
+                    chasisBase64 = cedula.chasis.toByteArray(Charsets.UTF_8).toBase64(),
+                    patenteBase64 = cedula.patente.toByteArray(Charsets.UTF_8).toBase64(),
+                ),
             )
             plaintext = buffer.readByteArray()
             encryptor.encrypt(plaintext, vehiclePublicKey).toCryptogram()
@@ -103,6 +111,14 @@ class VehicleRepositoryImpl @Inject constructor(
             buffer.clear()
         }
     }
+
+    /**
+     * Base64 estándar sin salto de línea: el equivalente de `Base64.NO_WRAP` de Android.
+     * `Base64.getEncoder()` (a diferencia de `getMimeEncoder()`) ya no inserta separadores
+     * de línea y usa el alfabeto estándar (no URL-safe), que es lo que el backend en Go
+     * espera con `base64.StdEncoding`.
+     */
+    private fun ByteArray.toBase64(): String = Base64.getEncoder().encodeToString(this)
 
     private companion object {
         const val BEARER_PREFIX = "Bearer "

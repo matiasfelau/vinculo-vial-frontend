@@ -70,15 +70,42 @@ class VehicleRepositoryImplTest {
     )
 
     @Test
-    fun `el payload_enc solo lo puede abrir vehicle y trae chasis patente y nro_control`() = runTest {
+    fun `el payload_enc solo lo puede abrir vehicle y trae chasis y patente en base64`() = runTest {
         repository().linkVehicle(cedula)
 
         val payloadEnc = api.lastRequest!!.payloadEnc
         val json = JSONObject(String(decryptAsVehicle(payloadEnc)))
 
-        assertEquals(cedula.chasis, json.getString("chasis"))
-        assertEquals(cedula.patente, json.getString("patente"))
-        assertEquals(cedula.nroControl, json.getString("nro_control"))
+        // El backend tipa estos campos como []byte: encoding/json de Go los exige en
+        // base64, nunca en texto plano -- un string plano ahí es justo lo que producía el
+        // error de parseo del backend.
+        assertEquals(cedula.chasis, String(Base64.getDecoder().decode(json.getString("chasis"))))
+        assertEquals(cedula.patente, String(Base64.getDecoder().decode(json.getString("patente"))))
+    }
+
+    @Test
+    fun `el payload no manda numero de control`() = runTest {
+        repository().linkVehicle(cedula)
+
+        val payloadEnc = api.lastRequest!!.payloadEnc
+        val json = JSONObject(String(decryptAsVehicle(payloadEnc)))
+
+        assertEquals(2, json.length())
+        assertEquals(false, json.has("nro_control"))
+    }
+
+    @Test
+    fun `el chasis y la patente viajan en base64 estandar sin salto de linea`() = runTest {
+        repository().linkVehicle(cedula)
+
+        val payloadEnc = api.lastRequest!!.payloadEnc
+        val json = JSONObject(String(decryptAsVehicle(payloadEnc)))
+
+        listOf(json.getString("chasis"), json.getString("patente")).forEach { base64Value ->
+            assertEquals(false, base64Value.contains("\n"))
+            assertEquals(false, base64Value.contains("-"))
+            assertEquals(false, base64Value.contains("_"))
+        }
     }
 
     @Test
