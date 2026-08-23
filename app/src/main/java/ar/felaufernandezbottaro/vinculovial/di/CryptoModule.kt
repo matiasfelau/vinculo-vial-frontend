@@ -15,12 +15,12 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Qualifier
 import javax.inject.Singleton
 
-/** Public Key HPKE de `vinculo-vial-identity`: sólo puede leer `dni_enc`. */
+/** Public Key HPKE de `vinculo-vial-identity`, usada por `/signup` y `/signin`. */
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class IdentityHpkePublicKey
 
-/** Public Key HPKE de `vinculo-vial-vehicle` (US-04): sólo puede leer `pat_enc`. */
+/** Public Key HPKE de `vinculo-vial-vehicle` (US-04): cifra el `payload_enc` de `/vehicles`. */
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class VehicleHpkePublicKey

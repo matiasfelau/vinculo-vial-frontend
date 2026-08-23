@@ -7,7 +7,7 @@ import org.junit.Test
 
 class LinkVehicleUseCaseTest {
 
-    private val cedula = CedulaData(dni = "30123456", patente = "AB123CD")
+    private val cedula = CedulaData(chasis = "APJ56565", patente = "GUQ856", nroControl = "5092160")
 
     @Test
     fun `pasa la cedula escaneada al repositorio tal cual`() = runTest {

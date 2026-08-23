@@ -25,8 +25,9 @@ data class HpkeMessage(
 
 /**
  * Un único criptograma HPKE (`enc` + ciphertext concatenados y codificados juntos), tal
- * como lo espera el contrato de US-04: `{ "dni_enc": "<criptograma>", "pat_enc": "<criptograma>" }`.
- * A diferencia de `HpkeMessage`, acá no viajan dos campos separados por HTTP, sino uno solo.
+ * como lo espera el contrato de US-04: `{ "payload_enc": "<criptograma>" }`. A diferencia
+ * de `HpkeMessage`, acá no viaja `enc`/ciphertext como dos campos separados por HTTP, sino
+ * uno solo.
  */
 fun HpkeMessage.toCryptogram(): String = Base64.getEncoder().encodeToString(
     Base64.getDecoder().decode(ephemeralPublicKey) + Base64.getDecoder().decode(ciphertext),
@@ -38,9 +39,10 @@ fun HpkeMessage.toCryptogram(): String = Base64.getEncoder().encodeToString(
  * HPKE modo BASE — KEM DHKEM(X25519, HKDF-SHA256), KDF HKDF-SHA256, AEAD AES-256-GCM.
  * Cada llamada genera una clave efímera nueva: dos cifrados del mismo texto no se parecen.
  *
- * La clave pública de destino se recibe **por llamada**, nunca por constructor: en US-04
- * la misma instancia cifra `dni` contra Identity y `patente` contra Vehicle (cifrado
- * diferenciado), y un default global haría trivial cruzarlas por error.
+ * La clave pública de destino se recibe **por llamada**, nunca por constructor: la misma
+ * instancia se reusa para cifrar contra la Public Key de Identity (`/signup`, `/signin`) y
+ * contra la de Vehicle (`/vehicles`), y un default global haría trivial usar la que no
+ * corresponde por error.
  */
 class HpkeEncryptor @Inject constructor() {
 

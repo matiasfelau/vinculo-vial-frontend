@@ -62,7 +62,7 @@ class VehicleApiTest {
     fun `publica en el endpoint del contrato con el bearer token`() = runTest {
         server.enqueue(MockResponse().setResponseCode(201))
 
-        api.linkVehicle("Bearer access-abc", LinkVehicleRequestDto("dni-enc", "pat-enc"))
+        api.linkVehicle("Bearer access-abc", LinkVehicleRequestDto("cryptograma"))
 
         val request = server.takeRequest()
         assertEquals("POST", request.method)
@@ -71,22 +71,21 @@ class VehicleApiTest {
     }
 
     @Test
-    fun `el cuerpo lleva dni_enc y pat_enc sin cruzar`() = runTest {
+    fun `el cuerpo lleva un unico payload_enc`() = runTest {
         server.enqueue(MockResponse().setResponseCode(201))
 
-        api.linkVehicle("Bearer access-abc", LinkVehicleRequestDto("cryptograma-dni", "cryptograma-patente"))
+        api.linkVehicle("Bearer access-abc", LinkVehicleRequestDto("cryptograma-del-vehiculo"))
 
         val body = JSONObject(server.takeRequest().body.readUtf8())
-        assertEquals(2, body.length())
-        assertEquals("cryptograma-dni", body.getString("dni_enc"))
-        assertEquals("cryptograma-patente", body.getString("pat_enc"))
+        assertEquals(1, body.length())
+        assertEquals("cryptograma-del-vehiculo", body.getString("payload_enc"))
     }
 
     @Test
     fun `201 no trae cuerpo que parsear`() = runTest {
         server.enqueue(MockResponse().setResponseCode(201))
 
-        val response = api.linkVehicle("Bearer access-abc", LinkVehicleRequestDto("a", "b"))
+        val response = api.linkVehicle("Bearer access-abc", LinkVehicleRequestDto("cryptograma"))
 
         assertEquals(201, response.code())
     }
@@ -95,7 +94,7 @@ class VehicleApiTest {
     fun `403 no trae cuerpo que parsear`() = runTest {
         server.enqueue(MockResponse().setResponseCode(403))
 
-        val response = api.linkVehicle("Bearer access-abc", LinkVehicleRequestDto("a", "b"))
+        val response = api.linkVehicle("Bearer access-abc", LinkVehicleRequestDto("cryptograma"))
 
         assertEquals(403, response.code())
     }

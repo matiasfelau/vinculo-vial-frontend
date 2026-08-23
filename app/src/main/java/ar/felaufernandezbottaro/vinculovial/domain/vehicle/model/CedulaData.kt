@@ -1,12 +1,17 @@
 package ar.felaufernandezbottaro.vinculovial.domain.vehicle.model
 
 /**
- * DNI y patente ya extraídos del QR de la cédula del vehículo, listos para cifrarse cada
- * uno contra su destinatario (ver el cifrado diferenciado de US-04 en `HpkeEncryptor`).
+ * Datos del vehículo ya extraídos del QR de la cédula (DNRPA), listos para empaquetarse en
+ * un único payload y cifrarse contra la Public Key de Vehicle.
+ *
+ * No incluye el DNI del titular: el backend lo resuelve consultando una API externa
+ * (RENAPER/DNRPA) a partir de estos datos, así que la app nunca lo lee ni lo cifra para
+ * este flujo.
  */
 data class CedulaData(
-    val dni: String,
+    val chasis: String,
     val patente: String,
+    val nroControl: String,
 ) {
     override fun toString(): String = "CedulaData(***)"
 }

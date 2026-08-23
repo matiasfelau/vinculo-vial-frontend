@@ -6,7 +6,7 @@ import org.junit.Test
 
 class CedulaScanStateTest {
 
-    private val cedula = CedulaData(dni = "30123456", patente = "AB123CD")
+    private val cedula = CedulaData(chasis = "APJ56565", patente = "GUQ856", nroControl = "5092160")
 
     @Test
     fun `esta listo solo con el codigo decodificado y la cedula presente`() {

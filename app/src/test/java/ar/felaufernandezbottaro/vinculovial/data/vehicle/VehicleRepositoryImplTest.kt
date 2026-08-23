@@ -15,14 +15,15 @@ import com.google.crypto.tink.RegistryConfiguration
 import com.google.crypto.tink.aead.AeadConfig
 import com.google.crypto.tink.hybrid.HpkePublicKey
 import com.google.crypto.tink.hybrid.HybridConfig
+import com.squareup.moshi.Moshi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import retrofit2.Response
@@ -30,9 +31,10 @@ import java.io.IOException
 import java.util.Base64
 
 /**
- * Cubre el contrato central de US-04: `dni_enc` viaja cifrado contra Identity y `pat_enc`
- * contra Vehicle -- nunca cruzados -- y cada código de respuesta del Gateway mapea al
- * resultado de dominio correcto.
+ * Cubre el contrato central de US-04 (revisado): los datos del vehículo se empaquetan en
+ * un único JSON y viajan como un único `payload_enc` cifrado contra Vehicle -- sin DNI ni
+ * Public Key de Identity acá -- y cada código de respuesta del Gateway mapea al resultado
+ * de dominio correcto.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class VehicleRepositoryImplTest {
@@ -40,17 +42,12 @@ class VehicleRepositoryImplTest {
     private lateinit var tokenStore: SecureTokenStore
     private lateinit var api: FakeVehicleApi
 
-    private val identityPrivateKeyset: KeysetHandle = KeysetHandle.generateNew(
-        KeyTemplates.get("DHKEM_X25519_HKDF_SHA256_HKDF_SHA256_AES_256_GCM_RAW"),
-    )
     private val vehiclePrivateKeyset: KeysetHandle = KeysetHandle.generateNew(
         KeyTemplates.get("DHKEM_X25519_HKDF_SHA256_HKDF_SHA256_AES_256_GCM_RAW"),
     )
-
-    private val identityPublicKeyBase64 = identityPrivateKeyset.publicKeyBase64()
     private val vehiclePublicKeyBase64 = vehiclePrivateKeyset.publicKeyBase64()
 
-    private val cedula = CedulaData(dni = "30123456", patente = "AB123CD")
+    private val cedula = CedulaData(chasis = "APJ56565", patente = "GUQ856", nroControl = "5092160")
 
     @Before
     fun setUp() {
@@ -63,29 +60,40 @@ class VehicleRepositoryImplTest {
         api = FakeVehicleApi()
     }
 
-    private fun repository(
-        identityPublicKey: String = identityPublicKeyBase64,
-        vehiclePublicKey: String = vehiclePublicKeyBase64,
-    ) = VehicleRepositoryImpl(
+    private fun repository(vehiclePublicKey: String = vehiclePublicKeyBase64) = VehicleRepositoryImpl(
         api = api,
         encryptor = HpkeEncryptor(),
-        identityPublicKey = identityPublicKey,
         vehiclePublicKey = vehiclePublicKey,
         tokenStore = tokenStore,
+        moshi = Moshi.Builder().build(),
         dispatcher = UnconfinedTestDispatcher(),
     )
 
     @Test
-    fun `dni_enc solo lo puede abrir identity y pat_enc solo vehicle`() = runTest {
+    fun `el payload_enc solo lo puede abrir vehicle y trae chasis patente y nro_control`() = runTest {
         repository().linkVehicle(cedula)
 
-        val request = api.lastRequest!!
-        assertEquals(cedula.dni, String(decryptAs(request.dniEnc, identityPrivateKeyset)))
-        assertEquals(cedula.patente, String(decryptAs(request.patEnc, vehiclePrivateKeyset)))
+        val payloadEnc = api.lastRequest!!.payloadEnc
+        val json = JSONObject(String(decryptAsVehicle(payloadEnc)))
 
-        // Cruzadas, ninguna abre: es la propiedad que hace al cifrado "diferenciado".
-        assertThrows(Exception::class.java) { decryptAs(request.dniEnc, vehiclePrivateKeyset) }
-        assertThrows(Exception::class.java) { decryptAs(request.patEnc, identityPrivateKeyset) }
+        assertEquals(cedula.chasis, json.getString("chasis"))
+        assertEquals(cedula.patente, json.getString("patente"))
+        assertEquals(cedula.nroControl, json.getString("nro_control"))
+    }
+
+    @Test
+    fun `sin la clave privada de vehicle el payload no se puede abrir`() = runTest {
+        val otraKeyset = KeysetHandle.generateNew(
+            KeyTemplates.get("DHKEM_X25519_HKDF_SHA256_HKDF_SHA256_AES_256_GCM_RAW"),
+        )
+
+        repository().linkVehicle(cedula)
+
+        val payloadEnc = api.lastRequest!!.payloadEnc
+        assertThrows(Exception::class.java) {
+            val sealed = Base64.getDecoder().decode(payloadEnc)
+            otraKeyset.getPrimitive(RegistryConfiguration.get(), HybridDecrypt::class.java).decrypt(sealed, ByteArray(0))
+        }
     }
 
     @Test
@@ -160,7 +168,7 @@ class VehicleRepositoryImplTest {
     }
 
     @Test
-    fun `clave de destino mal configurada es un error de configuracion`() = runTest {
+    fun `clave de vehicle mal configurada es un error de configuracion`() = runTest {
         val result = repository(vehiclePublicKey = "").linkVehicle(cedula)
 
         assertEquals(LinkVehicleResult.Failed(LinkVehicleError.Configuration), result)
@@ -175,9 +183,9 @@ class VehicleRepositoryImplTest {
     )
 
     /** Reconstruye el mensaje HPKE a partir del cryptograma de un único campo y lo descifra. */
-    private fun decryptAs(cryptogram: String, privateKeyset: KeysetHandle): ByteArray {
+    private fun decryptAsVehicle(cryptogram: String): ByteArray {
         val sealed = Base64.getDecoder().decode(cryptogram)
-        val decrypt = privateKeyset.getPrimitive(RegistryConfiguration.get(), HybridDecrypt::class.java)
+        val decrypt = vehiclePrivateKeyset.getPrimitive(RegistryConfiguration.get(), HybridDecrypt::class.java)
         return decrypt.decrypt(sealed, ByteArray(0))
     }
 }
