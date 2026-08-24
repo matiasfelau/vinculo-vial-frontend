@@ -13,6 +13,7 @@ import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
 import ar.felaufernandezbottaro.vinculovial.data.signin.dto.SignInPayloadDto
 import ar.felaufernandezbottaro.vinculovial.data.signin.dto.SignInRequestDto
+import ar.felaufernandezbottaro.vinculovial.di.IdentityHpkePublicKey
 import ar.felaufernandezbottaro.vinculovial.di.IoDispatcher
 import ar.felaufernandezbottaro.vinculovial.domain.signin.SignInError
 import ar.felaufernandezbottaro.vinculovial.domain.signin.SignInRepository
@@ -37,6 +38,7 @@ import javax.inject.Singleton
 class SignInRepositoryImpl @Inject constructor(
     private val api: AuthApiService,
     private val encryptor: HpkeEncryptor,
+    @IdentityHpkePublicKey private val identityPublicKey: String,
     private val tokenStore: SecureTokenStore,
     moshi: Moshi,
     @IoDispatcher private val dispatcher: CoroutineDispatcher,
@@ -102,7 +104,7 @@ class SignInRepositoryImpl @Inject constructor(
                 SignInPayloadDto(dni = credentials.dni, password = credentials.password),
             )
             plaintext = buffer.readByteArray()
-            encryptor.encrypt(plaintext)
+            encryptor.encrypt(plaintext, identityPublicKey)
         } finally {
             plaintext.fill(0)
             buffer.clear()

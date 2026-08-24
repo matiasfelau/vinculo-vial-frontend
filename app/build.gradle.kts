@@ -37,8 +37,8 @@ android {
         applicationId = "ar.felaufernandezbottaro.vinculovial"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "1.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -47,6 +47,14 @@ android {
             "String",
             "IDENTITY_HPKE_PUBLIC_KEY",
             "\"${config("IDENTITY_HPKE_PUBLIC_KEY", "")}\"",
+        )
+        // Par nuevo de US-04 (Vinculación de Vehículo): cifra la patente contra
+        // `vinculo-vial-vehicle`, nunca contra Identity -- ver el cifrado diferenciado en
+        // HpkeEncryptor.
+        buildConfigField(
+            "String",
+            "VEHICLE_HPKE_PUBLIC_KEY",
+            "\"${config("VEHICLE_HPKE_PUBLIC_KEY", "")}\"",
         )
         buildConfigField("String", "APP_ATTESTATION_PSK", "\"${config("APP_ATTESTATION_PSK", "")}\"")
         buildConfigField("long", "ATTESTATION_TOKEN_TTL_SECONDS", config("ATTESTATION_TOKEN_TTL_SECONDS", "60") + "L")

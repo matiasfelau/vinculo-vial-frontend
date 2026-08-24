@@ -98,6 +98,38 @@ class SecureTokenStoreTest {
     }
 
     @Test
+    fun `sessionState arranca en false sin sesion guardada`() {
+        assertFalse(store().sessionState.value)
+    }
+
+    @Test
+    fun `sessionState arranca en true si ya habia una sesion guardada`() {
+        val prime = store()
+        prime.save(tokens)
+
+        assertTrue(store().sessionState.value)
+    }
+
+    @Test
+    fun `save pone sessionState en true`() {
+        val store = store()
+
+        store.save(tokens)
+
+        assertTrue(store.sessionState.value)
+    }
+
+    @Test
+    fun `clear pone sessionState en false`() {
+        val store = store()
+        store.save(tokens)
+
+        store.clear()
+
+        assertFalse(store.sessionState.value)
+    }
+
+    @Test
     fun `toString de SessionTokens no expone ningun token`() {
         val rendered = tokens.toString()
 

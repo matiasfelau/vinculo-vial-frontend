@@ -5,7 +5,6 @@ import ar.felaufernandezbottaro.vinculovial.BuildConfig
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationMode
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationTokenGenerator
-import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.crypto.MockAttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.crypto.PlayIntegrityAttestationProvider
 import dagger.Module
@@ -13,16 +12,38 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import javax.inject.Qualifier
 import javax.inject.Singleton
+
+/** Public Key HPKE de `vinculo-vial-identity`, usada por `/signup` y `/signin`. */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class IdentityHpkePublicKey
+
+/** Public Key HPKE de `vinculo-vial-vehicle` (US-04): cifra el `payload_enc` de `/vehicles`. */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class VehicleHpkePublicKey
 
 @Module
 @InstallIn(SingletonComponent::class)
 object CryptoModule {
 
+    // HpkeEncryptor ya no se provee acá: tiene @Inject constructor() propio (sin clave
+    // fija) desde que se parametriza por clave pública de destino en cada llamada (US-04).
+    // Esas claves se inyectan a cada repositorio como String calificado (ver abajo) en vez
+    // de leerse de BuildConfig directamente ahí, para que los tests puedan seguir
+    // sustituyéndolas por un par de prueba -- mismo criterio que provideAttestationTokenGenerator.
+
     @Provides
     @Singleton
-    fun provideHpkeEncryptor(): HpkeEncryptor =
-        HpkeEncryptor(identityPublicKeyBase64 = BuildConfig.IDENTITY_HPKE_PUBLIC_KEY)
+    @IdentityHpkePublicKey
+    fun provideIdentityHpkePublicKey(): String = BuildConfig.IDENTITY_HPKE_PUBLIC_KEY
+
+    @Provides
+    @Singleton
+    @VehicleHpkePublicKey
+    fun provideVehicleHpkePublicKey(): String = BuildConfig.VEHICLE_HPKE_PUBLIC_KEY
 
     @Provides
     @Singleton

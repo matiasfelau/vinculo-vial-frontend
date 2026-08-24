@@ -46,10 +46,18 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
  *
  * Contempla los tres estados que importan: concedido, rechazado una vez (se puede volver
  * a pedir) y rechazado de forma permanente (sólo se arregla desde Ajustes del sistema).
+ *
+ * El motivo del permiso ([deniedRationale] / [permanentlyDeniedRationale]) es lo único que
+ * cambia entre flujos (DNI, selfie, cédula del vehículo): la lógica de pedir, reintentar y
+ * mandar a Ajustes es la misma para cualquiera de ellos, así que vive acá una sola vez.
  */
 @Composable
 fun CameraPermissionGate(
     onDenied: () -> Unit,
+    deniedRationale: String = "Sin cámara no podemos verificar que el DNI sea tuyo. Las fotos se " +
+        "analizan en tu dispositivo y se eliminan al instante.",
+    permanentlyDeniedRationale: String = "Activá el permiso de cámara desde los ajustes del sistema " +
+        "para validar tu identidad. Las fotos se analizan en tu dispositivo y se eliminan al instante.",
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -87,6 +95,7 @@ fun CameraPermissionGate(
         granted -> content()
         askedOnce -> CameraPermissionDenied(
             permanentlyDenied = permanentlyDenied,
+            rationale = if (permanentlyDenied) permanentlyDeniedRationale else deniedRationale,
             onRetry = { launcher.launch(Manifest.permission.CAMERA) },
             onOpenSettings = { context.openAppSettings() },
             onCancel = onDenied,
@@ -99,6 +108,7 @@ fun CameraPermissionGate(
 @Composable
 private fun CameraPermissionDenied(
     permanentlyDenied: Boolean,
+    rationale: String,
     onRetry: () -> Unit,
     onOpenSettings: () -> Unit,
     onCancel: () -> Unit,
@@ -126,13 +136,7 @@ private fun CameraPermissionDenied(
                 .padding(top = 20.dp),
         )
         Text(
-            text = if (permanentlyDenied) {
-                "Activá el permiso de cámara desde los ajustes del sistema para validar " +
-                    "tu identidad. Las fotos se analizan en tu dispositivo y se eliminan al instante."
-            } else {
-                "Sin cámara no podemos verificar que el DNI sea tuyo. Las fotos se analizan " +
-                    "en tu dispositivo y se eliminan al instante."
-            },
+            text = rationale,
             style = MaterialTheme.typography.bodyLarge,
             color = VvMuted,
             textAlign = TextAlign.Center,

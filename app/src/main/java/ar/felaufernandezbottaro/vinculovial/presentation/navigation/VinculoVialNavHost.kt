@@ -1,6 +1,5 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.navigation
 
-import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -11,12 +10,15 @@ import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
-import androidx.compose.ui.platform.LocalContext
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.CameraPermissionGate
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.DocumentScanScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.LivenessCaptureScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionViewModel
+import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.signin.SignInScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signin.SignInStatus
 import ar.felaufernandezbottaro.vinculovial.presentation.signin.SignInViewModel
@@ -28,10 +30,13 @@ import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpStatus
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpSuccessScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.splash.SplashScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.ScanCedulaScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.VehicleViewModel
 
 object Route {
     const val SPLASH = "splash"
     const val SIGN_IN = "signin"
+    const val SETTINGS = "settings"
     const val SIGN_UP_GRAPH = "signup"
     const val SIGN_UP_FORM = "signup/form"
     const val SIGN_UP_CONSENT = "signup/consent"
@@ -40,11 +45,29 @@ object Route {
 
     const val SIGN_UP_DOCUMENT_SCAN = "signup/document-scan"
     const val SIGN_UP_LIVENESS = "signup/liveness"
+
+    const val LINK_VEHICLE = "vehicle/link"
 }
 
 @Composable
 fun VinculoVialNavHost(navController: NavHostController = rememberNavController()) {
-    val context = LocalContext.current
+    // RTR fallido (401/403 al refrescar) borra la sesión local en segundo plano, sin que la
+    // pantalla que disparó la request original se entere -- SessionManager ni sabe qué
+    // pantalla es. Este observer es el único lugar que reacciona a esa caída y saca al
+    // usuario a Login, sea cual sea la pantalla en la que esté. Hoy no dispara en la
+    // práctica: no hay ninguna pantalla protegida más allá de Login/Registro (no existe
+    // todavía una Home/Dashboard, fuera del alcance de este CU) -- pero la próxima pantalla
+    // autenticada hereda esta redirección gratis, sin tocar este archivo.
+    val sessionViewModel = hiltViewModel<SessionViewModel>()
+    val hasSession by sessionViewModel.hasSession.collectAsStateWithLifecycle()
+    val currentEntry by navController.currentBackStackEntryAsState()
+    LaunchedEffect(hasSession, currentEntry) {
+        if (!hasSession && !isPublicRoute(currentEntry?.destination?.route)) {
+            navController.navigate(Route.SIGN_IN) {
+                popUpTo(0) { inclusive = true }
+            }
+        }
+    }
 
     NavHost(navController = navController, startDestination = Route.SPLASH) {
 
@@ -66,11 +89,14 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
             val viewModel = hiltViewModel<SignInViewModel>(entry)
             val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-            // Todavía no hay Home: a dónde ir con la sesión ya iniciada lo define la
-            // próxima entrega (gestión de sesión). Por ahora sólo se confirma el login.
+            // Todavía no hay Home/Dashboard (fuera del alcance de US-02/US-03): Settings
+            // hace de parada temporal tras el login, ya que es la única pantalla
+            // autenticada que existe hoy.
             LaunchedEffect(state.status) {
                 if (state.status is SignInStatus.SignedIn) {
-                    Toast.makeText(context, "Sesión iniciada.", Toast.LENGTH_SHORT).show()
+                    navController.navigate(Route.SETTINGS) {
+                        popUpTo(Route.SIGN_IN) { inclusive = true }
+                    }
                 }
             }
 
@@ -81,6 +107,40 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                 onSubmit = viewModel::submit,
                 onGoToSignUp = { navController.navigate(Route.SIGN_UP_GRAPH) },
             )
+        }
+
+        composable(Route.SETTINGS) { entry ->
+            val viewModel = hiltViewModel<SettingsViewModel>(entry)
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+            SettingsScreen(
+                state = state,
+                onLogout = viewModel::logout,
+                onLinkVehicle = { navController.navigate(Route.LINK_VEHICLE) },
+            )
+        }
+
+        composable(Route.LINK_VEHICLE) { entry ->
+            val viewModel = hiltViewModel<VehicleViewModel>(entry)
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+            CameraPermissionGate(
+                onDenied = { navController.popBackStack() },
+                deniedRationale = "Sin cámara no podemos leer el QR de tu cédula. Los cuadros se " +
+                    "analizan en tu dispositivo y se descartan al instante.",
+                permanentlyDeniedRationale = "Activá el permiso de cámara desde los ajustes del " +
+                    "sistema para vincular tu vehículo. Los cuadros se analizan en tu dispositivo " +
+                    "y se descartan al instante.",
+            ) {
+                ScanCedulaScreen(
+                    scanSession = viewModel.qrCedulaScanner,
+                    uiState = state,
+                    onCedulaScanned = viewModel::onCedulaScanned,
+                    onErrorDismissed = viewModel::onErrorDismissed,
+                    onLinked = { navController.popBackStack() },
+                    onCancel = { navController.popBackStack() },
+                )
+            }
         }
 
         navigation(startDestination = Route.SIGN_UP_FORM, route = Route.SIGN_UP_GRAPH) {
@@ -187,6 +247,10 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
         }
     }
 }
+
+/** Pantallas donde no hacer nada aunque no haya sesión: son justamente las que no la requieren. */
+private fun isPublicRoute(route: String?): Boolean =
+    route == null || route == Route.SPLASH || route == Route.SIGN_IN || route.startsWith(Route.SIGN_UP_GRAPH)
 
 /**
  * El formulario, el consentimiento y la captura comparten un único ViewModel scopeado

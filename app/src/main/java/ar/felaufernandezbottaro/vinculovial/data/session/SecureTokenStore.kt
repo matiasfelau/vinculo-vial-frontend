@@ -3,6 +3,9 @@ package ar.felaufernandezbottaro.vinculovial.data.session
 import android.content.SharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoOperationException
 import com.google.crypto.tink.Aead
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.security.GeneralSecurityException
 import java.util.Base64
 import javax.inject.Inject
@@ -40,6 +43,15 @@ class SecureTokenStore @Inject constructor(
 ) {
 
     /**
+     * Refleja en tiempo real si hay una sesión guardada. Es lo que le permite a la UI
+     * enterarse de que la sesión se cayó en segundo plano -- por ejemplo, un RTR fallido
+     * disparado por una pantalla que no es la que está en pantalla -- y redirigir a Login sin
+     * que nadie tenga que consultarlo activamente.
+     */
+    private val _sessionState = MutableStateFlow(hasSession())
+    val sessionState: StateFlow<Boolean> = _sessionState.asStateFlow()
+
+    /**
      * Guarda el par en una única transacción de [SharedPreferences]: nunca queda uno de los
      * dos tokens guardado sin el otro.
      */
@@ -49,6 +61,7 @@ class SecureTokenStore @Inject constructor(
                 .putString(KEY_ACCESS_TOKEN, encrypt(KEY_ACCESS_TOKEN, tokens.accessToken))
                 .putString(KEY_REFRESH_TOKEN, encrypt(KEY_REFRESH_TOKEN, tokens.refreshToken))
                 .apply()
+            _sessionState.value = true
         } catch (e: GeneralSecurityException) {
             throw CryptoOperationException("No se pudo cifrar el par de tokens de sesión", e)
         }
@@ -82,6 +95,7 @@ class SecureTokenStore @Inject constructor(
 
     fun clear() {
         prefs.edit().clear().apply()
+        _sessionState.value = false
     }
 
     /** El nombre de la clave como AAD liga cada ciphertext a su lugar: uno no sirve para el otro. */
