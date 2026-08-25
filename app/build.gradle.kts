@@ -165,6 +165,7 @@ dependencies {
 
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.mlkit.face.detection)
+    implementation(libs.mlkit.text.recognition)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
