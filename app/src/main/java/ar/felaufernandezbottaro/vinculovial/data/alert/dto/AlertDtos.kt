@@ -10,3 +10,12 @@ data class VehicleCheckRequestDto(
 ) {
     override fun toString(): String = "VehicleCheckRequestDto(***)"
 }
+
+/** Payload de `POST /api/v1/alerts`: reusa el `pat_enc` del check, nunca lo vuelve a cifrar. */
+@JsonClass(generateAdapter = true)
+data class SendAlertRequestDto(
+    @Json(name = "alert_type") val alertType: String,
+    @Json(name = "pat_enc") val patEnc: String,
+) {
+    override fun toString(): String = "SendAlertRequestDto(alertType=$alertType, patEnc=***)"
+}

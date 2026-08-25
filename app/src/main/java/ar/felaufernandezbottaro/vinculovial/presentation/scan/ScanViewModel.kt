@@ -1,0 +1,139 @@
+package ar.felaufernandezbottaro.vinculovial.presentation.scan
+
+import androidx.camera.core.ImageProxy
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import ar.felaufernandezbottaro.vinculovial.data.scan.FrameCropper
+import ar.felaufernandezbottaro.vinculovial.data.scan.PlateRegexFilter
+import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
+import ar.felaufernandezbottaro.vinculovial.domain.scan.CheckVehicleResult
+import ar.felaufernandezbottaro.vinculovial.domain.scan.CheckVehicleUseCase
+import ar.felaufernandezbottaro.vinculovial.domain.scan.PlateRecognitionStrategy
+import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertResult
+import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertUseCase
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import java.util.concurrent.atomic.AtomicBoolean
+import javax.inject.Inject
+
+/**
+ * Orquesta el pipeline de escaneo (recorte + OCR + filtro de formato) y el flujo de dos pasos
+ * de US-05 (check + alert). Sólo `PlateRecognitionStrategy` es una interfaz de `domain`: el
+ * recorte y el filtro de formato son transformaciones de `data` sin estado de negocio propio,
+ * así que se consumen directo acá -- mismo criterio que las funciones de `CameraInternals` en
+ * `presentation.camera`.
+ */
+@HiltViewModel
+class ScanViewModel @Inject constructor(
+    private val frameCropper: FrameCropper,
+    private val recognitionStrategy: PlateRecognitionStrategy,
+    private val regexFilter: PlateRegexFilter,
+    private val checkVehicle: CheckVehicleUseCase,
+    private val sendAlert: SendAlertUseCase,
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(ScanUiState())
+    val uiState: StateFlow<ScanUiState> = _uiState.asStateFlow()
+
+    /** Un frame de análisis por vez. */
+    private val frameInFlight = Mutex()
+
+    /** Barrera sincrónica contra disparar el mismo check dos veces. */
+    private val checkInFlight = AtomicBoolean(false)
+
+    /** El `pat_enc` que ya devolvió el check, a la espera de que el usuario elija un tipo de incidente. */
+    private var pendingPatEnc: String? = null
+
+    /**
+     * Recorta, corre OCR y filtra un frame del análisis en vivo. Se llama desde el hilo del
+     * analizador de CameraX (no el hilo principal) -- mismo patrón que
+     * `MlKitQrCedulaScanner.submitFrame`. Sólo actualiza [uiState]; el check en sí lo dispara
+     * [onPlateDetected], desde una corrutina normal, para no bloquear la cámara con una
+     * llamada de red.
+     */
+    suspend fun processFrame(imageProxy: ImageProxy) {
+        if (_uiState.value.status !is ScanStatus.Scanning || !frameInFlight.tryLock()) {
+            imageProxy.close()
+            return
+        }
+
+        try {
+            val bitmap = frameCropper.crop(imageProxy)
+            imageProxy.close()
+            if (bitmap == null) return
+
+            val candidates = try {
+                recognitionStrategy.recognize(bitmap)
+            } finally {
+                bitmap.recycle()
+            }
+
+            val patente = regexFilter.filter(candidates)
+            if (patente != null && _uiState.value.status is ScanStatus.Scanning) {
+                _uiState.update { it.copy(status = ScanStatus.Detected(patente)) }
+            }
+        } finally {
+            frameInFlight.unlock()
+        }
+    }
+
+    fun onPlateDetected(patente: String) {
+        if (!checkInFlight.compareAndSet(false, true)) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(status = ScanStatus.Checking) }
+
+            when (val result = checkVehicle(patente)) {
+                is CheckVehicleResult.Found -> {
+                    pendingPatEnc = result.patEnc
+                    _uiState.update { it.copy(status = ScanStatus.AwaitingAlertType) }
+                }
+                CheckVehicleResult.NotInNetwork ->
+                    _uiState.update { it.copy(status = ScanStatus.NotInNetwork) }
+                is CheckVehicleResult.Failed ->
+                    _uiState.update { it.copy(status = ScanStatus.CheckFailed(result.error)) }
+            }
+
+            checkInFlight.set(false)
+        }
+    }
+
+    fun onAlertTypeSelected(alertType: AlertType) {
+        val patEnc = pendingPatEnc ?: return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(status = ScanStatus.SendingAlert) }
+
+            _uiState.update {
+                when (val result = sendAlert(alertType, patEnc)) {
+                    SendAlertResult.Sent -> it.copy(status = ScanStatus.AlertSent)
+                    is SendAlertResult.Failed -> it.copy(status = ScanStatus.AlertFailed(result.error))
+                }
+            }
+        }
+    }
+
+    /** Cierra el bottom sheet sin elegir: vuelve a escanear. */
+    fun onAlertTypeDismissed() {
+        pendingPatEnc = null
+        resumeScanning()
+    }
+
+    /** Cierra el mensaje neutro de "no está en la red" y retoma el escaneo. */
+    fun onNotInNetworkDismissed() = resumeScanning()
+
+    /** Cierra un error (de check o de alert) y retoma el escaneo. */
+    fun onErrorDismissed() {
+        pendingPatEnc = null
+        resumeScanning()
+    }
+
+    private fun resumeScanning() {
+        _uiState.update { it.copy(status = ScanStatus.Scanning) }
+    }
+}

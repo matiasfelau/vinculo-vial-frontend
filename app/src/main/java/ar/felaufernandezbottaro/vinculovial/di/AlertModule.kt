@@ -1,6 +1,8 @@
 package ar.felaufernandezbottaro.vinculovial.di
 
+import ar.felaufernandezbottaro.vinculovial.data.alert.AlertRepositoryImpl
 import ar.felaufernandezbottaro.vinculovial.data.alert.VehicleCheckRepositoryImpl
+import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertRepository
 import ar.felaufernandezbottaro.vinculovial.domain.scan.VehicleCheckRepository
 import dagger.Binds
 import dagger.Module
@@ -15,4 +17,8 @@ abstract class AlertModule {
     @Binds
     @Singleton
     abstract fun bindVehicleCheckRepository(impl: VehicleCheckRepositoryImpl): VehicleCheckRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAlertRepository(impl: AlertRepositoryImpl): AlertRepository
 }

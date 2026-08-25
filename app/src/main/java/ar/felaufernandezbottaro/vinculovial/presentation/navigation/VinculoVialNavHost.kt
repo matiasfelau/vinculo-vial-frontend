@@ -30,6 +30,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpStatus
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpSuccessScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanPlateScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.splash.SplashScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.ScanCedulaScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.VehicleViewModel
@@ -146,7 +147,10 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
             }
         }
 
-        composable(Route.SCAN_PLATE) {
+        composable(Route.SCAN_PLATE) { entry ->
+            val viewModel = hiltViewModel<ScanViewModel>(entry)
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+
             CameraPermissionGate(
                 onDenied = { navController.popBackStack() },
                 deniedRationale = "Sin cámara no podemos leer la patente. Los cuadros se analizan " +
@@ -155,7 +159,17 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                     "sistema para escanear una patente. Los cuadros se analizan en tu dispositivo " +
                     "y se descartan al instante.",
             ) {
-                ScanPlateScreen(onCancel = { navController.popBackStack() })
+                ScanPlateScreen(
+                    uiState = state,
+                    onFrame = viewModel::processFrame,
+                    onPlateDetected = viewModel::onPlateDetected,
+                    onAlertTypeSelected = viewModel::onAlertTypeSelected,
+                    onAlertTypeDismissed = viewModel::onAlertTypeDismissed,
+                    onNotInNetworkDismissed = viewModel::onNotInNetworkDismissed,
+                    onErrorDismissed = viewModel::onErrorDismissed,
+                    onAlertSentFinished = { navController.popBackStack() },
+                    onCancel = { navController.popBackStack() },
+                )
             }
         }
 

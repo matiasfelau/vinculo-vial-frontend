@@ -21,8 +21,9 @@ import javax.inject.Singleton
  * - `/vehicles` (contrato US-04): protegido por JWT, no por App Attestation -- Kong nunca
  *   valida este header acá, así que exigirlo sería un punto de falla local sin ninguna
  *   contrapartida de seguridad del lado del servidor.
- * - `/vehicles/check` (contrato US-05): misma decisión de velocidad -- se compensa con Rate
- *   Limiting estricto en Kong por `X-User-Id` (5 req/min, 10 req/hora), no con attestation.
+ * - `/vehicles/check` y `/alerts` (contrato US-05): misma decisión de velocidad -- se
+ *   compensan con Rate Limiting estricto en Kong por `X-User-Id` (5 req/min, 10 req/hora),
+ *   no con attestation.
  */
 @Singleton
 class AttestationInterceptor @Inject constructor(
@@ -60,6 +61,7 @@ class AttestationInterceptor @Inject constructor(
             "/api/v1/auth/logout",
             "/api/v1/vehicles",
             "/api/v1/vehicles/check",
+            "/api/v1/alerts",
         )
     }
 }
