@@ -29,6 +29,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpFormScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpStatus
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpSuccessScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpViewModel
+import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanPlateScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.splash.SplashScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.ScanCedulaScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.VehicleViewModel
@@ -47,6 +48,7 @@ object Route {
     const val SIGN_UP_LIVENESS = "signup/liveness"
 
     const val LINK_VEHICLE = "vehicle/link"
+    const val SCAN_PLATE = "scan/plate"
 }
 
 @Composable
@@ -117,6 +119,7 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                 state = state,
                 onLogout = viewModel::logout,
                 onLinkVehicle = { navController.navigate(Route.LINK_VEHICLE) },
+                onScanPlate = { navController.navigate(Route.SCAN_PLATE) },
             )
         }
 
@@ -140,6 +143,19 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                     onLinked = { navController.popBackStack() },
                     onCancel = { navController.popBackStack() },
                 )
+            }
+        }
+
+        composable(Route.SCAN_PLATE) {
+            CameraPermissionGate(
+                onDenied = { navController.popBackStack() },
+                deniedRationale = "Sin cámara no podemos leer la patente. Los cuadros se analizan " +
+                    "en tu dispositivo y se descartan al instante.",
+                permanentlyDeniedRationale = "Activá el permiso de cámara desde los ajustes del " +
+                    "sistema para escanear una patente. Los cuadros se analizan en tu dispositivo " +
+                    "y se descartan al instante.",
+            ) {
+                ScanPlateScreen(onCancel = { navController.popBackStack() })
             }
         }
 
