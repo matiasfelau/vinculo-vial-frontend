@@ -1,5 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.data.scan
 
+import android.util.Log
+import ar.felaufernandezbottaro.vinculovial.BuildConfig
 import javax.inject.Inject
 
 /**
@@ -15,6 +17,13 @@ class PlateRegexFilter @Inject constructor() {
 
     /** Devuelve la primera patente válida entre los candidatos, o `null` si ninguna matchea. */
     fun filter(candidates: List<String>): String? {
+        // Sólo en debug: sin esto depurar el OCR es a ciegas, pero el texto crudo (incluida
+        // una patente real) no puede llegar jamás a un log de producción -- mismo criterio
+        // que el diagnóstico de resolución en CameraInternals.captureJpegInternal.
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, "candidatos OCR crudos: $candidates")
+        }
+
         candidates.forEach { candidate ->
             normalize(candidate)?.let { return it }
         }
@@ -27,6 +36,7 @@ class PlateRegexFilter @Inject constructor() {
     }
 
     private companion object {
+        const val TAG = "PlateRegexFilter"
         val NOISE = Regex("[\\s-]")
         val VIEJA = Regex("^[A-Z]{3}\\d{3}$")
         val MERCOSUR = Regex("^[A-Z]{2}\\d{3}[A-Z]{2}$")
