@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
@@ -46,6 +47,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -58,10 +60,10 @@ import ar.felaufernandezbottaro.vinculovial.presentation.alert.AlertTypeBottomSh
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.awaitCameraProviderInternal
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvCircleIconButton
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvPrimaryButton
+import ar.felaufernandezbottaro.vinculovial.presentation.components.VvTextField
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvGreen
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrange
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.Executors
 
@@ -74,7 +76,12 @@ import java.util.concurrent.Executors
 fun ScanPlateScreen(
     uiState: ScanUiState,
     onFrame: suspend (ImageProxy) -> Unit,
-    onPlateDetected: (String) -> Unit,
+    onPlateConfirmed: () -> Unit,
+    onPlateRejected: () -> Unit,
+    onRescan: () -> Unit,
+    onManualEntryOpened: () -> Unit,
+    onManualPlateSubmitted: (String) -> Unit,
+    onManualEntryDismissed: () -> Unit,
     onAlertTypeSelected: (AlertType) -> Unit,
     onAlertTypeDismissed: () -> Unit,
     onNotInNetworkDismissed: () -> Unit,
@@ -152,14 +159,11 @@ fun ScanPlateScreen(
         camera?.cameraControl?.enableTorch(torchOn)
     }
 
-    // Confirmación háptica en el instante de la lectura, y una pausa corta antes de arrancar
-    // el check -- sin ella el cambio de estado se siente como un salto sin causa.
+    // Confirmación háptica en el instante de la lectura. El check NO arranca acá: espera a
+    // que el humano confirme en el diálogo -- ver el KDoc de ScanStatus.Detected.
     LaunchedEffect(uiState.status) {
-        val status = uiState.status
-        if (status is ScanStatus.Detected) {
+        if (uiState.status is ScanStatus.Detected) {
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            delay(SUCCESS_HOLD_MS)
-            onPlateDetected(status.patente)
         }
     }
 
@@ -220,6 +224,24 @@ fun ScanPlateScreen(
             }
         }
 
+        val detected = uiState.status as? ScanStatus.Detected
+        if (detected != null) {
+            PlateConfirmDialog(patente = detected.patente, onConfirm = onPlateConfirmed, onReject = onPlateRejected)
+        }
+
+        if (uiState.status is ScanStatus.Rejected) {
+            PlateRejectedDialog(onRescan = onRescan, onManualEntry = onManualEntryOpened)
+        }
+
+        val manualEntry = uiState.status as? ScanStatus.ManualEntry
+        if (manualEntry != null) {
+            ManualPlateEntryDialog(
+                error = manualEntry.error,
+                onSubmit = onManualPlateSubmitted,
+                onDismiss = onManualEntryDismissed,
+            )
+        }
+
         if (uiState.status is ScanStatus.AwaitingAlertType) {
             AlertTypeBottomSheet(
                 onAlertTypeSelected = onAlertTypeSelected,
@@ -259,7 +281,9 @@ fun ScanPlateScreen(
 
 private fun statusHeadline(status: ScanStatus): String = when (status) {
     is ScanStatus.Scanning -> "Encuadrá la patente del vehículo"
-    is ScanStatus.Detected -> "¡Patente reconocida!"
+    is ScanStatus.Detected -> "¿Es correcta esta patente?"
+    ScanStatus.Rejected -> "¿Cómo querés seguir?"
+    is ScanStatus.ManualEntry -> "Ingresá la patente"
     ScanStatus.Checking -> "Verificando la patente…"
     ScanStatus.NotInNetwork -> "El vehículo no está en la red"
     ScanStatus.AwaitingAlertType -> "Elegí qué querés reportar"
@@ -307,6 +331,67 @@ private fun NotInNetworkDialog(onDismiss: () -> Unit) {
         text = { Text("Esta patente no corresponde a ningún vehículo vinculado en Vínculo Vial.") },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("Entendido", color = VvNavy) }
+        },
+    )
+}
+
+/**
+ * Validación humana en el bucle: el OCR se equivoca de forma insalvable entre ciertos
+ * caracteres en condiciones reales (ej. 'Q'/'O'), así que el texto reconocido se le muestra
+ * al usuario antes de gastar una consulta al backend con una patente potencialmente errónea.
+ */
+@Composable
+private fun PlateConfirmDialog(patente: String, onConfirm: () -> Unit, onReject: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onReject,
+        title = { Text("Patente detectada") },
+        text = { Text("Patente detectada: $patente. ¿Es correcto?") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("Sí, es correcta", color = VvNavy) }
+        },
+        dismissButton = {
+            TextButton(onClick = onReject) { Text("No", color = VvOrange) }
+        },
+    )
+}
+
+@Composable
+private fun PlateRejectedDialog(onRescan: () -> Unit, onManualEntry: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onRescan,
+        title = { Text("¿Cómo querés seguir?") },
+        text = { Text("Podés volver a encuadrar la patente o escribirla vos mismo.") },
+        confirmButton = {
+            TextButton(onClick = onManualEntry) { Text("Ingresar manualmente", color = VvNavy) }
+        },
+        dismissButton = {
+            TextButton(onClick = onRescan) { Text("Volver a escanear", color = VvNavy) }
+        },
+    )
+}
+
+@Composable
+private fun ManualPlateEntryDialog(error: String?, onSubmit: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ingresar patente manualmente") },
+        text = {
+            VvTextField(
+                label = "Patente",
+                value = text,
+                onValueChange = { text = it },
+                placeholder = "AAA000 o AA000AA",
+                errorText = error,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSubmit(text) }) { Text("Verificar", color = VvNavy) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar", color = VvNavy) }
         },
     )
 }
@@ -372,6 +457,3 @@ private fun PlateViewfinder(status: ScanStatus) {
         }
     }
 }
-
-/** Cuánto se sostiene el estado de éxito del escaneo antes de arrancar el check. */
-private const val SUCCESS_HOLD_MS = 450L

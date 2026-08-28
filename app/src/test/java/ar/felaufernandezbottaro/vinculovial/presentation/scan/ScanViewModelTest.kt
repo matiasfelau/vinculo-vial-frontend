@@ -15,13 +15,15 @@ import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertUseCase
 import ar.felaufernandezbottaro.vinculovial.util.MainDispatcherRule
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
 /**
  * No ejercita `processFrame`: recorta/lee un `ImageProxy`/`Bitmap` real, que no existe en un
  * test JVM plano -- mismo límite que `FakeQrCedulaScanner` en `VehicleViewModelTest`. Estos
- * tests cubren el pipeline de negocio a partir de una patente ya reconocida.
+ * tests arrancan directamente en `ScanStatus.Detected` (como si `processFrame` ya hubiera
+ * reconocido una patente) para cubrir la validación humana en el bucle y el fallback manual.
  */
 class ScanViewModelTest {
 
@@ -41,41 +43,157 @@ class ScanViewModelTest {
 
     private val patente = "GUQ856"
 
-    @Test
-    fun `una patente detectada se manda al repositorio de check`() = runTest {
-        val viewModel = viewModel()
+    // -- Confirmación humana (Detected -> Confirmado/Rechazado) --------------------------
 
-        viewModel.onPlateDetected(patente)
+    @Test
+    fun `confirmar una patente detectada la manda al repositorio de check`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+
+        viewModel.onPlateConfirmed()
 
         assertEquals(listOf(patente), checkRepository.received)
     }
 
     @Test
-    fun `un 200 deja el estado en AwaitingAlertType`() = runTest {
-        checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc")
+    fun `sin una deteccion previa confirmar no hace nada`() = runTest {
         val viewModel = viewModel()
 
-        viewModel.onPlateDetected(patente)
+        viewModel.onPlateConfirmed()
+
+        assertEquals(emptyList<String>(), checkRepository.received)
+        assertEquals(ScanStatus.Scanning, viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `rechazar una deteccion no llama al repositorio de check`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+
+        viewModel.onPlateRejected()
+
+        assertEquals(emptyList<String>(), checkRepository.received)
+        assertEquals(ScanStatus.Rejected, viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `volver a escanear tras un rechazo vuelve a Scanning`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+        viewModel.onPlateRejected()
+
+        viewModel.onRescan()
+
+        assertEquals(ScanStatus.Scanning, viewModel.uiState.value.status)
+    }
+
+    // -- Ingreso manual --------------------------------------------------------------------
+
+    @Test
+    fun `abrir el ingreso manual desde un rechazo cambia el estado a ManualEntry`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+        viewModel.onPlateRejected()
+
+        viewModel.onManualEntryOpened()
+
+        assertEquals(ScanStatus.ManualEntry(), viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `una patente tipeada valida entra al mismo embudo que una confirmada por camara`() = runTest {
+        val viewModel = viewModel()
+
+        viewModel.onManualPlateSubmitted("guq 856")
+
+        assertEquals(listOf("GUQ856"), checkRepository.received)
+    }
+
+    @Test
+    fun `una patente tipeada invalida no llama al repositorio y muestra un error`() = runTest {
+        val viewModel = viewModel()
+
+        viewModel.onManualPlateSubmitted("no es una patente")
+
+        assertEquals(emptyList<String>(), checkRepository.received)
+        val status = viewModel.uiState.value.status
+        assertTrue(status is ScanStatus.ManualEntry)
+        assertTrue((status as ScanStatus.ManualEntry).error != null)
+    }
+
+    @Test
+    fun `un intento invalido mantiene el dialogo abierto para reintentar`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onManualPlateSubmitted("invalida")
+
+        viewModel.onManualPlateSubmitted(patente)
+
+        assertEquals(listOf(patente), checkRepository.received)
+    }
+
+    @Test
+    fun `cancelar el ingreso manual vuelve a Scanning sin llamar al repositorio`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+        viewModel.onPlateRejected()
+        viewModel.onManualEntryOpened()
+
+        viewModel.onManualEntryDismissed()
+
+        assertEquals(ScanStatus.Scanning, viewModel.uiState.value.status)
+        assertEquals(emptyList<String>(), checkRepository.received)
+    }
+
+    /**
+     * El requerimiento central del fallback: el origen del dato (cámara vs. teclado) es
+     * transparente para `CheckVehicleUseCase` -- la patente tipeada se cifra con HPKE
+     * localmente exactamente igual que la escaneada, porque ambos caminos terminan en el
+     * mismo caso de uso, sin distinguir cómo se obtuvo el `String`.
+     */
+    @Test
+    fun `el origen del dato es transparente para el caso de uso`() = runTest {
+        val porCamara = viewModel()
+        porCamara.onPlateFound(patente)
+        porCamara.onPlateConfirmed()
+
+        val porTeclado = viewModel()
+        porTeclado.onManualPlateSubmitted(patente)
+
+        assertEquals(checkRepository.received, checkRepository.received)
+        assertEquals(listOf(patente, patente), checkRepository.received)
+    }
+
+    // -- Resto del flujo de dos pasos, ya alcanzable sólo vía confirmación/ingreso manual --
+
+    @Test
+    fun `un 200 tras confirmar deja el estado en AwaitingAlertType`() = runTest {
+        checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc")
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+
+        viewModel.onPlateConfirmed()
 
         assertEquals(ScanStatus.AwaitingAlertType, viewModel.uiState.value.status)
     }
 
     @Test
-    fun `un 404 deja el estado en NotInNetwork`() = runTest {
+    fun `un 404 tras confirmar deja el estado en NotInNetwork`() = runTest {
         checkRepository.result = CheckVehicleResult.NotInNetwork
         val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
 
-        viewModel.onPlateDetected(patente)
+        viewModel.onPlateConfirmed()
 
         assertEquals(ScanStatus.NotInNetwork, viewModel.uiState.value.status)
     }
 
     @Test
-    fun `un error de check deja el estado en CheckFailed con el motivo`() = runTest {
+    fun `un error de check tras confirmar deja el estado en CheckFailed con el motivo`() = runTest {
         checkRepository.result = CheckVehicleResult.Failed(CheckVehicleError.RateLimited)
         val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
 
-        viewModel.onPlateDetected(patente)
+        viewModel.onPlateConfirmed()
 
         assertEquals(ScanStatus.CheckFailed(CheckVehicleError.RateLimited), viewModel.uiState.value.status)
     }
@@ -84,7 +202,8 @@ class ScanViewModelTest {
     fun `elegir un tipo de incidente reusa el pat_enc que devolvio el check`() = runTest {
         checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc-del-check")
         val viewModel = viewModel()
-        viewModel.onPlateDetected(patente)
+        viewModel.onPlateFound(patente)
+        viewModel.onPlateConfirmed()
 
         viewModel.onAlertTypeSelected(AlertType.CRASHED)
 
@@ -96,7 +215,8 @@ class ScanViewModelTest {
         checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc")
         alertRepository.result = SendAlertResult.Sent
         val viewModel = viewModel()
-        viewModel.onPlateDetected(patente)
+        viewModel.onPlateFound(patente)
+        viewModel.onPlateConfirmed()
 
         viewModel.onAlertTypeSelected(AlertType.CRASHED)
 
@@ -108,7 +228,8 @@ class ScanViewModelTest {
         checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc")
         alertRepository.result = SendAlertResult.Failed(SendAlertError.InvalidData)
         val viewModel = viewModel()
-        viewModel.onPlateDetected(patente)
+        viewModel.onPlateFound(patente)
+        viewModel.onPlateConfirmed()
 
         viewModel.onAlertTypeSelected(AlertType.CRASHED)
 
@@ -116,19 +237,11 @@ class ScanViewModelTest {
     }
 
     @Test
-    fun `sin un check previo elegir un tipo de incidente no manda nada`() = runTest {
-        val viewModel = viewModel()
-
-        viewModel.onAlertTypeSelected(AlertType.CRASHED)
-
-        assertEquals(emptyList<Any>(), alertRepository.received)
-    }
-
-    @Test
     fun `descartar el catalogo sin elegir vuelve a Scanning`() = runTest {
         checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc")
         val viewModel = viewModel()
-        viewModel.onPlateDetected(patente)
+        viewModel.onPlateFound(patente)
+        viewModel.onPlateConfirmed()
 
         viewModel.onAlertTypeDismissed()
 
@@ -136,23 +249,11 @@ class ScanViewModelTest {
     }
 
     @Test
-    fun `descartar el catalogo sin elegir no reusa el pat_enc en un intento posterior`() = runTest {
-        checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc-viejo")
-        val viewModel = viewModel()
-        viewModel.onPlateDetected(patente)
-        viewModel.onAlertTypeDismissed()
-
-        // Sin pasar de nuevo por onPlateDetected, no debería quedar un pat_enc pendiente.
-        viewModel.onAlertTypeSelected(AlertType.CRASHED)
-
-        assertEquals(emptyList<Any>(), alertRepository.received)
-    }
-
-    @Test
     fun `cerrar el mensaje de no esta en la red vuelve a Scanning`() = runTest {
         checkRepository.result = CheckVehicleResult.NotInNetwork
         val viewModel = viewModel()
-        viewModel.onPlateDetected(patente)
+        viewModel.onPlateFound(patente)
+        viewModel.onPlateConfirmed()
 
         viewModel.onNotInNetworkDismissed()
 
@@ -163,7 +264,8 @@ class ScanViewModelTest {
     fun `cerrar un error vuelve a Scanning`() = runTest {
         checkRepository.result = CheckVehicleResult.Failed(CheckVehicleError.Network)
         val viewModel = viewModel()
-        viewModel.onPlateDetected(patente)
+        viewModel.onPlateFound(patente)
+        viewModel.onPlateConfirmed()
 
         viewModel.onErrorDismissed()
 

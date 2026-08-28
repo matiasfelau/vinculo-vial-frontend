@@ -162,7 +162,12 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                 ScanPlateScreen(
                     uiState = state,
                     onFrame = viewModel::processFrame,
-                    onPlateDetected = viewModel::onPlateDetected,
+                    onPlateConfirmed = viewModel::onPlateConfirmed,
+                    onPlateRejected = viewModel::onPlateRejected,
+                    onRescan = viewModel::onRescan,
+                    onManualEntryOpened = viewModel::onManualEntryOpened,
+                    onManualPlateSubmitted = viewModel::onManualPlateSubmitted,
+                    onManualEntryDismissed = viewModel::onManualEntryDismissed,
                     onAlertTypeSelected = viewModel::onAlertTypeSelected,
                     onAlertTypeDismissed = viewModel::onAlertTypeDismissed,
                     onNotInNetworkDismissed = viewModel::onNotInNetworkDismissed,

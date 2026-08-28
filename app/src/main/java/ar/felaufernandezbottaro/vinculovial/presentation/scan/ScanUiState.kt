@@ -12,8 +12,22 @@ sealed interface ScanStatus {
     /** Buscando una patente en el stream de la cámara. */
     data object Scanning : ScanStatus
 
-    /** Patente reconocida: pausa breve (feedback háptico) antes de arrancar el check. */
+    /**
+     * Patente reconocida y validada por `PlateRegexFilter`, a la espera de que el humano
+     * confirme que el OCR la leyó bien -- validación humana en el bucle, no un paso
+     * cosmético: el OCR tiene confusiones insalvables entre ciertos caracteres (ej. 'Q'/'O')
+     * en condiciones reales, y el check contra el backend no arranca hasta esta confirmación.
+     */
     data class Detected(val patente: String) : ScanStatus
+
+    /** El humano marcó que [ScanStatus.Detected] leyó mal: ofrece reintentar o tipear a mano. */
+    data object Rejected : ScanStatus
+
+    /**
+     * Fallback manual: [error] es el motivo del último intento inválido, si lo hubo -- el
+     * diálogo se mantiene abierto para reintentar en vez de volver a Scanning.
+     */
+    data class ManualEntry(val error: String? = null) : ScanStatus
 
     /** Cifrando y consultando `/vehicles/check`. */
     data object Checking : ScanStatus

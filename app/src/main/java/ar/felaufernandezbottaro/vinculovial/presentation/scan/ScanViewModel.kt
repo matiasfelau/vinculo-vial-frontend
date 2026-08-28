@@ -52,9 +52,10 @@ class ScanViewModel @Inject constructor(
     /**
      * Recorta, corre OCR y filtra un frame del análisis en vivo. Se llama desde el hilo del
      * analizador de CameraX (no el hilo principal) -- mismo patrón que
-     * `MlKitQrCedulaScanner.submitFrame`. Sólo actualiza [uiState]; el check en sí lo dispara
-     * [onPlateDetected], desde una corrutina normal, para no bloquear la cámara con una
-     * llamada de red.
+     * `MlKitQrCedulaScanner.submitFrame`. Sólo actualiza [uiState] a [ScanStatus.Detected]:
+     * a partir de ahí el pipeline se pausa (ya no corre porque el status deja de ser
+     * `Scanning`) hasta que el humano confirme o rechace lo que leyó el OCR -- ver
+     * [onPlateConfirmed] / [onPlateRejected].
      */
     suspend fun processFrame(imageProxy: ImageProxy) {
         if (_uiState.value.status !is ScanStatus.Scanning || !frameInFlight.tryLock()) {
@@ -74,15 +75,61 @@ class ScanViewModel @Inject constructor(
             }
 
             val patente = regexFilter.filter(candidates)
-            if (patente != null && _uiState.value.status is ScanStatus.Scanning) {
-                _uiState.update { it.copy(status = ScanStatus.Detected(patente)) }
-            }
+            if (patente != null) onPlateFound(patente)
         } finally {
             frameInFlight.unlock()
         }
     }
 
-    fun onPlateDetected(patente: String) {
+    /**
+     * Separado de [processFrame] para que los tests puedan ejercitar la máquina de estados
+     * desde una patente ya reconocida, sin necesitar un `ImageProxy`/`Bitmap` real (no existen
+     * en un test JVM plano).
+     */
+    internal fun onPlateFound(patente: String) {
+        if (_uiState.value.status is ScanStatus.Scanning) {
+            _uiState.update { it.copy(status = ScanStatus.Detected(patente)) }
+        }
+    }
+
+    /** El humano confirmó que el OCR leyó bien: recién acá arranca el check contra el backend. */
+    fun onPlateConfirmed() {
+        val detected = _uiState.value.status as? ScanStatus.Detected ?: return
+        runCheck(detected.patente)
+    }
+
+    /** El humano marcó que el OCR se equivocó: ofrece reintentar o tipear la patente a mano. */
+    fun onPlateRejected() {
+        _uiState.update { it.copy(status = ScanStatus.Rejected) }
+    }
+
+    /** Descarta la lectura rechazada y retoma el escaneo por cámara. */
+    fun onRescan() = resumeScanning()
+
+    fun onManualEntryOpened() {
+        _uiState.update { it.copy(status = ScanStatus.ManualEntry()) }
+    }
+
+    /**
+     * Valida [rawText] con el mismo `PlateRegexFilter` que usa el pipeline de cámara. Una
+     * patente tipeada válida entra al mismo embudo criptográfico que una confirmada por
+     * cámara ([runCheck]) -- el caso de uso no distingue el origen del dato, sólo recibe un
+     * `String` ya normalizado. Ya la escribió el humano a propósito, así que no hace falta
+     * un paso de confirmación extra: tipear ES la confirmación.
+     */
+    fun onManualPlateSubmitted(rawText: String) {
+        val patente = regexFilter.filter(listOf(rawText))
+        if (patente == null) {
+            _uiState.update { it.copy(status = ScanStatus.ManualEntry(error = MANUAL_ENTRY_ERROR)) }
+            return
+        }
+        runCheck(patente)
+    }
+
+    /** Cierra el ingreso manual sin verificar nada y retoma el escaneo por cámara. */
+    fun onManualEntryDismissed() = resumeScanning()
+
+    private fun runCheck(patente: String) {
         if (!checkInFlight.compareAndSet(false, true)) return
 
         viewModelScope.launch {
@@ -135,5 +182,9 @@ class ScanViewModel @Inject constructor(
 
     private fun resumeScanning() {
         _uiState.update { it.copy(status = ScanStatus.Scanning) }
+    }
+
+    private companion object {
+        const val MANUAL_ENTRY_ERROR = "Formato de patente inválido. Probá con AAA000 o AA000AA."
     }
 }
