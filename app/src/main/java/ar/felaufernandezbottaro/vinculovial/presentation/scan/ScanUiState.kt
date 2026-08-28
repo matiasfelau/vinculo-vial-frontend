@@ -1,9 +1,14 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.scan
 
+import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
 import ar.felaufernandezbottaro.vinculovial.domain.scan.CheckVehicleError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 
-data class ScanUiState(val status: ScanStatus = ScanStatus.Scanning) {
+data class ScanUiState(
+    val status: ScanStatus = ScanStatus.Scanning,
+    /** El tipo elegido en `ReportChatScreen`, para renderizarlo como la burbuja del usuario. */
+    val selectedAlertType: AlertType? = null,
+) {
     val isBusy: Boolean get() = status is ScanStatus.Checking || status is ScanStatus.SendingAlert
 }
 

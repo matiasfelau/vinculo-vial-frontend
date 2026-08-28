@@ -23,12 +23,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,14 +50,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
-import ar.felaufernandezbottaro.vinculovial.domain.scan.CheckVehicleError
-import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.model.OverlayRect
-import ar.felaufernandezbottaro.vinculovial.presentation.alert.AlertTypeBottomSheet
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.awaitCameraProviderInternal
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvCircleIconButton
-import ar.felaufernandezbottaro.vinculovial.presentation.components.VvPrimaryButton
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvTextField
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvGreen
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
@@ -68,9 +61,10 @@ import kotlinx.coroutines.runBlocking
 import java.util.concurrent.Executors
 
 /**
- * Escaneo en vivo de la patente: cámara + overlay rectangular, sin obturador. El resultado no
- * navega a otro lado -- el flujo de dos pasos (check + alert) ocurre en esta misma pantalla,
- * así que también refleja [uiState] -- mismo enfoque que `ScanCedulaScreen` (US-04).
+ * Escaneo en vivo de la patente: cámara + overlay rectangular, sin obturador. Cubre sólo hasta
+ * que el check contra `/vehicles/check` responde: el catálogo de incidentes y el envío del
+ * reporte viven en `ReportChatScreen`, una pantalla aparte -- no un menú flotante sobre la
+ * cámara -- a la que el `NavHost` navega apenas el status pasa a `AwaitingAlertType`.
  */
 @Composable
 fun ScanPlateScreen(
@@ -82,11 +76,8 @@ fun ScanPlateScreen(
     onManualEntryOpened: () -> Unit,
     onManualPlateSubmitted: (String) -> Unit,
     onManualEntryDismissed: () -> Unit,
-    onAlertTypeSelected: (AlertType) -> Unit,
-    onAlertTypeDismissed: () -> Unit,
     onNotInNetworkDismissed: () -> Unit,
-    onErrorDismissed: () -> Unit,
-    onAlertSentFinished: () -> Unit,
+    onCheckErrorDismissed: () -> Unit,
     onCancel: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -210,9 +201,7 @@ fun ScanPlateScreen(
                 style = MaterialTheme.typography.headlineSmall,
                 color = when {
                     failure != null -> VvOrange
-                    uiState.status is ScanStatus.AlertSent -> VvGreen
                     uiState.status is ScanStatus.CheckFailed -> VvOrange
-                    uiState.status is ScanStatus.AlertFailed -> VvOrange
                     uiState.status is ScanStatus.NotInNetwork -> VvOrange
                     else -> Color.White
                 },
@@ -242,29 +231,13 @@ fun ScanPlateScreen(
             )
         }
 
-        if (uiState.status is ScanStatus.AwaitingAlertType) {
-            AlertTypeBottomSheet(
-                onAlertTypeSelected = onAlertTypeSelected,
-                onDismiss = onAlertTypeDismissed,
-            )
-        }
-
-        if (uiState.status is ScanStatus.AlertSent) {
-            AlertSentOverlay(onFinish = onAlertSentFinished)
-        }
-
         if (uiState.status is ScanStatus.NotInNetwork) {
             NotInNetworkDialog(onDismiss = onNotInNetworkDismissed)
         }
 
         val checkFailed = uiState.status as? ScanStatus.CheckFailed
         if (checkFailed != null) {
-            ScanErrorDialog(message = checkFailed.error.message(), onDismiss = onErrorDismissed)
-        }
-
-        val alertFailed = uiState.status as? ScanStatus.AlertFailed
-        if (alertFailed != null) {
-            ScanErrorDialog(message = alertFailed.error.message(), onDismiss = onErrorDismissed)
+            ScanErrorDialog(message = checkFailed.error.message(), onDismiss = onCheckErrorDismissed)
         }
 
         if (showCancelDialog) {
@@ -291,36 +264,6 @@ private fun statusHeadline(status: ScanStatus): String = when (status) {
     ScanStatus.AlertSent -> "¡Listo!"
     is ScanStatus.CheckFailed -> "No pudimos verificar la patente"
     is ScanStatus.AlertFailed -> "No pudimos enviar el reporte"
-}
-
-@Composable
-private fun AlertSentOverlay(onFinish: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.72f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(horizontal = 32.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Filled.CheckCircle,
-                contentDescription = null,
-                tint = VvGreen,
-                modifier = Modifier.padding(bottom = 20.dp),
-            )
-            Text(
-                text = "Reporte enviado de forma anónima",
-                style = MaterialTheme.typography.headlineSmall,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 20.dp),
-            )
-            VvPrimaryButton(text = "Continuar", onClick = onFinish)
-        }
-    }
 }
 
 @Composable

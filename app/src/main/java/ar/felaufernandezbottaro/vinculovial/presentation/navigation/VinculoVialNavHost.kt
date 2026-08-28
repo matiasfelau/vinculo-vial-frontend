@@ -29,7 +29,9 @@ import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpFormScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpStatus
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpSuccessScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpViewModel
+import ar.felaufernandezbottaro.vinculovial.presentation.scan.ReportChatScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanPlateScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanStatus
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.splash.SplashScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.ScanCedulaScreen
@@ -49,7 +51,10 @@ object Route {
     const val SIGN_UP_LIVENESS = "signup/liveness"
 
     const val LINK_VEHICLE = "vehicle/link"
+
+    const val SCAN_GRAPH = "scan"
     const val SCAN_PLATE = "scan/plate"
+    const val REPORT_CHAT = "scan/report-chat"
 }
 
 @Composable
@@ -120,7 +125,7 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                 state = state,
                 onLogout = viewModel::logout,
                 onLinkVehicle = { navController.navigate(Route.LINK_VEHICLE) },
-                onScanPlate = { navController.navigate(Route.SCAN_PLATE) },
+                onScanPlate = { navController.navigate(Route.SCAN_GRAPH) },
             )
         }
 
@@ -147,33 +152,58 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
             }
         }
 
-        composable(Route.SCAN_PLATE) { entry ->
-            val viewModel = hiltViewModel<ScanViewModel>(entry)
-            val state by viewModel.uiState.collectAsStateWithLifecycle()
+        navigation(startDestination = Route.SCAN_PLATE, route = Route.SCAN_GRAPH) {
 
-            CameraPermissionGate(
-                onDenied = { navController.popBackStack() },
-                deniedRationale = "Sin cámara no podemos leer la patente. Los cuadros se analizan " +
-                    "en tu dispositivo y se descartan al instante.",
-                permanentlyDeniedRationale = "Activá el permiso de cámara desde los ajustes del " +
-                    "sistema para escanear una patente. Los cuadros se analizan en tu dispositivo " +
-                    "y se descartan al instante.",
-            ) {
-                ScanPlateScreen(
+            composable(Route.SCAN_PLATE) { entry ->
+                val viewModel = entry.sharedScanViewModel(navController)
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+                // El check contra /vehicles/check terminó: el catálogo de incidentes y el
+                // envío del reporte viven en ReportChatScreen, no en un menú flotante sobre
+                // la cámara. Se saca ScanPlateScreen del back stack al navegar: no tiene
+                // sentido volver a la cámara en vivo una vez identificado el vehículo.
+                LaunchedEffect(state.status) {
+                    if (state.status is ScanStatus.AwaitingAlertType) {
+                        navController.navigate(Route.REPORT_CHAT) {
+                            popUpTo(Route.SCAN_PLATE) { inclusive = true }
+                        }
+                    }
+                }
+
+                CameraPermissionGate(
+                    onDenied = { navController.popBackStack() },
+                    deniedRationale = "Sin cámara no podemos leer la patente. Los cuadros se analizan " +
+                        "en tu dispositivo y se descartan al instante.",
+                    permanentlyDeniedRationale = "Activá el permiso de cámara desde los ajustes del " +
+                        "sistema para escanear una patente. Los cuadros se analizan en tu dispositivo " +
+                        "y se descartan al instante.",
+                ) {
+                    ScanPlateScreen(
+                        uiState = state,
+                        onFrame = viewModel::processFrame,
+                        onPlateConfirmed = viewModel::onPlateConfirmed,
+                        onPlateRejected = viewModel::onPlateRejected,
+                        onRescan = viewModel::onRescan,
+                        onManualEntryOpened = viewModel::onManualEntryOpened,
+                        onManualPlateSubmitted = viewModel::onManualPlateSubmitted,
+                        onManualEntryDismissed = viewModel::onManualEntryDismissed,
+                        onNotInNetworkDismissed = viewModel::onNotInNetworkDismissed,
+                        onCheckErrorDismissed = viewModel::onCheckErrorDismissed,
+                        onCancel = { navController.popBackStack() },
+                    )
+                }
+            }
+
+            composable(Route.REPORT_CHAT) { entry ->
+                val viewModel = entry.sharedScanViewModel(navController)
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+                ReportChatScreen(
                     uiState = state,
-                    onFrame = viewModel::processFrame,
-                    onPlateConfirmed = viewModel::onPlateConfirmed,
-                    onPlateRejected = viewModel::onPlateRejected,
-                    onRescan = viewModel::onRescan,
-                    onManualEntryOpened = viewModel::onManualEntryOpened,
-                    onManualPlateSubmitted = viewModel::onManualPlateSubmitted,
-                    onManualEntryDismissed = viewModel::onManualEntryDismissed,
                     onAlertTypeSelected = viewModel::onAlertTypeSelected,
-                    onAlertTypeDismissed = viewModel::onAlertTypeDismissed,
-                    onNotInNetworkDismissed = viewModel::onNotInNetworkDismissed,
-                    onErrorDismissed = viewModel::onErrorDismissed,
-                    onAlertSentFinished = { navController.popBackStack() },
-                    onCancel = { navController.popBackStack() },
+                    onRetry = viewModel::onAlertRetry,
+                    onFinished = { navController.popBackStack(Route.SETTINGS, inclusive = false) },
+                    onCancel = { navController.popBackStack(Route.SETTINGS, inclusive = false) },
                 )
             }
         }
@@ -294,5 +324,16 @@ private fun isPublicRoute(route: String?): Boolean =
 @Composable
 private fun NavBackStackEntry.sharedSignUpViewModel(navController: NavHostController): SignUpViewModel {
     val parentEntry = remember(this) { navController.getBackStackEntry(Route.SIGN_UP_GRAPH) }
+    return hiltViewModel(parentEntry)
+}
+
+/**
+ * `ScanPlateScreen` y `ReportChatScreen` comparten un único ViewModel scopeado al nav graph
+ * `scan`: el `pat_enc` que devuelve el check nunca sale de memoria del ViewModel hacia un
+ * argumento de navegación serializado -- mismo criterio Zero-Retention que el resto de la app.
+ */
+@Composable
+private fun NavBackStackEntry.sharedScanViewModel(navController: NavHostController): ScanViewModel {
+    val parentEntry = remember(this) { navController.getBackStackEntry(Route.SCAN_GRAPH) }
     return hiltViewModel(parentEntry)
 }

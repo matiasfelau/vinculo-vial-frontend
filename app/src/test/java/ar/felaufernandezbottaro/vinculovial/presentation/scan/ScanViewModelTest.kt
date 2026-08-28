@@ -237,15 +237,43 @@ class ScanViewModelTest {
     }
 
     @Test
-    fun `descartar el catalogo sin elegir vuelve a Scanning`() = runTest {
+    fun `elegir un tipo de incidente lo guarda en el estado para la burbuja del usuario`() = runTest {
         checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc")
         val viewModel = viewModel()
         viewModel.onPlateFound(patente)
         viewModel.onPlateConfirmed()
 
-        viewModel.onAlertTypeDismissed()
+        viewModel.onAlertTypeSelected(AlertType.PARKED_TOO_CLOSE)
 
-        assertEquals(ScanStatus.Scanning, viewModel.uiState.value.status)
+        assertEquals(AlertType.PARKED_TOO_CLOSE, viewModel.uiState.value.selectedAlertType)
+    }
+
+    @Test
+    fun `reintentar tras un error de alert reusa el mismo tipo y el mismo pat_enc, sin generar uno nuevo`() = runTest {
+        checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc-del-check")
+        alertRepository.result = SendAlertResult.Failed(SendAlertError.Unexpected)
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+        viewModel.onPlateConfirmed()
+        viewModel.onAlertTypeSelected(AlertType.CRASHED)
+
+        alertRepository.result = SendAlertResult.Sent
+        viewModel.onAlertRetry()
+
+        assertEquals(
+            listOf(AlertType.CRASHED to "pat-enc-del-check", AlertType.CRASHED to "pat-enc-del-check"),
+            alertRepository.received,
+        )
+        assertEquals(ScanStatus.AlertSent, viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `sin un envio previo reintentar no hace nada`() = runTest {
+        val viewModel = viewModel()
+
+        viewModel.onAlertRetry()
+
+        assertEquals(emptyList<Any>(), alertRepository.received)
     }
 
     @Test
@@ -261,13 +289,13 @@ class ScanViewModelTest {
     }
 
     @Test
-    fun `cerrar un error vuelve a Scanning`() = runTest {
+    fun `cerrar un error de check vuelve a Scanning`() = runTest {
         checkRepository.result = CheckVehicleResult.Failed(CheckVehicleError.Network)
         val viewModel = viewModel()
         viewModel.onPlateFound(patente)
         viewModel.onPlateConfirmed()
 
-        viewModel.onErrorDismissed()
+        viewModel.onCheckErrorDismissed()
 
         assertEquals(ScanStatus.Scanning, viewModel.uiState.value.status)
     }

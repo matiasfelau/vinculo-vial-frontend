@@ -150,9 +150,25 @@ class ScanViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Elegida en el `ReportChatScreen`: se guarda en [ScanUiState.selectedAlertType] para
+     * renderizarla como el mensaje del usuario en el hilo, y se manda con el mismo `pat_enc`
+     * que ya devolvió el check -- nunca uno nuevo.
+     */
     fun onAlertTypeSelected(alertType: AlertType) {
         val patEnc = pendingPatEnc ?: return
+        _uiState.update { it.copy(selectedAlertType = alertType) }
+        submitAlert(alertType, patEnc)
+    }
 
+    /** Reintenta con el mismo tipo ya elegido -- no vuelve a mostrar el catálogo. */
+    fun onAlertRetry() {
+        val alertType = _uiState.value.selectedAlertType ?: return
+        val patEnc = pendingPatEnc ?: return
+        submitAlert(alertType, patEnc)
+    }
+
+    private fun submitAlert(alertType: AlertType, patEnc: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(status = ScanStatus.SendingAlert) }
 
@@ -165,17 +181,11 @@ class ScanViewModel @Inject constructor(
         }
     }
 
-    /** Cierra el bottom sheet sin elegir: vuelve a escanear. */
-    fun onAlertTypeDismissed() {
-        pendingPatEnc = null
-        resumeScanning()
-    }
-
     /** Cierra el mensaje neutro de "no está en la red" y retoma el escaneo. */
     fun onNotInNetworkDismissed() = resumeScanning()
 
-    /** Cierra un error (de check o de alert) y retoma el escaneo. */
-    fun onErrorDismissed() {
+    /** Cierra el error del check (previo a la navegación al chat) y retoma el escaneo. */
+    fun onCheckErrorDismissed() {
         pendingPatEnc = null
         resumeScanning()
     }
