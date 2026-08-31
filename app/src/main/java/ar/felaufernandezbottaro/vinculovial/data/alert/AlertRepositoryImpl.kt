@@ -32,7 +32,7 @@ class AlertRepositoryImpl @Inject constructor(
         try {
             val response = api.sendAlert(
                 BEARER_PREFIX + accessToken,
-                SendAlertRequestDto(alertType = alertType.value, patEnc = patEnc),
+                SendAlertRequestDto(alertType = alertType.wireValue, patEnc = patEnc),
             )
 
             when {
