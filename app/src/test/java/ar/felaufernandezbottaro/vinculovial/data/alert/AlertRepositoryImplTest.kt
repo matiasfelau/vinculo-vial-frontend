@@ -59,10 +59,10 @@ class AlertRepositoryImplTest {
     }
 
     @Test
-    fun `manda el valor del catalogo cerrado como alert_type`() = runTest {
+    fun `manda el wireValue del catalogo cerrado como alert_type, no la etiqueta visible`() = runTest {
         repository().sendAlert(AlertType.PARKED_TOO_CLOSE, patEnc)
 
-        assertEquals(AlertType.PARKED_TOO_CLOSE.value, api.lastRequest!!.alertType)
+        assertEquals("PARKED_TOO_CLOSE", api.lastRequest!!.alertType)
     }
 
     @Test

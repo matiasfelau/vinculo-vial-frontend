@@ -166,7 +166,7 @@ private fun QuickReplyRow(onSelected: (AlertType) -> Unit) {
                 color = VvMint,
             ) {
                 Text(
-                    text = alertType.value,
+                    text = alertType.label,
                     style = MaterialTheme.typography.labelLarge,
                     color = VvNavy,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -184,7 +184,7 @@ private sealed interface ChatMessage {
 private fun chatMessages(uiState: ScanUiState): List<ChatMessage> = buildList {
     add(ChatMessage.System("Vehículo identificado. ¿Qué infracción deseas reportar?"))
 
-    uiState.selectedAlertType?.let { add(ChatMessage.User(it.value)) }
+    uiState.selectedAlertType?.let { add(ChatMessage.User(it.label)) }
 
     if (uiState.status is ScanStatus.AlertSent) {
         add(ChatMessage.System("Reporte enviado de forma anónima."))
