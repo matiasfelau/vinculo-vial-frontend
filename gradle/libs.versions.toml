@@ -22,6 +22,7 @@ camerax = "1.5.3"
 # Pesa mucho menos y el dispositivo ya necesita Play Services para Play Integrity.
 mlkitBarcode = "18.3.1"
 mlkitFace = "17.1.0"
+mlkitTextRecognition = "19.0.1"
 junit = "4.13.2"
 coroutines = "1.10.1"
 
@@ -64,6 +65,7 @@ androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "
 
 mlkit-barcode-scanning = { module = "com.google.android.gms:play-services-mlkit-barcode-scanning", version.ref = "mlkitBarcode" }
 mlkit-face-detection = { module = "com.google.android.gms:play-services-mlkit-face-detection", version.ref = "mlkitFace" }
+mlkit-text-recognition = { module = "com.google.android.gms:play-services-mlkit-text-recognition", version.ref = "mlkitTextRecognition" }
 
 play-integrity = { module = "com.google.android.play:integrity", version.ref = "playIntegrity" }
 kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "coroutines" }

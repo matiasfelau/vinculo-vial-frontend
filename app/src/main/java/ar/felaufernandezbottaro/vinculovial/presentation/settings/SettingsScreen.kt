@@ -30,6 +30,7 @@ fun SettingsScreen(
     state: SettingsUiState,
     onLogout: () -> Unit,
     onLinkVehicle: () -> Unit,
+    onScanPlate: () -> Unit,
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -57,6 +58,12 @@ fun SettingsScreen(
             )
 
             VvPrimaryButton(
+                text = "Escanear patente",
+                onClick = onScanPlate,
+                enabled = !state.isLoggingOut,
+            )
+
+            VvPrimaryButton(
                 text = "Cerrar sesión",
                 onClick = onLogout,
                 enabled = !state.isLoggingOut,
@@ -70,6 +77,6 @@ fun SettingsScreen(
 @Composable
 private fun SettingsScreenPreview() {
     VinculoVialTheme {
-        SettingsScreen(state = SettingsUiState(), onLogout = {}, onLinkVehicle = {})
+        SettingsScreen(state = SettingsUiState(), onLogout = {}, onLinkVehicle = {}, onScanPlate = {})
     }
 }
