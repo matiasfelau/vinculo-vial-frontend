@@ -4,6 +4,7 @@ import com.squareup.moshi.Moshi
 import ar.felaufernandezbottaro.vinculovial.BuildConfig
 import ar.felaufernandezbottaro.vinculovial.data.alert.AlertApi
 import ar.felaufernandezbottaro.vinculovial.data.alert.VehicleCheckApi
+import ar.felaufernandezbottaro.vinculovial.data.inbox.InboxApi
 import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.RefreshApi
@@ -128,6 +129,12 @@ object NetworkModule {
     @Singleton
     fun provideAlertApi(retrofit: Retrofit): AlertApi =
         retrofit.create(AlertApi::class.java)
+
+    /** Mismo cliente que `AlertApi`: `/alerts/inbox` es autenticado por JWT, no por attestation. */
+    @Provides
+    @Singleton
+    fun provideInboxApi(retrofit: Retrofit): InboxApi =
+        retrofit.create(InboxApi::class.java)
 
     @Provides
     @Singleton

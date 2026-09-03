@@ -31,6 +31,7 @@ fun SettingsScreen(
     onLogout: () -> Unit,
     onLinkVehicle: () -> Unit,
     onScanPlate: () -> Unit,
+    onOpenInbox: () -> Unit,
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -64,6 +65,12 @@ fun SettingsScreen(
             )
 
             VvPrimaryButton(
+                text = "Mis alertas",
+                onClick = onOpenInbox,
+                enabled = !state.isLoggingOut,
+            )
+
+            VvPrimaryButton(
                 text = "Cerrar sesión",
                 onClick = onLogout,
                 enabled = !state.isLoggingOut,
@@ -77,6 +84,12 @@ fun SettingsScreen(
 @Composable
 private fun SettingsScreenPreview() {
     VinculoVialTheme {
-        SettingsScreen(state = SettingsUiState(), onLogout = {}, onLinkVehicle = {}, onScanPlate = {})
+        SettingsScreen(
+            state = SettingsUiState(),
+            onLogout = {},
+            onLinkVehicle = {},
+            onScanPlate = {},
+            onOpenInbox = {},
+        )
     }
 }

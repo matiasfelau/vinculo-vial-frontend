@@ -16,6 +16,8 @@ import androidx.navigation.compose.rememberNavController
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.CameraPermissionGate
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.DocumentScanScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.LivenessCaptureScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsViewModel
@@ -55,6 +57,8 @@ object Route {
     const val SCAN_GRAPH = "scan"
     const val SCAN_PLATE = "scan/plate"
     const val REPORT_CHAT = "scan/report-chat"
+
+    const val INBOX = "inbox"
 }
 
 @Composable
@@ -126,6 +130,20 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                 onLogout = viewModel::logout,
                 onLinkVehicle = { navController.navigate(Route.LINK_VEHICLE) },
                 onScanPlate = { navController.navigate(Route.SCAN_GRAPH) },
+                onOpenInbox = { navController.navigate(Route.INBOX) },
+            )
+        }
+
+        composable(Route.INBOX) { entry ->
+            val viewModel = hiltViewModel<InboxViewModel>(entry)
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+            InboxScreen(
+                uiState = state,
+                onBack = { navController.popBackStack() },
+                onRetry = viewModel::loadFirstPage,
+                onLoadNextPage = viewModel::loadNextPage,
+                onRetryNextPage = viewModel::retryNextPage,
             )
         }
 
