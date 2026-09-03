@@ -1,5 +1,6 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.inbox
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertItem
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvBottomBar
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvCircleIconButton
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvPrimaryButton
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvGreen
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvInk
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMint
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMuted
@@ -112,6 +114,11 @@ private fun InboxLoading() {
     }
 }
 
+/**
+ * Ilustración propia, deliberadamente distinta de [InboxFullScreenError]: un aro verde (el
+ * mismo tono del isotipo, [VvGreen]) en vez del naranja de error -- "sin alertas" es el
+ * resultado deseable, no una falla, y el color no debe sugerir lo contrario.
+ */
 @Composable
 private fun InboxEmptyState() {
     Column(
@@ -121,20 +128,26 @@ private fun InboxEmptyState() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Surface(shape = CircleShape, color = VvMint, modifier = Modifier.size(72.dp)) {
+        Surface(
+            shape = CircleShape,
+            color = VvMint,
+            border = BorderStroke(2.dp, VvGreen),
+            modifier = Modifier.size(96.dp),
+        ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Inbox, contentDescription = null, tint = VvNavy, modifier = Modifier.size(36.dp))
+                Icon(Icons.Filled.Inbox, contentDescription = null, tint = VvGreen, modifier = Modifier.size(44.dp))
             }
         }
         Text(
-            text = "No tenés alertas",
+            text = "Todo tranquilo por acá",
             style = MaterialTheme.typography.titleMedium,
             color = VvNavy,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 16.dp),
+            modifier = Modifier.padding(top = 20.dp),
         )
         Text(
-            text = "Todavía no reportaron ningún incidente sobre tus vehículos.",
+            text = "Todavía nadie reportó un incidente sobre tus vehículos vinculados. " +
+                "Te vamos a avisar acá apenas llegue una alerta nueva.",
             style = MaterialTheme.typography.bodyMedium,
             color = VvMuted,
             textAlign = TextAlign.Center,
