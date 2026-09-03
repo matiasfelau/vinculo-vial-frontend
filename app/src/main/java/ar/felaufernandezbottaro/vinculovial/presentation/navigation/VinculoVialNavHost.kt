@@ -21,6 +21,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.camera.LivenessCaptureS
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.push.NotificationPermissionRequester
+import ar.felaufernandezbottaro.vinculovial.presentation.push.planPushNavigation
 import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsViewModel
@@ -65,7 +66,11 @@ object Route {
 }
 
 @Composable
-fun VinculoVialNavHost(navController: NavHostController = rememberNavController()) {
+fun VinculoVialNavHost(
+    navController: NavHostController = rememberNavController(),
+    pendingAlertType: String? = null,
+    onPendingAlertTypeConsumed: () -> Unit = {},
+) {
     // RTR fallido (401/403 al refrescar) borra la sesión local en segundo plano, sin que la
     // pantalla que disparó la request original se entere -- SessionManager ni sabe qué
     // pantalla es. Este observer es el único lugar que reacciona a esa caída y saca al
@@ -86,6 +91,22 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
             navController.navigate(Route.SIGN_IN) {
                 popUpTo(0) { inclusive = true }
             }
+        }
+    }
+
+    // Al tocar una notificación se reconstruye el stack (Settings antes de Inbox, nunca Inbox
+    // sola) en vez de navegar directo -- ver planPushNavigation. Sin sesión todavía, el efecto
+    // de arriba ya se encarga de mandar a Login; esta misma clave (hasSession) hace que el
+    // plan se reevalúe apenas haya sesión, así que un login iniciado desde la notificación
+    // igual termina en la Bandeja de Entrada.
+    LaunchedEffect(hasSession, pendingAlertType) {
+        val plan = planPushNavigation(hasSession, pendingAlertType)
+        if (plan.isNotEmpty()) {
+            navController.navigate(plan.first()) {
+                popUpTo(0) { inclusive = true }
+            }
+            plan.drop(1).forEach { route -> navController.navigate(route) }
+            onPendingAlertTypeConsumed()
         }
     }
 
