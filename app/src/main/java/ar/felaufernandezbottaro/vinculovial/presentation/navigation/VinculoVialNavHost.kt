@@ -142,6 +142,8 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                 uiState = state,
                 onBack = { navController.popBackStack() },
                 onRetry = viewModel::loadFirstPage,
+                onLoadNextPage = viewModel::loadNextPage,
+                onRetryNextPage = viewModel::retryNextPage,
             )
         }
 
