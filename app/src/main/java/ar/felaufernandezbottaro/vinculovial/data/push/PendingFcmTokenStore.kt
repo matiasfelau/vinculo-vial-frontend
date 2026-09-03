@@ -25,7 +25,19 @@ class PendingFcmTokenStore @Inject constructor(
         prefs.edit().remove(KEY_PENDING_REGISTRATION).apply()
     }
 
+    /** Ver `LogoutUseCase`: el token cuya baja falló durante un logout, para reintentar. */
+    fun savePendingDeletion(token: String) {
+        prefs.edit().putString(KEY_PENDING_DELETION, token).apply()
+    }
+
+    fun readPendingDeletion(): String? = prefs.getString(KEY_PENDING_DELETION, null)
+
+    fun clearPendingDeletion() {
+        prefs.edit().remove(KEY_PENDING_DELETION).apply()
+    }
+
     private companion object {
         const val KEY_PENDING_REGISTRATION = "pending_registration_token"
+        const val KEY_PENDING_DELETION = "pending_deletion_token"
     }
 }
