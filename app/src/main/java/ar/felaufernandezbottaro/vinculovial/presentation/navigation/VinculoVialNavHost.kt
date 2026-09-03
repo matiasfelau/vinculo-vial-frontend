@@ -3,7 +3,9 @@ package ar.felaufernandezbottaro.vinculovial.presentation.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
@@ -18,6 +20,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.camera.DocumentScanScre
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.LivenessCaptureScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxViewModel
+import ar.felaufernandezbottaro.vinculovial.presentation.push.NotificationPermissionRequester
 import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsViewModel
@@ -73,6 +76,11 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
     val sessionViewModel = hiltViewModel<SessionViewModel>()
     val hasSession by sessionViewModel.hasSession.collectAsStateWithLifecycle()
     val currentEntry by navController.currentBackStackEntryAsState()
+
+    // Se pide el permiso de notificaciones una única vez, recién tras un login exitoso -- ver
+    // NotificationPermissionRequester. Volver a Settings desde otra pantalla no lo vuelve a
+    // disparar: se consume apenas se compone.
+    var justSignedIn by remember { mutableStateOf(false) }
     LaunchedEffect(hasSession, currentEntry) {
         if (!hasSession && !isPublicRoute(currentEntry?.destination?.route)) {
             navController.navigate(Route.SIGN_IN) {
@@ -106,6 +114,7 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
             // autenticada que existe hoy.
             LaunchedEffect(state.status) {
                 if (state.status is SignInStatus.SignedIn) {
+                    justSignedIn = true
                     navController.navigate(Route.SETTINGS) {
                         popUpTo(Route.SIGN_IN) { inclusive = true }
                     }
@@ -132,6 +141,10 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                 onScanPlate = { navController.navigate(Route.SCAN_GRAPH) },
                 onOpenInbox = { navController.navigate(Route.INBOX) },
             )
+
+            if (justSignedIn) {
+                NotificationPermissionRequester(onFinished = { justSignedIn = false })
+            }
         }
 
         composable(Route.INBOX) { entry ->
