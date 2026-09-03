@@ -170,7 +170,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.play.services)
 
     implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.messaging.ktx)
+    implementation(libs.firebase.messaging)
 
     implementation(libs.androidx.camera.core)
     implementation(libs.androidx.camera.camera2)
