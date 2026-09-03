@@ -3,6 +3,9 @@ package ar.felaufernandezbottaro.vinculovial.data.push
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
+import ar.felaufernandezbottaro.vinculovial.domain.push.DeleteFcmTokenError
+import ar.felaufernandezbottaro.vinculovial.domain.push.DeleteFcmTokenResult
+import ar.felaufernandezbottaro.vinculovial.domain.push.DeleteFcmTokenUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.push.FakeFcmTokenProvider
 import ar.felaufernandezbottaro.vinculovial.domain.push.FakePushTokenRepository
 import ar.felaufernandezbottaro.vinculovial.domain.push.SyncFcmTokenError
@@ -54,6 +57,7 @@ class TokenSyncManagerTest {
         tokenStore = tokenStore,
         pendingStore = pendingStore,
         syncFcmToken = SyncFcmTokenUseCase(repository),
+        deleteFcmToken = DeleteFcmTokenUseCase(repository),
         fcmTokenProvider = fcmTokenProvider,
         scope = CoroutineScope(UnconfinedTestDispatcher()),
     )
@@ -139,5 +143,28 @@ class TokenSyncManagerTest {
         manager()
 
         assertEquals(listOf("fcm-pendiente-de-antes"), repository.registeredTokens)
+    }
+
+    @Test
+    fun `una baja pendiente de un logout se reintenta en el siguiente arranque con sesion activa`() {
+        pendingStore.savePendingDeletion("fcm-a-borrar")
+        tokenStore.save(tokens)
+
+        // Simula el próximo arranque: una instancia nueva del manager sobre el mismo store.
+        manager()
+
+        assertEquals(listOf("fcm-a-borrar"), repository.deletedTokens)
+        assertNull(pendingStore.readPendingDeletion())
+    }
+
+    @Test
+    fun `una baja pendiente que vuelve a fallar sigue pendiente`() {
+        repository.deleteResult = DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Network)
+        pendingStore.savePendingDeletion("fcm-a-borrar")
+        tokenStore.save(tokens)
+
+        manager()
+
+        assertEquals("fcm-a-borrar", pendingStore.readPendingDeletion())
     }
 }

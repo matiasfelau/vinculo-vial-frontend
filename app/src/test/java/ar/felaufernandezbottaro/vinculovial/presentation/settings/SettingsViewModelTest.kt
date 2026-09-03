@@ -1,10 +1,16 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.settings
 
+import ar.felaufernandezbottaro.vinculovial.data.push.PendingFcmTokenStore
+import ar.felaufernandezbottaro.vinculovial.data.push.TokenSyncManager
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeRefreshApi
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionManager
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
+import ar.felaufernandezbottaro.vinculovial.domain.push.DeleteFcmTokenUseCase
+import ar.felaufernandezbottaro.vinculovial.domain.push.FakeFcmTokenProvider
+import ar.felaufernandezbottaro.vinculovial.domain.push.FakePushTokenRepository
+import ar.felaufernandezbottaro.vinculovial.domain.push.SyncFcmTokenUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.session.LogoutUseCase
 import ar.felaufernandezbottaro.vinculovial.util.MainDispatcherRule
 import com.google.crypto.tink.Aead
@@ -12,6 +18,7 @@ import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.KeysetHandle
 import com.google.crypto.tink.RegistryConfiguration
 import com.google.crypto.tink.aead.AeadConfig
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -40,9 +47,24 @@ class SettingsViewModelTest {
         tokenStore.save(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
     }
 
-    private fun viewModel() = SettingsViewModel(
-        LogoutUseCase(SessionManager(refreshApi = refreshApi, tokenStore = tokenStore, dispatcher = UnconfinedTestDispatcher())),
-    )
+    private fun viewModel(): SettingsViewModel {
+        val pushRepository = FakePushTokenRepository()
+        val fcmTokenProvider = FakeFcmTokenProvider()
+        val logoutUseCase = LogoutUseCase(
+            sessionManager = SessionManager(refreshApi = refreshApi, tokenStore = tokenStore, dispatcher = UnconfinedTestDispatcher()),
+            fcmTokenProvider = fcmTokenProvider,
+            deleteFcmToken = DeleteFcmTokenUseCase(pushRepository),
+            tokenSyncManager = TokenSyncManager(
+                tokenStore = tokenStore,
+                pendingStore = PendingFcmTokenStore(FakeSharedPreferences()),
+                syncFcmToken = SyncFcmTokenUseCase(pushRepository),
+                deleteFcmToken = DeleteFcmTokenUseCase(pushRepository),
+                fcmTokenProvider = fcmTokenProvider,
+                scope = CoroutineScope(UnconfinedTestDispatcher()),
+            ),
+        )
+        return SettingsViewModel(logoutUseCase)
+    }
 
     @Test
     fun `logout limpia la sesion`() = runTest {

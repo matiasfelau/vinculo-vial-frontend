@@ -2,6 +2,8 @@ package ar.felaufernandezbottaro.vinculovial.data.push
 
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.di.ApplicationScope
+import ar.felaufernandezbottaro.vinculovial.domain.push.DeleteFcmTokenResult
+import ar.felaufernandezbottaro.vinculovial.domain.push.DeleteFcmTokenUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.push.FcmTokenProvider
 import ar.felaufernandezbottaro.vinculovial.domain.push.SyncFcmTokenResult
 import ar.felaufernandezbottaro.vinculovial.domain.push.SyncFcmTokenUseCase
@@ -30,6 +32,7 @@ class TokenSyncManager @Inject constructor(
     private val tokenStore: SecureTokenStore,
     private val pendingStore: PendingFcmTokenStore,
     private val syncFcmToken: SyncFcmTokenUseCase,
+    private val deleteFcmToken: DeleteFcmTokenUseCase,
     private val fcmTokenProvider: FcmTokenProvider,
     @ApplicationScope private val scope: CoroutineScope,
 ) {
@@ -45,9 +48,30 @@ class TokenSyncManager @Inject constructor(
         scope.launch { syncOrQueue(token) }
     }
 
+    /** `LogoutUseCase` llama a esto cuando la baja del token falla, para no perderla. */
+    fun onLogoutDeleteFailed(token: String) {
+        pendingStore.savePendingDeletion(token)
+    }
+
     private suspend fun syncCurrentToken() {
+        retryPendingDeletion()
+
         val token = pendingStore.readPendingRegistration() ?: fcmTokenProvider.getCurrentToken() ?: return
         syncOrQueue(token)
+    }
+
+    /**
+     * "El token pendiente de baja se registra para reintentar en el próximo arranque" -- este
+     * es ese próximo arranque (o, dentro del mismo proceso, cualquier sesión que vuelva a
+     * activarse). La baja exige un Access Token válido, así que no tiene sentido reintentarla
+     * fuera de este flujo reactivo, atado a `sessionState`.
+     */
+    private suspend fun retryPendingDeletion() {
+        val pending = pendingStore.readPendingDeletion() ?: return
+        when (deleteFcmToken(pending)) {
+            is DeleteFcmTokenResult.Success -> pendingStore.clearPendingDeletion()
+            is DeleteFcmTokenResult.Failed -> Unit
+        }
     }
 
     private suspend fun syncOrQueue(token: String) {
