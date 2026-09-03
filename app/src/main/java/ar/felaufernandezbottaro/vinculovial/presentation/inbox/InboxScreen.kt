@@ -254,7 +254,7 @@ private fun AlertItemRow(item: AlertItem) {
             Column(modifier = Modifier.padding(start = 14.dp)) {
                 Text(text = display.label, style = MaterialTheme.typography.bodyLarge, color = VvInk)
                 Text(
-                    text = item.createdAt.toString(),
+                    text = item.createdAt.toFriendlyAlertDate(),
                     style = MaterialTheme.typography.labelMedium,
                     color = VvMuted,
                     modifier = Modifier.padding(top = 2.dp),
