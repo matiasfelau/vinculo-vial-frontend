@@ -12,6 +12,8 @@ import ar.felaufernandezbottaro.vinculovial.R
 import ar.felaufernandezbottaro.vinculovial.data.inbox.mapAlertTypeToDisplay
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
  * La push es sólo un disparador de atención: el payload es `data`, no `notification`, así que
@@ -21,10 +23,19 @@ import com.google.firebase.messaging.RemoteMessage
  * contenido real de la alerta se consulta al backend recién cuando el usuario toca la
  * notificación y entra a la Bandeja de Entrada.
  *
- * `onNewToken` se agrega en `feature/token-sync`, cuando existe `TokenSyncManager` para
- * encolar la rotación.
+ * FCM puede rotar el token por su cuenta (reinstalación, restauración de backup, limpieza de
+ * datos): sin capturar `onNewToken`, el dispositivo deja de recibir notificaciones en
+ * silencio, sin que el usuario tenga forma de notarlo.
  */
+@AndroidEntryPoint
 class VvcMessagingService : FirebaseMessagingService() {
+
+    @Inject lateinit var tokenSyncManager: TokenSyncManager
+
+    override fun onNewToken(token: String) {
+        super.onNewToken(token)
+        tokenSyncManager.onTokenRotated(token)
+    }
 
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
