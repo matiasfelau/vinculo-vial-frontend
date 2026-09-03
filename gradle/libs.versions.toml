@@ -25,8 +25,8 @@ mlkitFace = "17.1.0"
 mlkitTextRecognition = "19.0.1"
 junit = "4.13.2"
 coroutines = "1.10.1"
-firebaseBom = "33.7.0"
-googleServices = "4.4.2"
+firebaseBom = "34.18.0"
+googleServices = "4.5.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -73,7 +73,9 @@ play-integrity = { module = "com.google.android.play:integrity", version.ref = "
 kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "coroutines" }
 
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
-firebase-messaging-ktx = { module = "com.google.firebase:firebase-messaging-ktx" }
+# Desde el BoM 32.1.0, las extensiones de Kotlin se fusionaron al artefacto base: el paquete
+# "-ktx" quedó deprecado y, en BoMs recientes como este, ya ni siquiera resuelve una versión.
+firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
