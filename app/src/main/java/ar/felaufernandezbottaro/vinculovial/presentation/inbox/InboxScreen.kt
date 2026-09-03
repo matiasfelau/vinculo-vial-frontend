@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,6 +24,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -48,6 +53,8 @@ fun InboxScreen(
     uiState: InboxUiState,
     onBack: () -> Unit,
     onRetry: () -> Unit,
+    onLoadNextPage: () -> Unit,
+    onRetryNextPage: () -> Unit,
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -81,10 +88,18 @@ fun InboxScreen(
             when (uiState) {
                 InboxUiState.Loading -> InboxLoading()
                 InboxUiState.Empty -> InboxEmptyState()
-                is InboxUiState.Content -> InboxContentList(items = uiState.items, isLoadingMore = uiState.isLoadingMore)
+                is InboxUiState.Content -> InboxContentList(
+                    items = uiState.items,
+                    isLoadingMore = uiState.isLoadingMore,
+                    onLoadNextPage = onLoadNextPage,
+                )
                 is InboxUiState.Error -> InboxFullScreenError(message = uiState.error.message(), onRetry = onRetry)
-                is InboxUiState.ContentWithPageError ->
-                    InboxContentList(items = uiState.items, pageErrorMessage = uiState.error.message(), onRetryPage = onRetry)
+                is InboxUiState.ContentWithPageError -> InboxContentList(
+                    items = uiState.items,
+                    pageErrorMessage = uiState.error.message(),
+                    onRetryPage = onRetryNextPage,
+                    onLoadNextPage = null,
+                )
             }
         }
     }
@@ -148,14 +163,34 @@ private fun InboxFullScreenError(message: String, onRetry: () -> Unit) {
     }
 }
 
+/** Cuántos ítems antes del final dispara la carga de la página siguiente. */
+private const val LOAD_MORE_THRESHOLD = 3
+
 @Composable
 private fun InboxContentList(
     items: List<AlertItem>,
     isLoadingMore: Boolean = false,
     pageErrorMessage: String? = null,
     onRetryPage: (() -> Unit)? = null,
+    onLoadNextPage: (() -> Unit)? = null,
 ) {
+    val listState = rememberLazyListState()
+
+    if (onLoadNextPage != null) {
+        val shouldLoadMore by remember {
+            derivedStateOf {
+                val layoutInfo = listState.layoutInfo
+                val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+                lastVisible.index >= layoutInfo.totalItemsCount - 1 - LOAD_MORE_THRESHOLD
+            }
+        }
+        LaunchedEffect(shouldLoadMore) {
+            if (shouldLoadMore) onLoadNextPage()
+        }
+    }
+
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
