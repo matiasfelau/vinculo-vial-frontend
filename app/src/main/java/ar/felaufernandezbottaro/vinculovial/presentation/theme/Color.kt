@@ -4,8 +4,9 @@ import androidx.compose.ui.graphics.Color
 
 /**
  * Paleta oficial de la marca ViVi. Cada color tiene un rol estricto:
- * - [VvGreen] (Verde Menta): botones primarios, éxito y acciones positivas.
- * - [VvNavy] (Azul): elementos principales, textos fuertes y barras de navegación.
+ * - [VvNavy] (Azul): botones principales, elementos principales, textos fuertes y barras de
+ *   navegación.
+ * - [VvGreen] (Verde Menta): éxito y acciones positivas.
  * - [VvOrange] (Naranja Alertas): notificaciones, errores, alertas y el badge del chat.
  * - [VvCream] (Amarillo Fondo): fondo general de las pantallas.
  */

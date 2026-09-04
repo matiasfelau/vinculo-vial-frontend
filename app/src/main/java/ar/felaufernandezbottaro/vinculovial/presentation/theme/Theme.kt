@@ -11,11 +11,11 @@ import androidx.compose.ui.graphics.Color
  * definida por diseño, así que el esquema se fija aunque el sistema esté en modo oscuro.
  */
 private val VvColorScheme = lightColorScheme(
-    primary = VvGreen,
+    primary = VvNavy,
     onPrimary = Color.White,
-    primaryContainer = VvGreenDark,
+    primaryContainer = VvNavyDark,
     onPrimaryContainer = Color.White,
-    secondary = VvNavy,
+    secondary = VvGreen,
     onSecondary = Color.White,
     secondaryContainer = VvMint,
     onSecondaryContainer = VvInk,

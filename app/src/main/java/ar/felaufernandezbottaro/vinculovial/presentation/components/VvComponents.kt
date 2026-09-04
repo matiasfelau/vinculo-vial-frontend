@@ -43,7 +43,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ar.felaufernandezbottaro.vinculovial.R
-import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvGreen
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMint
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 
@@ -142,7 +141,7 @@ fun VvPrimaryButton(
         enabled = enabled && !loading,
         shape = RoundedCornerShape(10.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = VvGreen,
+            containerColor = VvNavy,
             contentColor = Color.White,
         ),
         modifier = modifier
