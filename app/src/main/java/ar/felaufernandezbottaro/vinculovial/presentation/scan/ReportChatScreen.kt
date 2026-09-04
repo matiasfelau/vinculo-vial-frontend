@@ -4,8 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,15 +11,25 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -68,6 +76,7 @@ fun ReportChatScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .padding(16.dp),
             ) {
                 VvCircleIconButton(
@@ -135,7 +144,7 @@ private fun ReportChatFooter(
             .padding(horizontal = 20.dp, vertical = 16.dp),
     ) {
         when (status) {
-            ScanStatus.AwaitingAlertType -> QuickReplyRow(onSelected = onAlertTypeSelected)
+            ScanStatus.AwaitingAlertType -> AlertTypeComposer(onReport = onAlertTypeSelected)
             is ScanStatus.AlertFailed -> {
                 Text(
                     text = status.error.message(),
@@ -151,29 +160,75 @@ private fun ReportChatFooter(
     }
 }
 
-/** Catálogo cerrado como respuestas rápidas: nunca texto libre del usuario. */
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * Selección del tipo de incidente, tal como lo pide el wireframe: un dropdown con el catálogo
+ * cerrado (nunca texto libre) y un botón de evidencia aparte. La evidencia todavía no tiene
+ * backend que la reciba, así que por ahora sólo informa que la función está en desarrollo en
+ * vez de simular una carga que no va a ningún lado.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun QuickReplyRow(onSelected: (AlertType) -> Unit) {
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        AlertType.entries.forEach { alertType ->
-            Surface(
-                onClick = { onSelected(alertType) },
-                shape = RoundedCornerShape(50),
-                color = VvMint,
-            ) {
-                Text(
-                    text = alertType.label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = VvNavy,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                )
+private fun AlertTypeComposer(onReport: (AlertType) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<AlertType?>(null) }
+    var showEvidenceInDevelopment by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+            OutlinedTextField(
+                value = selected?.label.orEmpty(),
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Tipo de alerta") },
+                placeholder = { Text("Elegí qué querés reportar") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                modifier = Modifier
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                    .fillMaxWidth(),
+            )
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                AlertType.entries.forEach { alertType ->
+                    DropdownMenuItem(
+                        text = { Text(alertType.label) },
+                        onClick = {
+                            selected = alertType
+                            expanded = false
+                        },
+                    )
+                }
             }
         }
+
+        OutlinedButton(
+            onClick = { showEvidenceInDevelopment = true },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(imageVector = Icons.Filled.AddAPhoto, contentDescription = null)
+            Text(text = "Agregar evidencia", modifier = Modifier.padding(start = 8.dp))
+        }
+
+        VvPrimaryButton(
+            text = "Reportar",
+            onClick = { selected?.let(onReport) },
+            enabled = selected != null,
+        )
     }
+
+    if (showEvidenceInDevelopment) {
+        EvidenceInDevelopmentDialog(onDismiss = { showEvidenceInDevelopment = false })
+    }
+}
+
+@Composable
+private fun EvidenceInDevelopmentDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Función en desarrollo") },
+        text = { Text("Agregar evidencia todavía no está disponible. Vas a poder hacerlo en una próxima actualización.") },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Entendido", color = VvNavy) }
+        },
+    )
 }
 
 private sealed interface ChatMessage {
