@@ -77,8 +77,8 @@ fun SignUpSuccessScreen(onFinish: () -> Unit) {
             )
 
             Text(
-                text = "Tu identidad quedó validada y las imágenes ya se eliminaron del " +
-                    "dispositivo. Vas a poder ingresar con tu email y contraseña.",
+                text = "Tu identidad quedó validada y ya destruimos tus datos. Vas a poder " +
+                    "ingresar con tu número de DNI y contraseña.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = VvMuted,
                 textAlign = TextAlign.Center,
