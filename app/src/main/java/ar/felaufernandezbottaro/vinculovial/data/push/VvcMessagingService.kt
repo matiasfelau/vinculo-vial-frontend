@@ -40,7 +40,7 @@ class VvcMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
 
-        val alertType = message.data[DATA_ALERT_TYPE] ?: return
+        val alertType = message.data[EXTRA_ALERT_TYPE] ?: return
         val display = mapAlertTypeToDisplay(alertType)
 
         val contentIntent = PendingIntent.getActivity(
@@ -73,7 +73,6 @@ class VvcMessagingService : FirebaseMessagingService() {
     }
 
     private companion object {
-        const val DATA_ALERT_TYPE = "alert_type"
         const val NOTIFICATION_ID = 1
         const val GENERIC_BODY = "Tenés una alerta nueva sobre uno de tus vehículos vinculados."
     }
