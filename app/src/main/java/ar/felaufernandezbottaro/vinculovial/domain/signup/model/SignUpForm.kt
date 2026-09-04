@@ -28,6 +28,13 @@ enum class CredentialProblem {
 }
 
 /**
+ * Requisitos individuales de la contraseña. Separados de [CredentialProblem] a propósito: ese
+ * enum devuelve un único motivo de rechazo (el primero que encuentra), pero la pantalla
+ * necesita mostrar TODOS los requisitos incumplidos a la vez, no corregir al usuario de a uno.
+ */
+enum class PasswordRequirement { MIN_LENGTH, UPPERCASE, LOWERCASE, DIGIT }
+
+/**
  * Reglas de credenciales de US-01. El backend vuelve a validar: esto es UX, no seguridad.
  */
 object CredentialRules {
@@ -78,6 +85,17 @@ object CredentialRules {
      * los tipea: sin normalizar, "01234567" y "1234567" se verían como personas distintas.
      */
     fun normalizeDni(raw: String): String = raw.trim().trimStart('0')
+
+    /**
+     * Todos los requisitos que la contraseña todavía no cumple, no sólo el primero: así la UI
+     * puede explicarlos de una sola vez en vez de corregir al usuario a cuentagotas.
+     */
+    fun unmetPasswordRequirements(password: String): Set<PasswordRequirement> = buildSet {
+        if (password.length < MIN_PASSWORD_LENGTH) add(PasswordRequirement.MIN_LENGTH)
+        if (password.none { it.isUpperCase() }) add(PasswordRequirement.UPPERCASE)
+        if (password.none { it.isLowerCase() }) add(PasswordRequirement.LOWERCASE)
+        if (password.none { it.isDigit() }) add(PasswordRequirement.DIGIT)
+    }
 
     private fun isStrongEnough(password: String): Boolean =
         password.any { it.isUpperCase() } &&
