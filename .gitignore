@@ -5,6 +5,7 @@
 build/
 local.properties
 .env
+app/google-services.json
 captures/
 .externalNativeBuild/
 .cxx/

@@ -9,6 +9,17 @@ plugins {
 }
 
 /**
+ * `google-services.json` es un secreto de despliegue (identifica el proyecto de Firebase):
+ * nunca se versiona real, sólo `google-services.json.example` documenta su forma. El plugin
+ * se aplica sólo si el archivo real está presente -- sin esto, cualquier build sin ese
+ * archivo (CI, un clon nuevo del repo) fallaría en la fase de configuración, antes de
+ * compilar una sola línea de Kotlin.
+ */
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
+/**
  * Configuración sensible: se lee de `local.properties` (gitignored) y, si no está ahí,
  * de variables de entorno (útil en CI). Nunca se commitea un valor real.
  */
@@ -37,8 +48,8 @@ android {
         applicationId = "ar.felaufernandezbottaro.vinculovial"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6.0"
+        versionCode = 7
+        versionName = "0.7.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -157,6 +168,9 @@ dependencies {
 
     implementation(libs.play.integrity)
     implementation(libs.kotlinx.coroutines.play.services)
+
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 
     implementation(libs.androidx.camera.core)
     implementation(libs.androidx.camera.camera2)

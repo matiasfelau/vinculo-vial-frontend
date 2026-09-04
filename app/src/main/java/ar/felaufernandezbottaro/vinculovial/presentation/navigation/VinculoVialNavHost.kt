@@ -3,7 +3,9 @@ package ar.felaufernandezbottaro.vinculovial.presentation.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
@@ -18,6 +20,8 @@ import ar.felaufernandezbottaro.vinculovial.presentation.camera.DocumentScanScre
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.LivenessCaptureScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxViewModel
+import ar.felaufernandezbottaro.vinculovial.presentation.push.NotificationPermissionRequester
+import ar.felaufernandezbottaro.vinculovial.presentation.push.planPushNavigation
 import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsViewModel
@@ -62,7 +66,11 @@ object Route {
 }
 
 @Composable
-fun VinculoVialNavHost(navController: NavHostController = rememberNavController()) {
+fun VinculoVialNavHost(
+    navController: NavHostController = rememberNavController(),
+    pendingAlertType: String? = null,
+    onPendingAlertTypeConsumed: () -> Unit = {},
+) {
     // RTR fallido (401/403 al refrescar) borra la sesión local en segundo plano, sin que la
     // pantalla que disparó la request original se entere -- SessionManager ni sabe qué
     // pantalla es. Este observer es el único lugar que reacciona a esa caída y saca al
@@ -73,11 +81,32 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
     val sessionViewModel = hiltViewModel<SessionViewModel>()
     val hasSession by sessionViewModel.hasSession.collectAsStateWithLifecycle()
     val currentEntry by navController.currentBackStackEntryAsState()
+
+    // Se pide el permiso de notificaciones una única vez, recién tras un login exitoso -- ver
+    // NotificationPermissionRequester. Volver a Settings desde otra pantalla no lo vuelve a
+    // disparar: se consume apenas se compone.
+    var justSignedIn by remember { mutableStateOf(false) }
     LaunchedEffect(hasSession, currentEntry) {
         if (!hasSession && !isPublicRoute(currentEntry?.destination?.route)) {
             navController.navigate(Route.SIGN_IN) {
                 popUpTo(0) { inclusive = true }
             }
+        }
+    }
+
+    // Al tocar una notificación se reconstruye el stack (Settings antes de Inbox, nunca Inbox
+    // sola) en vez de navegar directo -- ver planPushNavigation. Sin sesión todavía, el efecto
+    // de arriba ya se encarga de mandar a Login; esta misma clave (hasSession) hace que el
+    // plan se reevalúe apenas haya sesión, así que un login iniciado desde la notificación
+    // igual termina en la Bandeja de Entrada.
+    LaunchedEffect(hasSession, pendingAlertType) {
+        val plan = planPushNavigation(hasSession, pendingAlertType)
+        if (plan.isNotEmpty()) {
+            navController.navigate(plan.first()) {
+                popUpTo(0) { inclusive = true }
+            }
+            plan.drop(1).forEach { route -> navController.navigate(route) }
+            onPendingAlertTypeConsumed()
         }
     }
 
@@ -106,6 +135,7 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
             // autenticada que existe hoy.
             LaunchedEffect(state.status) {
                 if (state.status is SignInStatus.SignedIn) {
+                    justSignedIn = true
                     navController.navigate(Route.SETTINGS) {
                         popUpTo(Route.SIGN_IN) { inclusive = true }
                     }
@@ -132,6 +162,10 @@ fun VinculoVialNavHost(navController: NavHostController = rememberNavController(
                 onScanPlate = { navController.navigate(Route.SCAN_GRAPH) },
                 onOpenInbox = { navController.navigate(Route.INBOX) },
             )
+
+            if (justSignedIn) {
+                NotificationPermissionRequester(onFinished = { justSignedIn = false })
+            }
         }
 
         composable(Route.INBOX) { entry ->
