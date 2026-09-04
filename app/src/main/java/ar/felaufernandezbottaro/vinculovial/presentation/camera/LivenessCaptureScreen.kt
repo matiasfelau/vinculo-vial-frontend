@@ -81,18 +81,19 @@ fun LivenessCaptureScreen(
     var capturing by remember { mutableStateOf(false) }
     var failure by remember { mutableStateOf<String?>(null) }
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
-    var showCancelDialog by remember { mutableStateOf(false) }
 
     // Se calcula ni bien la prueba de vida pasa, no recién cuando arranca la captura
     // asíncrona: así no queda ni un frame en el que el botón de cancelar siga habilitado
     // o el spinner tarde en aparecer.
     val locked = capturing || progress.stage == LivenessStage.PASSED
 
-    // Siempre intercepta (no se deshabilita el handler): mientras se puede cancelar,
-    // pide confirmación; una vez en curso la captura, directamente se ignora — no cae al
-    // back por defecto de la navegación, que saldría de la pantalla sin avisar.
+    SecureScreen()
+
+    // Siempre intercepta (no se deshabilita el handler): mientras se puede cancelar, sale
+    // directo; una vez en curso la captura, directamente se ignora — no cae al back por
+    // defecto de la navegación, que saldría de la pantalla sin avisar.
     BackHandler {
-        if (!locked) showCancelDialog = true
+        if (!locked) onCancel()
     }
 
     val previewView = remember {
@@ -208,7 +209,7 @@ fun LivenessCaptureScreen(
             VvCircleIconButton(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Cancelar",
-                onClick = { showCancelDialog = true },
+                onClick = onCancel,
                 enabled = !locked,
             )
         }
@@ -235,16 +236,6 @@ fun LivenessCaptureScreen(
                     else -> Color.White
                 },
                 textAlign = TextAlign.Center,
-            )
-        }
-
-        if (showCancelDialog) {
-            CancelRegistrationDialog(
-                onConfirm = {
-                    showCancelDialog = false
-                    onCancel()
-                },
-                onDismiss = { showCancelDialog = false },
             )
         }
     }

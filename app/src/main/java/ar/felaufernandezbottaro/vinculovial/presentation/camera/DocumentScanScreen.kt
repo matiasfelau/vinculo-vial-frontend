@@ -115,9 +115,9 @@ fun DocumentScanScreen(
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var torchOn by remember { mutableStateOf(false) }
-    var showCancelDialog by remember { mutableStateOf(false) }
 
-    BackHandler { showCancelDialog = true }
+    SecureScreen()
+    BackHandler(onBack = onCancel)
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -247,7 +247,7 @@ fun DocumentScanScreen(
             VvCircleIconButton(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Cancelar",
-                onClick = { showCancelDialog = true },
+                onClick = onCancel,
             )
             Text(
                 text = "Escaneá el código de tu DNI",
@@ -284,7 +284,6 @@ fun DocumentScanScreen(
                 color = when {
                     failure != null -> VvOrange
                     scanState.stage == DocumentScanStage.DECODED -> VvGreen
-                    scanState.stage.isProblem -> VvOrange
                     else -> Color.White
                 },
                 textAlign = TextAlign.Center,
@@ -305,47 +304,35 @@ fun DocumentScanScreen(
                 )
             }
         }
-
-        if (showCancelDialog) {
-            CancelRegistrationDialog(
-                onConfirm = {
-                    showCancelDialog = false
-                    onCancel()
-                },
-                onDismiss = { showCancelDialog = false },
-            )
-        }
     }
 }
-
-/** Los estados en que el usuario tiene que hacer algo distinto, no sólo seguir apuntando. */
-private val DocumentScanStage.isProblem: Boolean
-    get() = this == DocumentScanStage.NOT_A_DNI ||
-        this == DocumentScanStage.UNSUPPORTED_DOCUMENT ||
-        this == DocumentScanStage.MISSING_PROCEDURE_NUMBER
 
 /**
  * Nunca "acercate": el auto-zoom lo resuelve solo, y pedirlo empujaría al usuario a cruzar
  * la distancia mínima de enfoque del lente — el círculo vicioso que ya costó caro antes.
+ *
+ * Los estados en los que el cuadro leído no resultó válido (no es un DNI, un formato que
+ * todavía no se lee, o falta el número de trámite) se muestran igual que "buscando": son
+ * lecturas transitorias del stream en vivo, no un veredicto sobre lo que el usuario está
+ * mostrando, y anunciarlas como error generaba falsos positivos que confundían más de lo
+ * que ayudaban.
  */
 private fun DocumentScanStage.headline(): String = when (this) {
-    DocumentScanStage.SEARCHING -> "Apuntá al código de tu DNI"
+    DocumentScanStage.SEARCHING,
+    DocumentScanStage.NOT_A_DNI,
+    DocumentScanStage.UNSUPPORTED_DOCUMENT,
+    DocumentScanStage.MISSING_PROCEDURE_NUMBER,
+    -> "Apuntá al código de tu DNI"
     DocumentScanStage.CODE_DETECTED -> "Enfocando…"
-    DocumentScanStage.NOT_A_DNI -> "Ese código no es de un DNI"
-    DocumentScanStage.UNSUPPORTED_DOCUMENT -> "Todavía no leemos ese DNI"
-    DocumentScanStage.MISSING_PROCEDURE_NUMBER -> "Falta el número de trámite"
     DocumentScanStage.DECODED -> "¡Listo!"
 }
 
 private fun DocumentScanStage.detail(): String? = when (this) {
-    DocumentScanStage.SEARCHING ->
-        "Sostenelo a una distancia cómoda, donde se vea nítido"
-    DocumentScanStage.NOT_A_DNI ->
-        "Mostrá el lado del documento donde está el código de barras"
-    DocumentScanStage.UNSUPPORTED_DOCUMENT ->
-        "Por ahora sólo funciona el DNI tarjeta, el que tiene el código de barras alargado"
-    DocumentScanStage.MISSING_PROCEDURE_NUMBER ->
-        "Probá con otro ejemplar de tu DNI, o escribinos para completar el registro"
+    DocumentScanStage.SEARCHING,
+    DocumentScanStage.NOT_A_DNI,
+    DocumentScanStage.UNSUPPORTED_DOCUMENT,
+    DocumentScanStage.MISSING_PROCEDURE_NUMBER,
+    -> "Sostenelo a una distancia cómoda, donde se vea nítido"
     DocumentScanStage.CODE_DETECTED, DocumentScanStage.DECODED -> null
 }
 
@@ -370,11 +357,7 @@ private fun ScannerViewfinder(stage: DocumentScanStage) {
         label = "sweep",
     )
 
-    val target = when {
-        stage == DocumentScanStage.DECODED -> VvGreen
-        stage.isProblem -> VvOrange
-        else -> Color.White
-    }
+    val target = if (stage == DocumentScanStage.DECODED) VvGreen else Color.White
     val cornerColor by androidx.compose.animation.animateColorAsState(
         targetValue = target,
         animationSpec = tween(220),
