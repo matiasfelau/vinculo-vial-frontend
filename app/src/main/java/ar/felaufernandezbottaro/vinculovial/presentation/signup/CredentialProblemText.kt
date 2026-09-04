@@ -11,7 +11,7 @@ fun CredentialProblem.message(): String = when (this) {
     CredentialProblem.EMAIL_FORMAT -> "Ingresá un email válido."
     CredentialProblem.PASSWORD_TOO_SHORT ->
         "La contraseña debe tener al menos ${CredentialRules.MIN_PASSWORD_LENGTH} caracteres."
-    CredentialProblem.PASSWORD_TOO_WEAK -> "Debe incluir mayúscula, minúscula y número."
+    CredentialProblem.PASSWORD_TOO_WEAK -> "Debe incluir mayúscula, minúscula, número y símbolo."
     CredentialProblem.PASSWORD_MISMATCH -> "Las contraseñas no coinciden."
 }
 
@@ -21,6 +21,7 @@ private fun PasswordRequirement.message(): String = when (this) {
     PasswordRequirement.UPPERCASE -> "Debe incluir una mayúscula."
     PasswordRequirement.LOWERCASE -> "Debe incluir una minúscula."
     PasswordRequirement.DIGIT -> "Debe incluir un número."
+    PasswordRequirement.SYMBOL -> "Debe incluir un símbolo."
 }
 
 /**
