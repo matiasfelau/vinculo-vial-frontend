@@ -42,9 +42,11 @@ import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.splash.SplashScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.ScanCedulaScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.VehicleViewModel
+import ar.felaufernandezbottaro.vinculovial.presentation.welcome.WelcomeScreen
 
 object Route {
     const val SPLASH = "splash"
+    const val WELCOME = "welcome"
     const val SIGN_IN = "signin"
     const val SETTINGS = "settings"
     const val SIGN_UP_GRAPH = "signup"
@@ -115,14 +117,21 @@ fun VinculoVialNavHost(
         composable(Route.SPLASH) {
             SplashScreen(
                 onFinished = {
-                    // El login pasa a ser la puerta de entrada de la app (US-02). El caso
-                    // "ya hay una sesión guardada" queda pendiente de una Home/Dashboard que
+                    // La bienvenida pasa a ser la puerta de entrada de la app. El caso "ya
+                    // hay una sesión guardada" queda pendiente de una Home/Dashboard que
                     // todavía no existe (fuera del alcance de este CU) — por ahora se
-                    // aterriza siempre en Login, sin distinguir si hay sesión o no.
-                    navController.navigate(Route.SIGN_IN) {
+                    // aterriza siempre acá, sin distinguir si hay sesión o no.
+                    navController.navigate(Route.WELCOME) {
                         popUpTo(Route.SPLASH) { inclusive = true }
                     }
                 },
+            )
+        }
+
+        composable(Route.WELCOME) {
+            WelcomeScreen(
+                onGoToSignIn = { navController.navigate(Route.SIGN_IN) },
+                onGoToSignUp = { navController.navigate(Route.SIGN_UP_GRAPH) },
             )
         }
 
@@ -354,8 +363,9 @@ fun VinculoVialNavHost(
             composable(Route.SIGN_UP_SUCCESS) {
                 SignUpSuccessScreen(
                     onFinish = {
-                        // Vuelve al formulario limpio: US-01 no deja sesión iniciada.
-                        navController.navigate(Route.SIGN_UP_GRAPH) {
+                        // US-01 no deja sesión iniciada: la cuenta quedó creada, pero hay
+                        // que ingresar con las credenciales recién elegidas.
+                        navController.navigate(Route.SIGN_IN) {
                             popUpTo(Route.SIGN_UP_GRAPH) { inclusive = true }
                         }
                     },
@@ -367,7 +377,11 @@ fun VinculoVialNavHost(
 
 /** Pantallas donde no hacer nada aunque no haya sesión: son justamente las que no la requieren. */
 private fun isPublicRoute(route: String?): Boolean =
-    route == null || route == Route.SPLASH || route == Route.SIGN_IN || route.startsWith(Route.SIGN_UP_GRAPH)
+    route == null ||
+        route == Route.SPLASH ||
+        route == Route.WELCOME ||
+        route == Route.SIGN_IN ||
+        route.startsWith(Route.SIGN_UP_GRAPH)
 
 /**
  * El formulario, el consentimiento y la captura comparten un único ViewModel scopeado

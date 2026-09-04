@@ -1,15 +1,16 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.components
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -35,18 +36,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvGreen
+import ar.felaufernandezbottaro.vinculovial.R
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMint
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 
@@ -192,13 +188,21 @@ fun VvCircleIconButton(
     }
 }
 
-/** Barra inferior menta con el isotipo, presente en todas las pantallas del wireframe. */
+/**
+ * Barra inferior menta con el isotipo, presente en todas las pantallas del wireframe.
+ *
+ * A diferencia de un `NavigationBar`/`BottomAppBar` de Material, este `Box` es propio y no
+ * consume ningún inset por su cuenta: sin `navigationBarsPadding()`, `Scaffold` reserva sólo
+ * su alto intrínseco para el contenido y la barra de navegación del sistema se dibuja encima,
+ * tapando el isotipo.
+ */
 @Composable
 fun VvBottomBar(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .background(VvMint)
+            .navigationBarsPadding()
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -206,39 +210,23 @@ fun VvBottomBar(modifier: Modifier = Modifier) {
     }
 }
 
-/** Isotipo circular: anillo verde con la "W" del wireframe. */
+/** Isotipo circular: el logo real "MiniViVi". */
 @Composable
 fun VvLogoBadge(modifier: Modifier = Modifier, size: Int = 36) {
-    Box(
-        modifier = modifier
-            .size(size.dp)
-            .background(Color.White, CircleShape)
-            .border(BorderStroke(2.dp, VvGreen), CircleShape)
-            .semantics { contentDescription = "Vínculo Vial" },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = "W",
-            color = VvNavy,
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.Bold,
-            fontSize = (size * 0.45).sp,
-        )
-    }
+    Image(
+        painter = painterResource(R.drawable.mini_vivi),
+        contentDescription = "Vínculo Vial",
+        modifier = modifier.size(size.dp),
+    )
 }
 
-/** Logotipo "ViVi" del splash. */
+/** Logotipo "ViVi" real de la marca, usado en Splash y en la bienvenida. */
 @Composable
-fun VvWordmark(modifier: Modifier = Modifier, fontSize: Int = 64) {
-    Text(
-        text = buildAnnotatedString {
-            withStyle(androidx.compose.ui.text.SpanStyle(color = VvGreen)) { append("Vi") }
-            withStyle(androidx.compose.ui.text.SpanStyle(color = VvNavy)) { append("Vi") }
-        },
-        fontFamily = FontFamily.Serif,
-        fontWeight = FontWeight.Bold,
-        fontSize = fontSize.sp,
-        modifier = modifier,
+fun VvWordmark(modifier: Modifier = Modifier, width: Dp = 220.dp) {
+    Image(
+        painter = painterResource(R.drawable.logo_vivi),
+        contentDescription = "Vínculo Vial",
+        modifier = modifier.width(width),
     )
 }
 

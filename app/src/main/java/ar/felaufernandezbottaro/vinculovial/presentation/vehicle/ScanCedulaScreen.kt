@@ -56,6 +56,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.vehicle.LinkVehicleError
 import ar.felaufernandezbottaro.vinculovial.domain.vehicle.QrCedulaScanner
 import ar.felaufernandezbottaro.vinculovial.domain.vehicle.model.CedulaData
 import ar.felaufernandezbottaro.vinculovial.domain.vehicle.model.CedulaScanStage
+import ar.felaufernandezbottaro.vinculovial.presentation.camera.SecureScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.awaitCameraProviderInternal
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.toCameraFrame
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvCircleIconButton
@@ -91,11 +92,12 @@ fun ScanCedulaScreen(
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var torchOn by remember { mutableStateOf(false) }
-    var showCancelDialog by remember { mutableStateOf(false) }
+
+    SecureScreen()
 
     // Mientras se está publicando el vínculo no tiene sentido dejar que "Atrás" corte la
     // request a mitad de camino.
-    BackHandler(enabled = !uiState.isLinking) { showCancelDialog = true }
+    BackHandler(enabled = !uiState.isLinking, onBack = onCancel)
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -195,7 +197,7 @@ fun ScanCedulaScreen(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Cancelar",
                 enabled = !uiState.isLinking,
-                onClick = { showCancelDialog = true },
+                onClick = onCancel,
             )
             Text(
                 text = "Escaneá el QR de la cédula del vehículo",
@@ -259,15 +261,6 @@ fun ScanCedulaScreen(
             )
         }
 
-        if (showCancelDialog) {
-            CancelScanDialog(
-                onConfirm = {
-                    showCancelDialog = false
-                    onCancel()
-                },
-                onDismiss = { showCancelDialog = false },
-            )
-        }
     }
 }
 
@@ -320,21 +313,6 @@ private fun VehicleErrorDialog(error: LinkVehicleError, onDismiss: () -> Unit) {
         text = { Text(error.message()) },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("Entendido", color = VvNavy) }
-        },
-    )
-}
-
-@Composable
-private fun CancelScanDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("¿Deseás cancelar la vinculación?") },
-        text = { Text("Vas a perder el progreso de este escaneo.") },
-        confirmButton = {
-            TextButton(onClick = onConfirm) { Text("Sí, cancelar", color = VvOrange) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Seguir", color = VvNavy) }
         },
     )
 }

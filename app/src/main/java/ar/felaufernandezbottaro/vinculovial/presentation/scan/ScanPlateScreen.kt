@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import ar.felaufernandezbottaro.vinculovial.domain.scan.model.OverlayRect
+import ar.felaufernandezbottaro.vinculovial.presentation.camera.SecureScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.awaitCameraProviderInternal
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvCircleIconButton
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvTextField
@@ -88,9 +89,9 @@ fun ScanPlateScreen(
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var torchOn by remember { mutableStateOf(false) }
-    var showCancelDialog by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = !uiState.isBusy) { showCancelDialog = true }
+    SecureScreen()
+    BackHandler(enabled = !uiState.isBusy, onBack = onCancel)
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -177,7 +178,7 @@ fun ScanPlateScreen(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Cancelar",
                 enabled = !uiState.isBusy,
-                onClick = { showCancelDialog = true },
+                onClick = onCancel,
             )
             Box(modifier = Modifier.align(Alignment.CenterEnd)) {
                 VvCircleIconButton(
@@ -240,15 +241,6 @@ fun ScanPlateScreen(
             ScanErrorDialog(message = checkFailed.error.message(), onDismiss = onCheckErrorDismissed)
         }
 
-        if (showCancelDialog) {
-            CancelScanDialog(
-                onConfirm = {
-                    showCancelDialog = false
-                    onCancel()
-                },
-                onDismiss = { showCancelDialog = false },
-            )
-        }
     }
 }
 
@@ -347,21 +339,6 @@ private fun ScanErrorDialog(message: String, onDismiss: () -> Unit) {
         text = { Text(message) },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("Entendido", color = VvNavy) }
-        },
-    )
-}
-
-@Composable
-private fun CancelScanDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("¿Deseás cancelar el escaneo?") },
-        text = { Text("Vas a volver sin reportar nada.") },
-        confirmButton = {
-            TextButton(onClick = onConfirm) { Text("Sí, cancelar", color = VvOrange) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Seguir", color = VvNavy) }
         },
     )
 }

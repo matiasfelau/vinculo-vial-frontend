@@ -118,8 +118,9 @@ fun SignUpCaptureScreen(
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    text = "Comparamos tu cara con la foto del documento acá mismo, en tu " +
-                        "teléfono. Las fotos se borran al terminar: nunca salen del dispositivo.",
+                    text = "Los datos se envían de manera encriptada a nuestros servidores, " +
+                        "para validar tu identidad con el Renaper. Después de la verificación, " +
+                        "destruiremos de nuestros servidores todo menos tu número de DNI.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = VvMuted,
                 )
