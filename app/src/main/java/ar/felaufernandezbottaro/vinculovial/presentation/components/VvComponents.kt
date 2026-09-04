@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -192,13 +193,21 @@ fun VvCircleIconButton(
     }
 }
 
-/** Barra inferior menta con el isotipo, presente en todas las pantallas del wireframe. */
+/**
+ * Barra inferior menta con el isotipo, presente en todas las pantallas del wireframe.
+ *
+ * A diferencia de un `NavigationBar`/`BottomAppBar` de Material, este `Box` es propio y no
+ * consume ningún inset por su cuenta: sin `navigationBarsPadding()`, `Scaffold` reserva sólo
+ * su alto intrínseco para el contenido y la barra de navegación del sistema se dibuja encima,
+ * tapando el isotipo.
+ */
 @Composable
 fun VvBottomBar(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .background(VvMint)
+            .navigationBarsPadding()
             .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
