@@ -27,13 +27,12 @@ import ar.felaufernandezbottaro.vinculovial.presentation.components.VvPrimaryBut
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VinculoVialTheme
 
 private const val CONSENT_TEXT =
-    "A continuación se te va a solicitar que tomes dos imágenes, una de tu rostro y otra del " +
-        "frente de tu DNI. El objetivo de esto es asegurar que los datos ingresados coinciden " +
-        "con tu documentación y así ayudar a mantener la seguridad de la aplicación.\n\n" +
-        "Estos datos serán utilizados únicamente para esta validación: el análisis ocurre en " +
-        "tu propio dispositivo y las imágenes se eliminan de forma permanente apenas termina, " +
-        "sin copias en disco ni envío a nuestros servidores.\n\n" +
-        "Al iniciar el proceso de validación, usted está aceptando compartir sus datos con nosotros."
+    "A continuación, te vamos a pedir que escanees el código de barras de tu DNI y, después, " +
+        "te tomes una selfie. Ésto nos ayuda a mantener la seguridad de todos al verificar que " +
+        "quienes se registran son personas reales. Tus datos solo serán utilizados en este " +
+        "momento, enviándose al Renaper para que éste los valide. Después de verificar tu " +
+        "identidad, exceptuando tu número de DNI, destruiremos de nuestros servidores el resto " +
+        "de los datos obtenidos."
 
 /** Pantalla de consentimiento previa a la captura (segunda pantalla del wireframe). */
 @Composable

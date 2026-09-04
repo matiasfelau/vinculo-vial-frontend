@@ -32,7 +32,7 @@ enum class CredentialProblem {
  * enum devuelve un único motivo de rechazo (el primero que encuentra), pero la pantalla
  * necesita mostrar TODOS los requisitos incumplidos a la vez, no corregir al usuario de a uno.
  */
-enum class PasswordRequirement { MIN_LENGTH, UPPERCASE, LOWERCASE, DIGIT }
+enum class PasswordRequirement { MIN_LENGTH, UPPERCASE, LOWERCASE, DIGIT, SYMBOL }
 
 /**
  * Reglas de credenciales de US-01. El backend vuelve a validar: esto es UX, no seguridad.
@@ -95,10 +95,12 @@ object CredentialRules {
         if (password.none { it.isUpperCase() }) add(PasswordRequirement.UPPERCASE)
         if (password.none { it.isLowerCase() }) add(PasswordRequirement.LOWERCASE)
         if (password.none { it.isDigit() }) add(PasswordRequirement.DIGIT)
+        if (password.none { !it.isLetterOrDigit() }) add(PasswordRequirement.SYMBOL)
     }
 
     private fun isStrongEnough(password: String): Boolean =
         password.any { it.isUpperCase() } &&
             password.any { it.isLowerCase() } &&
-            password.any { it.isDigit() }
+            password.any { it.isDigit() } &&
+            password.any { !it.isLetterOrDigit() }
 }

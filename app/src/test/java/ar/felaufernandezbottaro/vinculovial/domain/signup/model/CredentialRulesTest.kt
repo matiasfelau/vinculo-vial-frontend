@@ -67,8 +67,21 @@ class CredentialRulesTest {
     @Test
     fun `contrasena que incumple varios requisitos los reporta todos a la vez`() {
         assertEquals(
-            setOf(PasswordRequirement.MIN_LENGTH, PasswordRequirement.UPPERCASE, PasswordRequirement.DIGIT),
+            setOf(
+                PasswordRequirement.MIN_LENGTH,
+                PasswordRequirement.UPPERCASE,
+                PasswordRequirement.DIGIT,
+                PasswordRequirement.SYMBOL,
+            ),
             CredentialRules.unmetPasswordRequirements("abc"),
+        )
+    }
+
+    @Test
+    fun `contrasena sin simbolo reporta unicamente ese requisito`() {
+        assertEquals(
+            setOf(PasswordRequirement.SYMBOL),
+            CredentialRules.unmetPasswordRequirements("Password123"),
         )
     }
 

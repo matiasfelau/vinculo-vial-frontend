@@ -4,6 +4,6 @@
       Sólo los colores que necesita el sistema (tema base e ícono).
       La paleta completa vive en presentation/theme/Color.kt.
     -->
-    <color name="vv_cream">#FBF7EC</color>
+    <color name="vv_cream">#FFFDF4</color>
     <color name="vv_mint">#DCF3E9</color>
 </resources>

@@ -74,7 +74,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "Hola de nuevo",
+                text = "¡Hola de nuevo! 👋",
                 style = MaterialTheme.typography.displaySmall,
                 color = VvNavy,
             )
