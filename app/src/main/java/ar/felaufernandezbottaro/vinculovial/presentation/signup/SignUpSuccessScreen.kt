@@ -36,9 +36,8 @@ fun SignUpSuccessScreen(onFinish: () -> Unit) {
     // Punto sin retorno del flujo: dejar caer el botón físico "Atrás" al comportamiento
     // por defecto de navegación llevaría a la pantalla anterior en el back stack — con el
     // registro ya completado, eso significa reabrir una pantalla de un flujo que ya
-    // terminó. Se intercepta y se hace exactamente lo mismo que "Finalizar": todavía no
-    // existe una pantalla de Inicio/Login (eso es US-02), así que reiniciar el grafo de
-    // registro es lo más parecido a "volver al inicio" que hay hoy.
+    // terminó. Se intercepta y se hace exactamente lo mismo que "Finalizar": ir a Inicio
+    // de Sesión con las credenciales recién creadas.
     BackHandler(onBack = onFinish)
 
     Scaffold(
