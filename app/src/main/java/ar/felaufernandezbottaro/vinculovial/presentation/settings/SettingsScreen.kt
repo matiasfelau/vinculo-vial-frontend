@@ -39,7 +39,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvBottomBar
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VinculoVialTheme
-import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvGreen
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMint
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMuted
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
@@ -152,7 +151,7 @@ private fun HomeActionCard(
         ) {
             Surface(shape = CircleShape, color = Color.White, modifier = Modifier.size(44.dp)) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(imageVector = icon, contentDescription = null, tint = VvGreen)
+                    Icon(imageVector = icon, contentDescription = null, tint = VvNavy)
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
