@@ -7,11 +7,14 @@ import com.google.android.play.core.integrity.StandardIntegrityManager.PrepareIn
 import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenProvider
 import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenRequest
 import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode
+import ar.felaufernandezbottaro.vinculovial.BuildConfig
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationUnavailableException.Reason
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -49,7 +52,9 @@ class PlayIntegrityAttestationProvider @Inject constructor(
         val requestHash = requestHashOf(requestBody)
 
         return try {
-            requestToken(provider = obtainProvider(), requestHash = requestHash)
+            withTimeout(BuildConfig.NETWORK_TIMEOUT_MS) {
+                requestToken(provider = obtainProvider(), requestHash = requestHash)
+            }
         } catch (e: StandardIntegrityException) {
             if (e.errorCode == StandardIntegrityErrorCode.INTEGRITY_TOKEN_PROVIDER_INVALID) {
                 // El proveedor cacheado caducó: se descarta y se reintenta una vez.
@@ -58,13 +63,23 @@ class PlayIntegrityAttestationProvider @Inject constructor(
             } else {
                 throw e.asAttestationFailure()
             }
+        } catch (e: TimeoutCancellationException) {
+            // El `Task` de Play (prepare o request, según en cuál se haya colgado) nunca
+            // llamó a su callback: sin este timeout, `runBlocking` en AttestationInterceptor
+            // queda esperando para siempre -- ni `connectTimeout` ni `readTimeout` de OkHttp
+            // lo cubren, porque esto corre antes de que se abra el socket.
+            throw e.asAttestationTimeout()
         }
     }
 
     private suspend fun retryOnce(requestHash: String): String = try {
-        requestToken(provider = obtainProvider(), requestHash = requestHash)
+        withTimeout(BuildConfig.NETWORK_TIMEOUT_MS) {
+            requestToken(provider = obtainProvider(), requestHash = requestHash)
+        }
     } catch (e: StandardIntegrityException) {
         throw e.asAttestationFailure()
+    } catch (e: TimeoutCancellationException) {
+        throw e.asAttestationTimeout()
     }
 
     private suspend fun requestToken(
@@ -132,4 +147,17 @@ class PlayIntegrityAttestationProvider @Inject constructor(
             cause = this,
         )
     }
+
+    /**
+     * A diferencia de [asAttestationFailure], acá Google no devolvió ningún código: el
+     * `Task` sencillamente no llamó a su callback dentro del plazo. Se trata como
+     * [Reason.TRANSIENT] -- mismo criterio que NETWORK_ERROR o GOOGLE_SERVER_UNAVAILABLE --
+     * porque no hay evidencia de que el dispositivo o la instalación sean el problema.
+     */
+    private fun TimeoutCancellationException.asAttestationTimeout(): AttestationUnavailableException =
+        AttestationUnavailableException(
+            message = "Play Integrity no respondió dentro del tiempo esperado",
+            reason = Reason.TRANSIENT,
+            cause = this,
+        )
 }

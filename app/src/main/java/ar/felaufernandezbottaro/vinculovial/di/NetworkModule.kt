@@ -70,6 +70,12 @@ object NetworkModule {
         .connectTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .readTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .writeTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        // `connect`/`read`/`write` sólo miden el socket. `AttestationInterceptor` hace su
+        // trabajo *antes* de abrir la conexión (un `runBlocking` sobre Play Integrity,
+        // ver PlayIntegrityAttestationProvider), así que sin `callTimeout` -- que acota la
+        // llamada completa, interceptors incluidos -- un Task de Play que no resuelve
+        // dejaba la request colgada sin límite.
+        .callTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .retryOnConnectionFailure(false)
         .build()
 
@@ -85,6 +91,7 @@ object NetworkModule {
         .connectTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .readTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .writeTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .callTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .retryOnConnectionFailure(false)
         .build()
 
