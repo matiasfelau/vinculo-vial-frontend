@@ -37,6 +37,22 @@ annotation class RefreshHttpClient
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
+    /**
+     * Presupuesto total de una llamada autenticada: `AttestationInterceptor` ejecuta el Task
+     * de Play Integrity *antes* de abrir el socket (ver `PlayIntegrityAttestationProvider`),
+     * así que el peor caso real es attestation + connect + read, no sólo esto último.
+     *
+     * Se calcula, no se declara como constante aparte: así la invariante
+     * `callTimeout > ATTESTATION_TIMEOUT_MS + connect + read` no puede desalinearse si
+     * alguien cambia uno de los dos timeouts de base sin acordarse de este. El margen de
+     * 1 segundo es para que la desigualdad sea estricta incluso si ambos quedan iguales.
+     *
+     * (`write` queda fuera a propósito: los cuerpos de esta app son JSON chico -- un
+     * criptograma HPKE, nunca un archivo -- su timeout nunca es el cuello de botella real.)
+     */
+    private val CALL_TIMEOUT_MS: Long =
+        BuildConfig.ATTESTATION_TIMEOUT_MS + BuildConfig.NETWORK_TIMEOUT_MS * 2 + 1_000L
+
     @Provides
     @Singleton
     fun provideMoshi(): Moshi = Moshi.Builder().build()
@@ -71,11 +87,11 @@ object NetworkModule {
         .readTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .writeTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         // `connect`/`read`/`write` sólo miden el socket. `AttestationInterceptor` hace su
-        // trabajo *antes* de abrir la conexión (un `runBlocking` sobre Play Integrity,
-        // ver PlayIntegrityAttestationProvider), así que sin `callTimeout` -- que acota la
-        // llamada completa, interceptors incluidos -- un Task de Play que no resuelve
-        // dejaba la request colgada sin límite.
-        .callTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        // trabajo *antes* de abrir la conexión, así que sin `callTimeout` -- que acota la
+        // llamada completa, interceptors incluidos -- un Task de Play que no resuelve dejaba
+        // la request colgada sin límite. Usa CALL_TIMEOUT_MS, no NETWORK_TIMEOUT_MS: tiene
+        // que cubrir attestation + connect + read, no sólo esto último (ver su doc).
+        .callTimeout(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .retryOnConnectionFailure(false)
         .build()
 
@@ -91,7 +107,7 @@ object NetworkModule {
         .connectTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .readTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .writeTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .callTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .callTimeout(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .retryOnConnectionFailure(false)
         .build()
 

@@ -7,6 +7,9 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationTokenGenerator
 import ar.felaufernandezbottaro.vinculovial.data.crypto.MockAttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.crypto.PlayIntegrityAttestationProvider
+import com.google.android.play.core.integrity.IntegrityManagerFactory
+import com.google.android.play.core.integrity.StandardIntegrityManager
+import dagger.Lazy
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -59,6 +62,17 @@ object CryptoModule {
         )
 
     /**
+     * `IntegrityManagerFactory.createStandard` queda detrás de su propio `@Provides`, en vez
+     * de llamarse directo dentro de `PlayIntegrityAttestationProvider`: así ese constructor
+     * recibe la interfaz del SDK ([StandardIntegrityManager]) en vez de un `Context`, y un
+     * test puede reemplazarla por un fake de mano sin mockk ni Robolectric.
+     */
+    @Provides
+    @Singleton
+    fun provideStandardIntegrityManager(@ApplicationContext context: Context): StandardIntegrityManager =
+        IntegrityManagerFactory.createStandard(context)
+
+    /**
      * El modo se elige en tiempo de build. El Gateway tiene que validar de la misma
      * forma: mock = HMAC con la PSK compartida; play_integrity = decodificación del
      * token contra la Play Integrity API de Google.
@@ -67,12 +81,12 @@ object CryptoModule {
     @Singleton
     fun provideAttestationProvider(
         mode: AttestationMode,
-        @ApplicationContext context: Context,
-        generator: dagger.Lazy<AttestationTokenGenerator>,
+        integrityManager: Lazy<StandardIntegrityManager>,
+        generator: Lazy<AttestationTokenGenerator>,
     ): AttestationProvider = when (mode) {
         AttestationMode.MOCK -> MockAttestationProvider(generator.get())
         AttestationMode.PLAY_INTEGRITY -> PlayIntegrityAttestationProvider(
-            context = context,
+            integrityManager = integrityManager.get(),
             cloudProjectNumber = BuildConfig.PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER,
         )
     }

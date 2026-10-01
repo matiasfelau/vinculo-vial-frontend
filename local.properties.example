@@ -41,3 +41,8 @@ APP_ATTESTATION_PSK=dev-shared-attestation-psk-change-me
 ATTESTATION_TOKEN_TTL_SECONDS=60
 
 NETWORK_TIMEOUT_MS=15000
+
+# Presupuesto del Task de Play Integrity (prepare + request, en conjunto). Debe quedar por
+# debajo de NETWORK_TIMEOUT_MS -- ver la invariante callTimeout > ATTESTATION_TIMEOUT_MS +
+# connect + read en NetworkModule.
+ATTESTATION_TIMEOUT_MS=8000
