@@ -23,9 +23,12 @@ sealed interface SendAlertError {
     /** 429: límite de Kong alcanzado (5 req/min, 10 req/hora por `X-User-Id`). No reintentar automático. */
     data object RateLimited : SendAlertError
 
+    /** 502/503/504: el Gateway o una dependencia suya no está disponible. Transitorio. */
+    data object Unavailable : SendAlertError
+
     /** Sin conexión, timeout o servidor inalcanzable. */
     data object Network : SendAlertError
 
-    /** Cualquier otra cosa, incluido 5xx y un 401 que TokenAuthenticator no pudo resolver. */
+    /** Cualquier otra cosa, incluido 500 y un 401 que TokenAuthenticator no pudo resolver. */
     data object Unexpected : SendAlertError
 }

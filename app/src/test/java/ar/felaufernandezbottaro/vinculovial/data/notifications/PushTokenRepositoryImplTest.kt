@@ -70,6 +70,15 @@ class PushTokenRepositoryImplTest {
     }
 
     @Test
+    fun `503 al registrar es Unavailable, transitorio`() = runTest {
+        api.registerResponse = errorResponse(503)
+
+        val result = repository().registerToken("fcm-token-1")
+
+        assertEquals(SyncFcmTokenResult.Failed(SyncFcmTokenError.Unavailable), result)
+    }
+
+    @Test
     fun `500 al registrar es un error inesperado`() = runTest {
         api.registerResponse = errorResponse(500)
 
@@ -110,6 +119,15 @@ class PushTokenRepositoryImplTest {
         val result = repository().deleteToken("fcm-token-1")
 
         assertEquals(DeleteFcmTokenResult.Success, result)
+    }
+
+    @Test
+    fun `503 al borrar es Unavailable, transitorio`() = runTest {
+        api.deleteResponse = errorResponse(503)
+
+        val result = repository().deleteToken("fcm-token-1")
+
+        assertEquals(DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Unavailable), result)
     }
 
     @Test

@@ -16,9 +16,12 @@ sealed interface InboxError {
     /** 429: límite de Kong alcanzado (20 req/min por `X-User-Id`). */
     data object RateLimited : InboxError
 
+    /** 502/503/504: el Gateway o una dependencia suya no está disponible. Transitorio. */
+    data object Unavailable : InboxError
+
     /** Sin conexión, timeout o servidor inalcanzable. */
     data object Network : InboxError
 
-    /** Cualquier otra cosa, incluido 5xx y un 401 que `TokenAuthenticator` no pudo resolver. */
+    /** Cualquier otra cosa, incluido 500 y un 401 que `TokenAuthenticator` no pudo resolver. */
     data object Unexpected : InboxError
 }

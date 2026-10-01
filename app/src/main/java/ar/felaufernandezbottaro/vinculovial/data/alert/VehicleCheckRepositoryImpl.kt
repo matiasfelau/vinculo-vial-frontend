@@ -5,6 +5,7 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoConfigurationExcep
 import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoOperationException
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.crypto.toCryptogram
+import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.di.IoDispatcher
 import ar.felaufernandezbottaro.vinculovial.di.VehicleHpkePublicKey
@@ -51,6 +52,7 @@ class VehicleCheckRepositoryImpl @Inject constructor(
                 response.isSuccessful -> CheckVehicleResult.Found(patEnc)
                 response.code() == HTTP_NOT_FOUND -> CheckVehicleResult.NotInNetwork
                 response.code() == HTTP_TOO_MANY_REQUESTS -> CheckVehicleResult.Failed(CheckVehicleError.RateLimited)
+                response.code().isTransientUpstreamFailure() -> CheckVehicleResult.Failed(CheckVehicleError.Unavailable)
                 else -> CheckVehicleResult.Failed(CheckVehicleError.Unexpected)
             }
         } catch (e: CancellationException) {

@@ -26,9 +26,12 @@ sealed interface CheckVehicleError {
     /** Falta o está mal la configuración de build (clave HPKE de Vehicle). */
     data object Configuration : CheckVehicleError
 
+    /** 502/503/504: el Gateway o una dependencia suya no está disponible. Transitorio. */
+    data object Unavailable : CheckVehicleError
+
     /** Sin conexión, timeout o servidor inalcanzable. */
     data object Network : CheckVehicleError
 
-    /** Cualquier otra cosa, incluido 5xx y un 401 que TokenAuthenticator no pudo resolver. */
+    /** Cualquier otra cosa, incluido 500 y un 401 que TokenAuthenticator no pudo resolver. */
     data object Unexpected : CheckVehicleError
 }

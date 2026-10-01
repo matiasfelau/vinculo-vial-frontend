@@ -10,6 +10,9 @@ fun CheckVehicleError.message(): String = when (this) {
     CheckVehicleError.Configuration ->
         "La app no está configurada. Probá más tarde o escribinos."
 
+    CheckVehicleError.Unavailable ->
+        "El servidor no está disponible en este momento. Intentá de nuevo en unos minutos."
+
     CheckVehicleError.Network ->
         "No pudimos comunicarnos con el servidor. Revisá tu conexión e intentá de nuevo."
 
@@ -23,6 +26,9 @@ fun SendAlertError.message(): String = when (this) {
 
     SendAlertError.RateLimited ->
         "Alcanzaste el límite de reportes. Esperá unos minutos antes de volver a intentar."
+
+    SendAlertError.Unavailable ->
+        "El servidor no está disponible en este momento. Intentá de nuevo en unos minutos."
 
     SendAlertError.Network ->
         "No pudimos comunicarnos con el servidor. Revisá tu conexión e intentá de nuevo."

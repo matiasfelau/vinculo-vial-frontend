@@ -100,6 +100,15 @@ class AlertRepositoryImplTest {
     }
 
     @Test
+    fun `503 es Unavailable, transitorio`() = runTest {
+        api.response = errorResponse(503)
+
+        val result = repository().sendAlert(AlertType.CRASHED, patEnc)
+
+        assertEquals(SendAlertResult.Failed(SendAlertError.Unavailable), result)
+    }
+
+    @Test
     fun `500 es un error inesperado`() = runTest {
         api.response = errorResponse(500)
 
