@@ -232,6 +232,13 @@ class SignInRepositoryImplTest {
     }
 
     @Test
+    fun `503 es Unavailable, transitorio`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(503))
+
+        assertEquals(SignInResult.Failed(SignInError.Unavailable), repository().signIn(credentials))
+    }
+
+    @Test
     fun `500 cae en inesperado`() = runTest {
         server.enqueue(MockResponse().setResponseCode(500))
 

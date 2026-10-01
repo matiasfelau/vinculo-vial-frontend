@@ -39,12 +39,15 @@ sealed interface SignInError {
      */
     data object AttestationUnavailable : SignInError
 
+    /** 502/503/504: el Gateway o una dependencia suya no está disponible. Transitorio. */
+    data object Unavailable : SignInError
+
     /** Sin conexión, timeout o servidor inalcanzable. */
     data object Network : SignInError
 
     /** Falta o está mal la configuración de build (clave HPKE, PSK). */
     data object Configuration : SignInError
 
-    /** Cualquier otra cosa, incluido 5xx. */
+    /** Cualquier otra cosa, incluido 500. */
     data object Unexpected : SignInError
 }

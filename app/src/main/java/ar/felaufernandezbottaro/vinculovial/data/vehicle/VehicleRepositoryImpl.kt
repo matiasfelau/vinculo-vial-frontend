@@ -4,6 +4,7 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoConfigurationExcep
 import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoOperationException
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.crypto.toCryptogram
+import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.vehicle.dto.LinkVehicleRequestDto
 import ar.felaufernandezbottaro.vinculovial.data.vehicle.dto.VehiclePayloadDto
@@ -69,6 +70,7 @@ class VehicleRepositoryImpl @Inject constructor(
                 response.code() == HTTP_BAD_REQUEST -> LinkVehicleResult.Failed(LinkVehicleError.InvalidData)
                 response.code() == HTTP_FORBIDDEN -> LinkVehicleResult.Failed(LinkVehicleError.OwnerMismatch)
                 response.code() == HTTP_CONFLICT -> LinkVehicleResult.Failed(LinkVehicleError.AlreadyLinked)
+                response.code().isTransientUpstreamFailure() -> LinkVehicleResult.Failed(LinkVehicleError.Unavailable)
                 else -> LinkVehicleResult.Failed(LinkVehicleError.Unexpected)
             }
         } catch (e: CancellationException) {

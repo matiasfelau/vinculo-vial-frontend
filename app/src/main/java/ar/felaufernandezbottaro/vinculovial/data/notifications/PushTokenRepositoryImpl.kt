@@ -1,6 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.data.notifications
 
 import ar.felaufernandezbottaro.vinculovial.data.notifications.dto.FcmTokenRequestDto
+import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.di.IoDispatcher
 import ar.felaufernandezbottaro.vinculovial.domain.push.DeleteFcmTokenError
@@ -38,6 +39,7 @@ class PushTokenRepositoryImpl @Inject constructor(
             when {
                 response.isSuccessful -> SyncFcmTokenResult.Success
                 response.code() == HTTP_TOO_MANY_REQUESTS -> SyncFcmTokenResult.Failed(SyncFcmTokenError.RateLimited)
+                response.code().isTransientUpstreamFailure() -> SyncFcmTokenResult.Failed(SyncFcmTokenError.Unavailable)
                 else -> SyncFcmTokenResult.Failed(SyncFcmTokenError.Unexpected)
             }
         } catch (e: CancellationException) {
@@ -56,10 +58,10 @@ class PushTokenRepositoryImpl @Inject constructor(
         try {
             val response = api.deleteToken(BEARER_PREFIX + accessToken, FcmTokenRequestDto(fcmToken))
 
-            if (response.isSuccessful) {
-                DeleteFcmTokenResult.Success
-            } else {
-                DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Unexpected)
+            when {
+                response.isSuccessful -> DeleteFcmTokenResult.Success
+                response.code().isTransientUpstreamFailure() -> DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Unavailable)
+                else -> DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Unexpected)
             }
         } catch (e: CancellationException) {
             throw e

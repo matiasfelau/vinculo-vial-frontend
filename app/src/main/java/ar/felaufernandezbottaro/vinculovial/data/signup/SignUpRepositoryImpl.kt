@@ -11,6 +11,7 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoOperationException
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeMessage
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
+import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpErrorDetailDto
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpErrorResponseDto
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpPayloadDto
@@ -212,9 +213,10 @@ class SignUpRepositoryImpl @Inject constructor(
     }
 
     // 400 nunca llega acá: se maneja aparte en handleBadRequest(), con su propio contrato.
-    private fun Int.toSignUpError(): SignUpError = when (this) {
-        HTTP_FORBIDDEN -> SignUpError.AttestationRejected
-        HTTP_CONFLICT -> SignUpError.AlreadyRegistered
+    private fun Int.toSignUpError(): SignUpError = when {
+        this == HTTP_FORBIDDEN -> SignUpError.AttestationRejected
+        this == HTTP_CONFLICT -> SignUpError.AlreadyRegistered
+        isTransientUpstreamFailure() -> SignUpError.Unavailable
         else -> SignUpError.Unexpected
     }
 

@@ -9,6 +9,7 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoOperationException
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeMessage
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
+import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
 import ar.felaufernandezbottaro.vinculovial.data.signin.dto.SignInPayloadDto
@@ -111,12 +112,13 @@ class SignInRepositoryImpl @Inject constructor(
         }
     }
 
-    private fun Int.toSignInError(): SignInError = when (this) {
-        HTTP_BAD_REQUEST -> SignInError.InvalidData
+    private fun Int.toSignInError(): SignInError = when {
+        this == HTTP_BAD_REQUEST -> SignInError.InvalidData
         // Mensaje único y genérico: no distingue "no existe el DNI" de "contraseña
         // incorrecta" — ni acá ni en la UI (anti-enumeración).
-        HTTP_UNAUTHORIZED -> SignInError.InvalidCredentials
-        HTTP_FORBIDDEN -> SignInError.AttestationRejected
+        this == HTTP_UNAUTHORIZED -> SignInError.InvalidCredentials
+        this == HTTP_FORBIDDEN -> SignInError.AttestationRejected
+        isTransientUpstreamFailure() -> SignInError.Unavailable
         else -> SignInError.Unexpected
     }
 

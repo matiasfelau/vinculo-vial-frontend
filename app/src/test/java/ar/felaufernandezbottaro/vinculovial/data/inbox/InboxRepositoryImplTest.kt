@@ -115,6 +115,15 @@ class InboxRepositoryImplTest {
     }
 
     @Test
+    fun `503 es Unavailable, transitorio`() = runTest {
+        api.response = errorResponse(503)
+
+        val result = repository().getInbox()
+
+        assertEquals(GetInboxResult.Failed(InboxError.Unavailable), result)
+    }
+
+    @Test
     fun `500 es un error inesperado`() = runTest {
         api.response = errorResponse(500)
 
