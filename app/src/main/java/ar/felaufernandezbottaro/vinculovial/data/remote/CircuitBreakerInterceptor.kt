@@ -26,14 +26,13 @@ class CircuitBreakerOpenException(bucket: String) :
     IOException("Circuito abierto para '$bucket': la request no se intentó contra la red.")
 
 /**
- * Abre el circuito por servicio upstream -- según el primer segmento de ruta después de
- * `/api/v1/` (`auth`, `vehicles`, `alerts`, `notifications`) -- cuando ese servicio encadena
- * demasiadas fallas, y corta en seco las siguientes requests de ese mismo bucket sin tocar
- * la red. Va *antes* del interceptor de attestation en `NetworkModule`: con el circuito
- * abierto, tampoco se paga el costo de Play Integrity.
+ * Abre el circuito por endpoint (usando la firma del método de Retrofit) -- cuando ese 
+ * endpoint encadena demasiadas fallas, corta en seco las siguientes requests de ese mismo 
+ * endpoint sin tocar la red. Va *antes* del interceptor de attestation en `NetworkModule`: 
+ * con el circuito abierto, tampoco se paga el costo de Play Integrity.
  *
  * Singleton en memoria, sin persistencia -- reinicia en cada arranque de proceso. Un estado
- * por bucket, no uno global: un upstream caído no debería abrir el circuito de los demás.
+ * por endpoint, no uno global: un fallo en un endpoint no debería abrir el circuito de los demás.
  * El mismo singleton se inyecta en los dos `OkHttpClient` de `NetworkModule`, así que el
  * estado de cada bucket es efectivamente compartido entre ambos clientes.
  *
@@ -52,12 +51,13 @@ class CircuitBreakerInterceptor @Inject constructor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val bucket = request.url.upstreamBucket()
-        val state = states.getOrPut(bucket) { CircuitState() }
+        val endpoint = request.tag(retrofit2.Invocation::class.java)?.method()?.toString()
+            ?: "desconocido"
+        val state = states.getOrPut(endpoint) { CircuitState() }
         val now = System.currentTimeMillis()
 
         if (!state.tryAcquire(now, config.openMs)) {
-            throw CircuitBreakerOpenException(bucket)
+            throw CircuitBreakerOpenException(endpoint)
         }
 
         return try {
@@ -78,16 +78,13 @@ class CircuitBreakerInterceptor @Inject constructor(
         }
     }
 
-    /** `/api/v1/vehicles/check` -> ["api", "v1", "vehicles", "check"][2] == "vehicles". */
-    private fun okhttp3.HttpUrl.upstreamBucket(): String = pathSegments.getOrElse(2) { "desconocido" }
-
     private companion object {
         val HTTP_SERVER_ERROR_RANGE = 500..599
     }
 }
 
 /**
- * Estado de un bucket. Closed (sin fallas recientes) -> Open (tras [CircuitBreakerConfig.
+ * Estado de un endpoint. Closed (sin fallas recientes) -> Open (tras [CircuitBreakerConfig.
  * failureThreshold] fallas dentro de [CircuitBreakerConfig.windowMs]) -> tras
  * [CircuitBreakerConfig.openMs], semiabierto: deja pasar exactamente una request de prueba;
  * si esa prueba falla, reabre de inmediato con un nuevo período de apertura; si tiene éxito,
