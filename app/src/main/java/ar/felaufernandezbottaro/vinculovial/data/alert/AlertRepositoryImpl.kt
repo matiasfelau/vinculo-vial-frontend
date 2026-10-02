@@ -1,6 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.data.alert
 
 import ar.felaufernandezbottaro.vinculovial.data.alert.dto.SendAlertRequestDto
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.di.IoDispatcher
@@ -45,6 +46,8 @@ class AlertRepositoryImpl @Inject constructor(
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: CircuitBreakerOpenException) {
+            SendAlertResult.Failed(SendAlertError.Unavailable)
         } catch (e: IOException) {
             SendAlertResult.Failed(SendAlertError.Network)
         } catch (e: RuntimeException) {

@@ -1,6 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.data.vehicle
 
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
@@ -182,6 +183,15 @@ class VehicleRepositoryImplTest {
         val result = repository().linkVehicle(cedula)
 
         assertEquals(LinkVehicleResult.Failed(LinkVehicleError.Unexpected), result)
+    }
+
+    @Test
+    fun `circuito abierto es Unavailable, no Network`() = runTest {
+        api.exceptionToThrow = CircuitBreakerOpenException("vehicles")
+
+        val result = repository().linkVehicle(cedula)
+
+        assertEquals(LinkVehicleResult.Failed(LinkVehicleError.Unavailable), result)
     }
 
     @Test

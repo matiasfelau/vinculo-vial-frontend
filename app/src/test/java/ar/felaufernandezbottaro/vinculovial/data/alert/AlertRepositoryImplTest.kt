@@ -1,5 +1,6 @@
 package ar.felaufernandezbottaro.vinculovial.data.alert
 
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
@@ -124,6 +125,15 @@ class AlertRepositoryImplTest {
         val result = repository().sendAlert(AlertType.CRASHED, patEnc)
 
         assertEquals(SendAlertResult.Failed(SendAlertError.Network), result)
+    }
+
+    @Test
+    fun `circuito abierto es Unavailable, no Network`() = runTest {
+        api.exceptionToThrow = CircuitBreakerOpenException("alerts")
+
+        val result = repository().sendAlert(AlertType.CRASHED, patEnc)
+
+        assertEquals(SendAlertResult.Failed(SendAlertError.Unavailable), result)
     }
 
     @Test

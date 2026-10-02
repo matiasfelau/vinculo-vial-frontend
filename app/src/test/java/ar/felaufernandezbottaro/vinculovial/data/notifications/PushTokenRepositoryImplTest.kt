@@ -1,5 +1,6 @@
 package ar.felaufernandezbottaro.vinculovial.data.notifications
 
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
@@ -88,6 +89,15 @@ class PushTokenRepositoryImplTest {
     }
 
     @Test
+    fun `circuito abierto al registrar es Unavailable, no Network`() = runTest {
+        api.registerExceptionToThrow = CircuitBreakerOpenException("notifications")
+
+        val result = repository().registerToken("fcm-token-1")
+
+        assertEquals(SyncFcmTokenResult.Failed(SyncFcmTokenError.Unavailable), result)
+    }
+
+    @Test
     fun `un fallo de red al registrar es Network`() = runTest {
         api.registerExceptionToThrow = IOException("sin conexion")
 
@@ -137,6 +147,15 @@ class PushTokenRepositoryImplTest {
         val result = repository().deleteToken("fcm-token-1")
 
         assertEquals(DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Unexpected), result)
+    }
+
+    @Test
+    fun `circuito abierto al borrar es Unavailable, no Network`() = runTest {
+        api.deleteExceptionToThrow = CircuitBreakerOpenException("notifications")
+
+        val result = repository().deleteToken("fcm-token-1")
+
+        assertEquals(DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Unavailable), result)
     }
 
     @Test

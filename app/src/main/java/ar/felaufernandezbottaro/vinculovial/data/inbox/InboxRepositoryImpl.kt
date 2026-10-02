@@ -2,6 +2,7 @@ package ar.felaufernandezbottaro.vinculovial.data.inbox
 
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.AlertItemDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.InboxPageDto
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.di.IoDispatcher
@@ -45,6 +46,8 @@ class InboxRepositoryImpl @Inject constructor(
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: CircuitBreakerOpenException) {
+            GetInboxResult.Failed(InboxError.Unavailable)
         } catch (e: IOException) {
             GetInboxResult.Failed(InboxError.Network)
         } catch (e: RuntimeException) {

@@ -14,6 +14,7 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.crypto.MockAttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpRequestDto
 import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpError
 import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpResult
@@ -70,6 +71,11 @@ class SignUpRepositoryImplTest {
         ),
     )
 
+    /** Simula el circuito abierto sin instanciar el `CircuitBreakerInterceptor` real (eso se
+     * cubre aparte en `CircuitBreakerInterceptorTest`) -- acá sólo importa que la excepción,
+     * si llega, se mapee a `Unavailable` y no a `Network`. */
+    private var forceCircuitOpen = false
+
     @Before
     fun setUp() {
         HybridConfig.register()
@@ -86,6 +92,9 @@ class SignUpRepositoryImplTest {
         // Delega en el campo para que un test pueda sustituir el proveedor después
         // de que el cliente ya esté construido.
         val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                if (forceCircuitOpen) throw CircuitBreakerOpenException("auth") else chain.proceed(chain.request())
+            }
             .addInterceptor(
                 AttestationInterceptor(
                     object : AttestationProvider {
@@ -346,6 +355,14 @@ class SignUpRepositoryImplTest {
         server.enqueue(MockResponse().setResponseCode(503))
 
         assertEquals(SignUpResult.Failed(SignUpError.Unavailable), repository().signUp(credentials))
+    }
+
+    @Test
+    fun `circuito abierto es Unavailable, no Network`() = runTest {
+        forceCircuitOpen = true
+
+        assertEquals(SignUpResult.Failed(SignUpError.Unavailable), repository().signUp(credentials))
+        assertEquals(0, server.requestCount)
     }
 
     @Test

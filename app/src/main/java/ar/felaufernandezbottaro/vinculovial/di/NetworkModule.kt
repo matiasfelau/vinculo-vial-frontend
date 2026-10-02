@@ -8,6 +8,8 @@ import ar.felaufernandezbottaro.vinculovial.data.inbox.InboxApi
 import ar.felaufernandezbottaro.vinculovial.data.notifications.NotificationsApi
 import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerConfig
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerInterceptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.RefreshApi
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.TokenAuthenticator
 import ar.felaufernandezbottaro.vinculovial.data.vehicle.VehicleApi
@@ -57,6 +59,14 @@ object NetworkModule {
     @Singleton
     fun provideMoshi(): Moshi = Moshi.Builder().build()
 
+    @Provides
+    @Singleton
+    fun provideCircuitBreakerConfig(): CircuitBreakerConfig = CircuitBreakerConfig(
+        failureThreshold = BuildConfig.CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+        windowMs = BuildConfig.CIRCUIT_BREAKER_WINDOW_MS,
+        openMs = BuildConfig.CIRCUIT_BREAKER_OPEN_MS,
+    )
+
     /**
      * Nivel BASIC a propósito: método, URL y código de estado. Nunca el cuerpo, que
      * contiene el ciphertext, ni los headers, que llevan la attestation.
@@ -76,10 +86,14 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(
+        circuitBreakerInterceptor: CircuitBreakerInterceptor,
         attestationInterceptor: AttestationInterceptor,
         loggingInterceptor: HttpLoggingInterceptor,
         tokenAuthenticator: TokenAuthenticator,
     ): OkHttpClient = OkHttpClient.Builder()
+        // Antes que la attestation: con el circuito abierto, tampoco se paga el costo de
+        // Play Integrity -- ver CircuitBreakerInterceptor.
+        .addInterceptor(circuitBreakerInterceptor)
         .addInterceptor(attestationInterceptor)
         .addInterceptor(loggingInterceptor)
         .authenticator(tokenAuthenticator)
@@ -99,9 +113,11 @@ object NetworkModule {
     @Singleton
     @RefreshHttpClient
     fun provideRefreshOkHttpClient(
+        circuitBreakerInterceptor: CircuitBreakerInterceptor,
         attestationInterceptor: AttestationInterceptor,
         loggingInterceptor: HttpLoggingInterceptor,
     ): OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor(circuitBreakerInterceptor)
         .addInterceptor(attestationInterceptor)
         .addInterceptor(loggingInterceptor)
         .connectTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
