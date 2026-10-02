@@ -4,6 +4,7 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoConfigurationExcep
 import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoOperationException
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.crypto.toCryptogram
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.vehicle.dto.LinkVehicleRequestDto
@@ -77,6 +78,8 @@ class VehicleRepositoryImpl @Inject constructor(
             // El usuario abandonó la pantalla: cancelar no es un fallo de la vinculación.
             // Va antes que RuntimeException porque hereda de IllegalStateException.
             throw e
+        } catch (e: CircuitBreakerOpenException) {
+            LinkVehicleResult.Failed(LinkVehicleError.Unavailable)
         } catch (e: IOException) {
             // Sin conexión, DNS, timeout, TLS.
             LinkVehicleResult.Failed(LinkVehicleError.Network)

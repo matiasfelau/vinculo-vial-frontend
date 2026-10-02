@@ -5,6 +5,7 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoConfigurationExcep
 import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoOperationException
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.crypto.toCryptogram
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.di.IoDispatcher
@@ -57,6 +58,8 @@ class VehicleCheckRepositoryImpl @Inject constructor(
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: CircuitBreakerOpenException) {
+            CheckVehicleResult.Failed(CheckVehicleError.Unavailable)
         } catch (e: IOException) {
             CheckVehicleResult.Failed(CheckVehicleError.Network)
         } catch (e: RuntimeException) {

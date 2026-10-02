@@ -11,6 +11,7 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoOperationException
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeMessage
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpErrorDetailDto
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpErrorResponseDto
@@ -83,6 +84,8 @@ class SignUpRepositoryImpl @Inject constructor(
             // Falló en el dispositivo, antes de salir a la red. Va antes que IOException
             // porque hereda de ella (se lanza desde un interceptor de OkHttp).
             SignUpResult.Failed(e.reason.toSignUpError())
+        } catch (e: CircuitBreakerOpenException) {
+            SignUpResult.Failed(SignUpError.Unavailable)
         } catch (e: IOException) {
             // Sin conexión, DNS, timeout, TLS.
             SignUpResult.Failed(SignUpError.Network)

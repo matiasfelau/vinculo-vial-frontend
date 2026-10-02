@@ -1,6 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.data.notifications
 
 import ar.felaufernandezbottaro.vinculovial.data.notifications.dto.FcmTokenRequestDto
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.di.IoDispatcher
@@ -44,6 +45,8 @@ class PushTokenRepositoryImpl @Inject constructor(
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: CircuitBreakerOpenException) {
+            SyncFcmTokenResult.Failed(SyncFcmTokenError.Unavailable)
         } catch (e: IOException) {
             SyncFcmTokenResult.Failed(SyncFcmTokenError.Network)
         } catch (e: RuntimeException) {
@@ -65,6 +68,8 @@ class PushTokenRepositoryImpl @Inject constructor(
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: CircuitBreakerOpenException) {
+            DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Unavailable)
         } catch (e: IOException) {
             DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Network)
         } catch (e: RuntimeException) {

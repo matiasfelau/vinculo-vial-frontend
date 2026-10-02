@@ -16,6 +16,7 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.crypto.MockAttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.domain.signin.SignInError
@@ -64,6 +65,11 @@ class SignInRepositoryImplTest {
         ),
     )
 
+    /** Simula el circuito abierto sin instanciar el `CircuitBreakerInterceptor` real (eso se
+     * cubre aparte en `CircuitBreakerInterceptorTest`) -- acá sólo importa que la excepción,
+     * si llega, se mapee a `Unavailable` y no a `Network`. */
+    private var forceCircuitOpen = false
+
     @Before
     fun setUp() {
         HybridConfig.register()
@@ -85,6 +91,9 @@ class SignInRepositoryImplTest {
         // Delega en el campo para que un test pueda sustituir el proveedor después de que
         // el cliente ya esté construido.
         val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                if (forceCircuitOpen) throw CircuitBreakerOpenException("auth") else chain.proceed(chain.request())
+            }
             .addInterceptor(
                 AttestationInterceptor(
                     object : AttestationProvider {
@@ -236,6 +245,14 @@ class SignInRepositoryImplTest {
         server.enqueue(MockResponse().setResponseCode(503))
 
         assertEquals(SignInResult.Failed(SignInError.Unavailable), repository().signIn(credentials))
+    }
+
+    @Test
+    fun `circuito abierto es Unavailable, no Network`() = runTest {
+        forceCircuitOpen = true
+
+        assertEquals(SignInResult.Failed(SignInError.Unavailable), repository().signIn(credentials))
+        assertEquals(0, server.requestCount)
     }
 
     @Test

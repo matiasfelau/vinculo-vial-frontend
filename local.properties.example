@@ -46,3 +46,9 @@ NETWORK_TIMEOUT_MS=15000
 # debajo de NETWORK_TIMEOUT_MS -- ver la invariante callTimeout > ATTESTATION_TIMEOUT_MS +
 # connect + read en NetworkModule.
 ATTESTATION_TIMEOUT_MS=8000
+
+# Circuit breaker por servicio upstream (según el prefijo de ruta: auth/vehicles/alerts/
+# notifications) -- ver CircuitBreakerInterceptor.
+CIRCUIT_BREAKER_FAILURE_THRESHOLD=3
+CIRCUIT_BREAKER_WINDOW_MS=60000
+CIRCUIT_BREAKER_OPEN_MS=30000
