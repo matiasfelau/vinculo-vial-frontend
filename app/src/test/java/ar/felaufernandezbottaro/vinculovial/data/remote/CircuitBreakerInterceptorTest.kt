@@ -46,13 +46,18 @@ class CircuitBreakerInterceptorTest {
 
         @retrofit2.http.GET("/api/v1/alerts/inbox")
         fun getInbox()
+
+        @retrofit2.http.GET("/api/v1/vehicles")
+        fun getVehicles()
     }
 
     private val postAlertMethod = DummyApi::class.java.getMethod("postAlert")
     private val getInboxMethod = DummyApi::class.java.getMethod("getInbox")
+    private val getVehiclesMethod = DummyApi::class.java.getMethod("getVehicles")
 
     private val postAlertInvocation = retrofit2.Invocation.of(postAlertMethod, emptyList<Any>())
     private val getInboxInvocation = retrofit2.Invocation.of(getInboxMethod, emptyList<Any>())
+    private val getVehiclesInvocation = retrofit2.Invocation.of(getVehiclesMethod, emptyList<Any>())
 
     private fun requestTo(path: String, invocation: retrofit2.Invocation?) = Request.Builder()
         .url(server.url(path))
@@ -172,10 +177,10 @@ class CircuitBreakerInterceptorTest {
     fun `el circuito es independiente por endpoint -- abrir alerts no afecta vehicles`() {
         val client = clientWith(CircuitBreakerConfig(failureThreshold = 1, windowMs = 60_000, openMs = 30_000))
         server.enqueue(MockResponse().setResponseCode(503)) // abre el endpoint "/api/v1/alerts"
-        client.callOrNull(path = "/api/v1/alerts")
+        client.callOrNull(path = "/api/v1/alerts", invocation = postAlertInvocation)
 
         server.enqueue(MockResponse().setResponseCode(200))
-        val vehiclesFailure = client.callOrNull(path = "/api/v1/vehicles")
+        val vehiclesFailure = client.callOrNull(path = "/api/v1/vehicles", invocation = getVehiclesInvocation)
 
         assertEquals(null, vehiclesFailure)
         assertEquals(2, server.requestCount) // las dos tocaron la red
