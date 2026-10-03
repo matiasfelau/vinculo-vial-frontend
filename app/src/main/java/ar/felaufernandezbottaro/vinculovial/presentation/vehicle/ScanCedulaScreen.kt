@@ -316,10 +316,16 @@ private fun VehicleErrorDialog(error: LinkVehicleError, onRetry: () -> Unit, onC
         title = { Text("No pudimos vincular el vehículo") },
         text = { Text(error.message()) },
         confirmButton = {
-            TextButton(onClick = onRetry) { Text("Reintentar", color = VvNavy) }
+            if (error.isTransient) {
+                TextButton(onClick = onRetry) { Text("Reintentar", color = VvNavy) }
+            } else {
+                TextButton(onClick = onCancel) { Text("Entendido", color = VvNavy) }
+            }
         },
         dismissButton = {
-            TextButton(onClick = onCancel) { Text("Cancelar", color = VvNavy) }
+            if (error.isTransient) {
+                TextButton(onClick = onCancel) { Text("Cancelar", color = VvNavy) }
+            }
         }
     )
 }
