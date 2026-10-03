@@ -20,6 +20,9 @@ fun LinkVehicleError.message(): String = when (this) {
     LinkVehicleError.Configuration ->
         "La app no está configurada. Probá más tarde o escribinos."
 
+    LinkVehicleError.Unavailable ->
+        "El servidor no está disponible en este momento. Intentá de nuevo en unos minutos."
+
     LinkVehicleError.Network ->
         "No pudimos comunicarnos con el servidor. Revisá tu conexión e intentá de nuevo."
 

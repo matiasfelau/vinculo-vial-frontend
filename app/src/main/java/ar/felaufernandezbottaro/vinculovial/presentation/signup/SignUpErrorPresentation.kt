@@ -121,6 +121,12 @@ fun SignUpError.presentation(): SignUpErrorPresentation = when (this) {
         action = SignUpErrorAction.EDIT_FORM,
     )
 
+    SignUpError.Unavailable -> SignUpErrorPresentation(
+        title = "Servidor no disponible",
+        message = "El servidor no está disponible en este momento. Intentá de nuevo en unos minutos.",
+        action = SignUpErrorAction.RETRY_CAPTURE,
+    )
+
     SignUpError.Network -> SignUpErrorPresentation(
         title = "Sin conexión",
         message = "No pudimos comunicarnos con el servidor. Revisá tu conexión e intentá de nuevo.",

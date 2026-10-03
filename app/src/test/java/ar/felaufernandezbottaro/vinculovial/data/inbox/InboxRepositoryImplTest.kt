@@ -2,6 +2,7 @@ package ar.felaufernandezbottaro.vinculovial.data.inbox
 
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.AlertItemDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.InboxPageDto
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
@@ -115,12 +116,30 @@ class InboxRepositoryImplTest {
     }
 
     @Test
+    fun `503 es Unavailable, transitorio`() = runTest {
+        api.response = errorResponse(503)
+
+        val result = repository().getInbox()
+
+        assertEquals(GetInboxResult.Failed(InboxError.Unavailable), result)
+    }
+
+    @Test
     fun `500 es un error inesperado`() = runTest {
         api.response = errorResponse(500)
 
         val result = repository().getInbox()
 
         assertEquals(GetInboxResult.Failed(InboxError.Unexpected), result)
+    }
+
+    @Test
+    fun `circuito abierto es Unavailable, no Network`() = runTest {
+        api.exceptionToThrow = CircuitBreakerOpenException("alerts")
+
+        val result = repository().getInbox()
+
+        assertEquals(GetInboxResult.Failed(InboxError.Unavailable), result)
     }
 
     @Test

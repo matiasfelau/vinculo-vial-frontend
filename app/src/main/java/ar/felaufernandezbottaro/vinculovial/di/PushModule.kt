@@ -3,9 +3,11 @@ package ar.felaufernandezbottaro.vinculovial.di
 import android.content.Context
 import android.content.SharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.notifications.PushTokenRepositoryImpl
+import ar.felaufernandezbottaro.vinculovial.data.push.FcmTokenTaskSource
 import ar.felaufernandezbottaro.vinculovial.data.push.FirebaseFcmTokenProvider
 import ar.felaufernandezbottaro.vinculovial.domain.push.FcmTokenProvider
 import ar.felaufernandezbottaro.vinculovial.domain.push.PushTokenRepository
+import com.google.firebase.messaging.FirebaseMessaging
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -37,6 +39,12 @@ abstract class PushModule {
         @PushPreferences
         fun providePushPreferences(@ApplicationContext context: Context): SharedPreferences =
             context.getSharedPreferences(PUSH_PREFS_FILE_NAME, Context.MODE_PRIVATE)
+
+        /** Detrás de [FcmTokenTaskSource] para que un test pueda sustituirlo sin mockk. */
+        @Provides
+        @Singleton
+        fun provideFcmTokenTaskSource(): FcmTokenTaskSource =
+            FcmTokenTaskSource { FirebaseMessaging.getInstance().token }
 
         private const val PUSH_PREFS_FILE_NAME = "vinculo_vial_push_tokens"
     }

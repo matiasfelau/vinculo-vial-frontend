@@ -1,17 +1,18 @@
 package ar.felaufernandezbottaro.vinculovial.data.crypto
 
-import android.content.Context
-import com.google.android.play.core.integrity.IntegrityManagerFactory
 import com.google.android.play.core.integrity.StandardIntegrityException
+import com.google.android.play.core.integrity.StandardIntegrityManager
 import com.google.android.play.core.integrity.StandardIntegrityManager.PrepareIntegrityTokenRequest
 import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenProvider
 import com.google.android.play.core.integrity.StandardIntegrityManager.StandardIntegrityTokenRequest
 import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode
+import ar.felaufernandezbottaro.vinculovial.BuildConfig
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationUnavailableException.Reason
-import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,10 +25,15 @@ import javax.inject.Singleton
  *
  * Cada token se liga al cuerpo de la request vía `requestHash`, así un token capturado
  * no sirve para firmar otro registro.
+ *
+ * [integrityManager] se recibe armado (no se construye acá con `IntegrityManagerFactory`,
+ * ver `CryptoModule`): es la única forma de reemplazarlo por un fake de mano en tests --
+ * tanto [StandardIntegrityManager] como [StandardIntegrityTokenProvider] son interfaces
+ * del SDK, así que un objeto que las implemente alcanza, sin mockk ni Robolectric.
  */
 @Singleton
 class PlayIntegrityAttestationProvider @Inject constructor(
-    @ApplicationContext private val context: Context,
+    private val integrityManager: StandardIntegrityManager,
     private val cloudProjectNumber: Long,
 ) : AttestationProvider {
 
@@ -49,22 +55,36 @@ class PlayIntegrityAttestationProvider @Inject constructor(
         val requestHash = requestHashOf(requestBody)
 
         return try {
-            requestToken(provider = obtainProvider(), requestHash = requestHash)
-        } catch (e: StandardIntegrityException) {
-            if (e.errorCode == StandardIntegrityErrorCode.INTEGRITY_TOKEN_PROVIDER_INVALID) {
-                // El proveedor cacheado caducó: se descarta y se reintenta una vez.
-                invalidateProvider()
-                retryOnce(requestHash)
-            } else {
-                throw e.asAttestationFailure()
+            // Un único presupuesto para el intento Y el reintento juntos, no uno cada uno --
+            // si no, un proveedor que se invalida justo antes de expirar el timeout consumiría
+            // el doble del `ATTESTATION_TIMEOUT_MS` declarado. Ver la invariante
+            // `callTimeout > ATTESTATION_TIMEOUT_MS + connect + read` en NetworkModule: el
+            // Task de Play corre antes de abrir el socket, así que ni `connectTimeout` ni
+            // `readTimeout` de OkHttp lo cubren.
+            withTimeout(BuildConfig.ATTESTATION_TIMEOUT_MS) {
+                requestTokenWithRetry(requestHash)
             }
+        } catch (e: TimeoutCancellationException) {
+            // El `Task` de Play (prepare o request, según en cuál se haya colgado) nunca
+            // llamó a su callback.
+            throw e.asAttestationTimeout()
         }
     }
 
-    private suspend fun retryOnce(requestHash: String): String = try {
+    /** Un intento y, si el proveedor cacheado había caducado, exactamente un reintento. */
+    private suspend fun requestTokenWithRetry(requestHash: String): String = try {
         requestToken(provider = obtainProvider(), requestHash = requestHash)
     } catch (e: StandardIntegrityException) {
-        throw e.asAttestationFailure()
+        if (e.errorCode == StandardIntegrityErrorCode.INTEGRITY_TOKEN_PROVIDER_INVALID) {
+            invalidateProvider()
+            try {
+                requestToken(provider = obtainProvider(), requestHash = requestHash)
+            } catch (e2: StandardIntegrityException) {
+                throw e2.asAttestationFailure()
+            }
+        } else {
+            throw e.asAttestationFailure()
+        }
     }
 
     private suspend fun requestToken(
@@ -85,7 +105,7 @@ class PlayIntegrityAttestationProvider @Inject constructor(
     }
 
     private suspend fun prepareProvider(): StandardIntegrityTokenProvider = try {
-        IntegrityManagerFactory.createStandard(context)
+        integrityManager
             .prepareIntegrityToken(
                 PrepareIntegrityTokenRequest.builder()
                     .setCloudProjectNumber(cloudProjectNumber)
@@ -132,4 +152,17 @@ class PlayIntegrityAttestationProvider @Inject constructor(
             cause = this,
         )
     }
+
+    /**
+     * A diferencia de [asAttestationFailure], acá Google no devolvió ningún código: el
+     * `Task` sencillamente no llamó a su callback dentro del plazo. Se trata como
+     * [Reason.TRANSIENT] -- mismo criterio que NETWORK_ERROR o GOOGLE_SERVER_UNAVAILABLE --
+     * porque no hay evidencia de que el dispositivo o la instalación sean el problema.
+     */
+    private fun TimeoutCancellationException.asAttestationTimeout(): AttestationUnavailableException =
+        AttestationUnavailableException(
+            message = "Play Integrity no respondió dentro del tiempo esperado",
+            reason = Reason.TRANSIENT,
+            cause = this,
+        )
 }

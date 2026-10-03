@@ -27,6 +27,9 @@ fun SignInError.message(): String = when (this) {
         "Necesitamos Google Play activo y conexión a internet para iniciar sesión. " +
             "Revisalos e intentá de nuevo."
 
+    SignInError.Unavailable ->
+        "El servidor no está disponible en este momento. Intentá de nuevo en unos minutos."
+
     SignInError.Network ->
         "No pudimos comunicarnos con el servidor. Revisá tu conexión e intentá de nuevo."
 

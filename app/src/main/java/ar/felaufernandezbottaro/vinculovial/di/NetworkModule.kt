@@ -8,6 +8,8 @@ import ar.felaufernandezbottaro.vinculovial.data.inbox.InboxApi
 import ar.felaufernandezbottaro.vinculovial.data.notifications.NotificationsApi
 import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerConfig
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerInterceptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.RefreshApi
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.TokenAuthenticator
 import ar.felaufernandezbottaro.vinculovial.data.vehicle.VehicleApi
@@ -37,9 +39,33 @@ annotation class RefreshHttpClient
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
+    /**
+     * Presupuesto total de una llamada autenticada: `AttestationInterceptor` ejecuta el Task
+     * de Play Integrity *antes* de abrir el socket (ver `PlayIntegrityAttestationProvider`),
+     * así que el peor caso real es attestation + connect + read, no sólo esto último.
+     *
+     * Se calcula, no se declara como constante aparte: así la invariante
+     * `callTimeout > ATTESTATION_TIMEOUT_MS + connect + read` no puede desalinearse si
+     * alguien cambia uno de los dos timeouts de base sin acordarse de este. El margen de
+     * 1 segundo es para que la desigualdad sea estricta incluso si ambos quedan iguales.
+     *
+     * (`write` queda fuera a propósito: los cuerpos de esta app son JSON chico -- un
+     * criptograma HPKE, nunca un archivo -- su timeout nunca es el cuello de botella real.)
+     */
+    private val CALL_TIMEOUT_MS: Long =
+        BuildConfig.ATTESTATION_TIMEOUT_MS + BuildConfig.NETWORK_TIMEOUT_MS * 2 + 1_000L
+
     @Provides
     @Singleton
     fun provideMoshi(): Moshi = Moshi.Builder().build()
+
+    @Provides
+    @Singleton
+    fun provideCircuitBreakerConfig(): CircuitBreakerConfig = CircuitBreakerConfig(
+        failureThreshold = BuildConfig.CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+        windowMs = BuildConfig.CIRCUIT_BREAKER_WINDOW_MS,
+        openMs = BuildConfig.CIRCUIT_BREAKER_OPEN_MS,
+    )
 
     /**
      * Nivel BASIC a propósito: método, URL y código de estado. Nunca el cuerpo, que
@@ -60,16 +86,26 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(
+        circuitBreakerInterceptor: CircuitBreakerInterceptor,
         attestationInterceptor: AttestationInterceptor,
         loggingInterceptor: HttpLoggingInterceptor,
         tokenAuthenticator: TokenAuthenticator,
     ): OkHttpClient = OkHttpClient.Builder()
+        // Antes que la attestation: con el circuito abierto, tampoco se paga el costo de
+        // Play Integrity -- ver CircuitBreakerInterceptor.
+        .addInterceptor(circuitBreakerInterceptor)
         .addInterceptor(attestationInterceptor)
         .addInterceptor(loggingInterceptor)
         .authenticator(tokenAuthenticator)
         .connectTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .readTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .writeTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        // `connect`/`read`/`write` sólo miden el socket. `AttestationInterceptor` hace su
+        // trabajo *antes* de abrir la conexión, así que sin `callTimeout` -- que acota la
+        // llamada completa, interceptors incluidos -- un Task de Play que no resuelve dejaba
+        // la request colgada sin límite. Usa CALL_TIMEOUT_MS, no NETWORK_TIMEOUT_MS: tiene
+        // que cubrir attestation + connect + read, no sólo esto último (ver su doc).
+        .callTimeout(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .retryOnConnectionFailure(false)
         .build()
 
@@ -77,14 +113,17 @@ object NetworkModule {
     @Singleton
     @RefreshHttpClient
     fun provideRefreshOkHttpClient(
+        circuitBreakerInterceptor: CircuitBreakerInterceptor,
         attestationInterceptor: AttestationInterceptor,
         loggingInterceptor: HttpLoggingInterceptor,
     ): OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor(circuitBreakerInterceptor)
         .addInterceptor(attestationInterceptor)
         .addInterceptor(loggingInterceptor)
         .connectTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .readTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .writeTimeout(BuildConfig.NETWORK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .callTimeout(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .retryOnConnectionFailure(false)
         .build()
 

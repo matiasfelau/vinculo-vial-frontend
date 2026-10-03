@@ -9,6 +9,8 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoOperationException
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeMessage
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
+import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
 import ar.felaufernandezbottaro.vinculovial.data.signin.dto.SignInPayloadDto
@@ -82,6 +84,8 @@ class SignInRepositoryImpl @Inject constructor(
             // Falló en el dispositivo, antes de salir a la red. Va antes que IOException
             // porque hereda de ella (se lanza desde un interceptor de OkHttp).
             SignInResult.Failed(e.reason.toSignInError())
+        } catch (e: CircuitBreakerOpenException) {
+            SignInResult.Failed(SignInError.Unavailable)
         } catch (e: IOException) {
             // Sin conexión, DNS, timeout, TLS.
             SignInResult.Failed(SignInError.Network)
@@ -111,12 +115,13 @@ class SignInRepositoryImpl @Inject constructor(
         }
     }
 
-    private fun Int.toSignInError(): SignInError = when (this) {
-        HTTP_BAD_REQUEST -> SignInError.InvalidData
+    private fun Int.toSignInError(): SignInError = when {
+        this == HTTP_BAD_REQUEST -> SignInError.InvalidData
         // Mensaje único y genérico: no distingue "no existe el DNI" de "contraseña
         // incorrecta" — ni acá ni en la UI (anti-enumeración).
-        HTTP_UNAUTHORIZED -> SignInError.InvalidCredentials
-        HTTP_FORBIDDEN -> SignInError.AttestationRejected
+        this == HTTP_UNAUTHORIZED -> SignInError.InvalidCredentials
+        this == HTTP_FORBIDDEN -> SignInError.AttestationRejected
+        isTransientUpstreamFailure() -> SignInError.Unavailable
         else -> SignInError.Unexpected
     }
 

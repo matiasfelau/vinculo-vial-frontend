@@ -2,6 +2,8 @@ package ar.felaufernandezbottaro.vinculovial.data.inbox
 
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.AlertItemDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.InboxPageDto
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
+import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.di.IoDispatcher
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertItem
@@ -39,10 +41,13 @@ class InboxRepositoryImpl @Inject constructor(
             when {
                 response.isSuccessful && body != null -> GetInboxResult.Success(body.toDomain())
                 response.code() == HTTP_TOO_MANY_REQUESTS -> GetInboxResult.Failed(InboxError.RateLimited)
+                response.code().isTransientUpstreamFailure() -> GetInboxResult.Failed(InboxError.Unavailable)
                 else -> GetInboxResult.Failed(InboxError.Unexpected)
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: CircuitBreakerOpenException) {
+            GetInboxResult.Failed(InboxError.Unavailable)
         } catch (e: IOException) {
             GetInboxResult.Failed(InboxError.Network)
         } catch (e: RuntimeException) {

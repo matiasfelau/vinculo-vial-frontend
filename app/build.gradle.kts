@@ -70,6 +70,23 @@ android {
         buildConfigField("String", "APP_ATTESTATION_PSK", "\"${config("APP_ATTESTATION_PSK", "")}\"")
         buildConfigField("long", "ATTESTATION_TOKEN_TTL_SECONDS", config("ATTESTATION_TOKEN_TTL_SECONDS", "60") + "L")
         buildConfigField("long", "NETWORK_TIMEOUT_MS", config("NETWORK_TIMEOUT_MS", "15000") + "L")
+        // Presupuesto propio para el Task de Play Integrity (prepare + request, en conjunto,
+        // no uno cada uno -- ver PlayIntegrityAttestationProvider). Separado de
+        // NETWORK_TIMEOUT_MS a propósito: son fases distintas de la misma llamada (attestation
+        // corre antes de abrir el socket) y compartir una sola constante entre las dos rompía
+        // la invariante callTimeout > ATTESTATION_TIMEOUT_MS + connect + read -- ver NetworkModule.
+        buildConfigField("long", "ATTESTATION_TIMEOUT_MS", config("ATTESTATION_TIMEOUT_MS", "8000") + "L")
+
+        // Circuit breaker por servicio upstream (según el prefijo de ruta), ver
+        // CircuitBreakerInterceptor. Umbral/ventana/apertura configurables por entorno, igual
+        // que los timeouts de arriba.
+        buildConfigField(
+            "int",
+            "CIRCUIT_BREAKER_FAILURE_THRESHOLD",
+            config("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "3"),
+        )
+        buildConfigField("long", "CIRCUIT_BREAKER_WINDOW_MS", config("CIRCUIT_BREAKER_WINDOW_MS", "60000") + "L")
+        buildConfigField("long", "CIRCUIT_BREAKER_OPEN_MS", config("CIRCUIT_BREAKER_OPEN_MS", "30000") + "L")
 
         // Pivote RENAPER-Ready: ya no hay umbral de similitud coseno ni modelo .tflite que
         // configurar acá — la verificación de identidad (comparar la selfie contra el

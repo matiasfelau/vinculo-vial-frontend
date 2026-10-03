@@ -1,5 +1,6 @@
 package ar.felaufernandezbottaro.vinculovial.data.notifications
 
+import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
@@ -70,12 +71,30 @@ class PushTokenRepositoryImplTest {
     }
 
     @Test
+    fun `503 al registrar es Unavailable, transitorio`() = runTest {
+        api.registerResponse = errorResponse(503)
+
+        val result = repository().registerToken("fcm-token-1")
+
+        assertEquals(SyncFcmTokenResult.Failed(SyncFcmTokenError.Unavailable), result)
+    }
+
+    @Test
     fun `500 al registrar es un error inesperado`() = runTest {
         api.registerResponse = errorResponse(500)
 
         val result = repository().registerToken("fcm-token-1")
 
         assertEquals(SyncFcmTokenResult.Failed(SyncFcmTokenError.Unexpected), result)
+    }
+
+    @Test
+    fun `circuito abierto al registrar es Unavailable, no Network`() = runTest {
+        api.registerExceptionToThrow = CircuitBreakerOpenException("notifications")
+
+        val result = repository().registerToken("fcm-token-1")
+
+        assertEquals(SyncFcmTokenResult.Failed(SyncFcmTokenError.Unavailable), result)
     }
 
     @Test
@@ -113,12 +132,30 @@ class PushTokenRepositoryImplTest {
     }
 
     @Test
+    fun `503 al borrar es Unavailable, transitorio`() = runTest {
+        api.deleteResponse = errorResponse(503)
+
+        val result = repository().deleteToken("fcm-token-1")
+
+        assertEquals(DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Unavailable), result)
+    }
+
+    @Test
     fun `500 al borrar es un error inesperado`() = runTest {
         api.deleteResponse = errorResponse(500)
 
         val result = repository().deleteToken("fcm-token-1")
 
         assertEquals(DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Unexpected), result)
+    }
+
+    @Test
+    fun `circuito abierto al borrar es Unavailable, no Network`() = runTest {
+        api.deleteExceptionToThrow = CircuitBreakerOpenException("notifications")
+
+        val result = repository().deleteToken("fcm-token-1")
+
+        assertEquals(DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Unavailable), result)
     }
 
     @Test
