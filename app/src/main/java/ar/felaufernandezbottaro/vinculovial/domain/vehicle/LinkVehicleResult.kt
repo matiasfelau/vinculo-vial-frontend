@@ -40,4 +40,7 @@ sealed interface LinkVehicleError {
 
     /** Cualquier otra cosa, incluido 500 y un 401 que TokenAuthenticator no pudo resolver. */
     data object Unexpected : LinkVehicleError
+
+    val isTransient: Boolean
+        get() = this is Unavailable || this is Network
 }
