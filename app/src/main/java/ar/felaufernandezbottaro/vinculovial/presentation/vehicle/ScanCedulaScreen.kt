@@ -254,7 +254,11 @@ fun ScanCedulaScreen(
         if (failedStatus != null) {
             VehicleErrorDialog(
                 error = failedStatus.error,
-                onDismiss = {
+                onRetry = {
+                    onErrorDismissed()
+                    onCedulaScanned(failedStatus.cedula)
+                },
+                onCancel = {
                     onErrorDismissed()
                     scanSession.start()
                 },
@@ -306,14 +310,17 @@ private fun LinkedOverlay(onFinish: () -> Unit) {
 }
 
 @Composable
-private fun VehicleErrorDialog(error: LinkVehicleError, onDismiss: () -> Unit) {
+private fun VehicleErrorDialog(error: LinkVehicleError, onRetry: () -> Unit, onCancel: () -> Unit) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = onCancel,
         title = { Text("No pudimos vincular el vehículo") },
         text = { Text(error.message()) },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Entendido", color = VvNavy) }
+            TextButton(onClick = onRetry) { Text("Reintentar", color = VvNavy) }
         },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text("Cancelar", color = VvNavy) }
+        }
     )
 }
 

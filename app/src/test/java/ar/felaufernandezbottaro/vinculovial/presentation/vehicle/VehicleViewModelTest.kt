@@ -53,7 +53,7 @@ class VehicleViewModelTest {
 
         viewModel.onCedulaScanned(cedula)
 
-        assertEquals(VehicleStatus.Failed(LinkVehicleError.OwnerMismatch), viewModel.uiState.value.status)
+        assertEquals(VehicleStatus.Failed(LinkVehicleError.OwnerMismatch, cedula), viewModel.uiState.value.status)
     }
 
     @Test
@@ -76,5 +76,23 @@ class VehicleViewModelTest {
         viewModel.onErrorDismissed()
 
         assertEquals(VehicleStatus.Linked, viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `un reintento vuelve a enviar la cedula al repositorio`() = runTest {
+        // Primera vez falla
+        repository.result = LinkVehicleResult.Failed(LinkVehicleError.Network)
+        val viewModel = viewModel()
+        viewModel.onCedulaScanned(cedula)
+
+        assertEquals(VehicleStatus.Failed(LinkVehicleError.Network, cedula), viewModel.uiState.value.status)
+        assertEquals(1, repository.received.size)
+
+        // Se arregla la red y se reintenta
+        repository.result = LinkVehicleResult.Linked
+        viewModel.onCedulaScanned(cedula) // Reusa la cedula
+
+        assertEquals(VehicleStatus.Linked, viewModel.uiState.value.status)
+        assertEquals(2, repository.received.size)
     }
 }

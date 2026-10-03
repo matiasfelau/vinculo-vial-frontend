@@ -1,6 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.vehicle
 
 import ar.felaufernandezbottaro.vinculovial.domain.vehicle.LinkVehicleError
+import ar.felaufernandezbottaro.vinculovial.domain.vehicle.model.CedulaData
 
 /**
  * Estado único de la pantalla de vinculación (US-04). No hay un estado separado de
@@ -23,5 +24,5 @@ sealed interface VehicleStatus {
     /** 201: el vehículo quedó vinculado a la cuenta. */
     data object Linked : VehicleStatus
 
-    data class Failed(val error: LinkVehicleError) : VehicleStatus
+    data class Failed(val error: LinkVehicleError, val cedula: CedulaData) : VehicleStatus
 }
