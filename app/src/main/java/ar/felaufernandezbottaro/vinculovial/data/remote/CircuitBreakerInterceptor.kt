@@ -11,6 +11,24 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Fuente de tiempo del breaker. Inyectable para que los tests avancen el reloj a mano en vez
+ * de dormir (`Thread.sleep` hace los tests lentos y dependientes de la carga de la máquina).
+ *
+ * El de producción es monotónico (`System.nanoTime`), no la hora de pared: con
+ * `System.currentTimeMillis` un cambio de hora del sistema -- el usuario o la red móvil
+ * corrigen el reloj -- dejaba un circuito abierto por horas (reloj hacia atrás) o lo cerraba
+ * antes de tiempo (hacia adelante).
+ */
+fun interface MonotonicClock {
+    fun nowMs(): Long
+
+    companion object {
+        val SYSTEM = MonotonicClock { System.nanoTime() / NANOS_PER_MILLI }
+        private const val NANOS_PER_MILLI = 1_000_000L
+    }
+}
+
 /** Umbral, ventana y duración de apertura -- ver `CircuitBreakerInterceptor`, provisto desde `BuildConfig`. */
 data class CircuitBreakerConfig(
     val failureThreshold: Int,
@@ -59,14 +77,23 @@ internal fun endpointKeyOf(method: Method): String =
  *
  * Cuentan como falla un `IOException` (timeout, conexión rechazada) y cualquier `5xx`. Un
  * `4xx` del upstream se registra como éxito del circuito -- es evidencia de un problema con
- * *esta* request, no de que el servicio esté caído. Un fallo de attestation tampoco cuenta:
- * la request nunca salió del dispositivo, así que no es evidencia sobre el estado del
- * upstream.
+ * *esta* request, no de que el servicio esté caído.
+ *
+ * No cuentan, porque no son evidencia sobre el upstream, y **liberan el cupo de prueba** si
+ * la request lo tenía (si no, el circuito quedaría rechazando todo para siempre):
+ * - un fallo de attestation: la request nunca salió del dispositivo;
+ * - una request cancelada por el llamador (el `IOException("Canceled")` de OkHttp);
+ * - cualquier error que no sea de E/S, p. ej. el bug de otro interceptor.
  */
 @Singleton
-class CircuitBreakerInterceptor @Inject constructor(
+class CircuitBreakerInterceptor internal constructor(
     private val config: CircuitBreakerConfig,
+    private val clock: MonotonicClock,
 ) : Interceptor {
+
+    /** El constructor de producción; el de arriba existe para inyectar un reloj en los tests. */
+    @Inject
+    constructor(config: CircuitBreakerConfig) : this(config, MonotonicClock.SYSTEM)
 
     private val states = ConcurrentHashMap<String, CircuitState>()
 
@@ -74,26 +101,36 @@ class CircuitBreakerInterceptor @Inject constructor(
         val request = chain.request()
         val endpoint = endpointKeyOf(request)
         val state = states.getOrPut(endpoint) { CircuitState() }
-        val now = System.currentTimeMillis()
 
-        if (!state.tryAcquire(now, config.openMs)) {
-            throw CircuitBreakerOpenException(endpoint)
-        }
+        val permit = state.acquire(clock.nowMs(), config.openMs)
+        if (permit == Permit.REJECTED) throw CircuitBreakerOpenException(endpoint)
+        val isTrial = permit == Permit.TRIAL
 
         return try {
             val response = chain.proceed(request)
+            // El instante del resultado es cuando TERMINÓ la request, no cuando empezó: una
+            // prueba que tarda decenas de segundos en fallar no puede "reabrir" con un
+            // período de apertura que ya venció mientras esperaba.
+            val finishedAt = clock.nowMs()
             if (response.code in HTTP_SERVER_ERROR_RANGE) {
-                state.recordFailure(now, config.failureThreshold, config.windowMs)
+                state.recordFailure(finishedAt, config.failureThreshold, config.windowMs, isTrial)
             } else {
-                state.recordSuccess()
+                state.recordSuccess(isTrial)
             }
             response
         } catch (e: AttestationUnavailableException) {
-            // Nunca salió del dispositivo: no es evidencia sobre el upstream. Ver el `catch`
-            // de abajo -- sin este, al heredar de IOException, contaría como una falla real.
+            // Nunca salió del dispositivo. Va antes que `IOException`: hereda de ella.
+            state.releaseTrial(isTrial)
             throw e
         } catch (e: IOException) {
-            state.recordFailure(now, config.failureThreshold, config.windowMs)
+            if (chain.call().isCanceled()) {
+                state.releaseTrial(isTrial)
+            } else {
+                state.recordFailure(clock.nowMs(), config.failureThreshold, config.windowMs, isTrial)
+            }
+            throw e
+        } catch (e: Throwable) {
+            state.releaseTrial(isTrial)
             throw e
         }
     }
@@ -103,12 +140,31 @@ class CircuitBreakerInterceptor @Inject constructor(
     }
 }
 
+private enum class Permit {
+    /** Circuito cerrado: la request pasa como cualquier otra. */
+    CLOSED,
+
+    /** Semiabierto: ésta es LA request de prueba. Su resultado decide si cierra o reabre. */
+    TRIAL,
+
+    /** Abierto, o semiabierto con una prueba ya en vuelo: no se toca la red. */
+    REJECTED,
+}
+
 /**
- * Estado de un endpoint. Closed (sin fallas recientes) -> Open (tras [CircuitBreakerConfig.
- * failureThreshold] fallas dentro de [CircuitBreakerConfig.windowMs]) -> tras
- * [CircuitBreakerConfig.openMs], semiabierto: deja pasar exactamente una request de prueba;
- * si esa prueba falla, reabre de inmediato con un nuevo período de apertura; si tiene éxito,
- * cierra el circuito del todo.
+ * Estado de un endpoint. Cerrado (sin fallas recientes) -> abierto (tras
+ * [CircuitBreakerConfig.failureThreshold] fallas dentro de [CircuitBreakerConfig.windowMs]) ->
+ * tras [CircuitBreakerConfig.openMs], semiabierto: deja pasar exactamente una request de
+ * prueba; si esa prueba falla, reabre de inmediato con un nuevo período de apertura; si tiene
+ * éxito, cierra el circuito del todo.
+ *
+ * Sólo la request que tiene el permiso `TRIAL` resuelve el semiabierto. El resultado tardío de
+ * una request que empezó antes de que el circuito abriera no es evidencia sobre la
+ * recuperación: no lo cierra ni lo reabre.
+ *
+ * Los estados se llevan con banderas explícitas, no con un `0L` centinela: `MonotonicClock`
+ * puede devolver 0 -- o un valor negativo, `System.nanoTime` tiene un origen arbitrario -- y
+ * eso no puede confundirse con "cerrado" ni con "sin ventana en curso".
  *
  * `synchronized` en vez de un `Mutex` de corrutinas a propósito: `Interceptor.intercept` es
  * una función bloqueante común, corre en el pool de hilos de OkHttp -- no hay nada para
@@ -117,55 +173,75 @@ class CircuitBreakerInterceptor @Inject constructor(
  */
 private class CircuitState {
     private val lock = Any()
-    private var failureCount = 0
-    private var windowStartedAt = 0L
 
-    /** 0L = circuito cerrado. No-cero = abierto o, si ya pasó `openMs`, en prueba. */
+    private var inWindow = false
+    private var windowStartedAt = 0L
+    private var failureCount = 0
+
+    private var isOpen = false
     private var openedAt = 0L
     private var trialInFlight = false
 
-    /** @return `false` si el circuito está abierto y no corresponde dejar pasar esta request. */
-    fun tryAcquire(now: Long, openMs: Long): Boolean = synchronized(lock) {
-        if (openedAt == 0L) return true // closed
-
-        val stillOpen = now - openedAt < openMs
+    fun acquire(now: Long, openMs: Long): Permit = synchronized(lock) {
         when {
-            stillOpen -> false
-            trialInFlight -> false // semiabierto, pero ya hay una prueba en vuelo
+            !isOpen -> Permit.CLOSED
+            now - openedAt < openMs -> Permit.REJECTED
+            trialInFlight -> Permit.REJECTED
             else -> {
                 trialInFlight = true
-                true
+                Permit.TRIAL
             }
         }
     }
 
-    fun recordSuccess() = synchronized(lock) {
-        failureCount = 0
-        windowStartedAt = 0L
-        openedAt = 0L
-        trialInFlight = false
+    fun recordSuccess(isTrial: Boolean) = synchronized(lock) {
+        when {
+            isTrial -> closeCircuit()
+            !isOpen -> clearWindow() // un éxito corta la racha de fallas
+            else -> Unit // éxito tardío de una request anterior a la apertura: sin información
+        }
     }
 
-    fun recordFailure(now: Long, threshold: Int, windowMs: Long) = synchronized(lock) {
-        if (trialInFlight) {
-            // La prueba del semiabierto falló: reabre ya, con un período de apertura nuevo --
-            // no hace falta volver a acumular `threshold` fallas para esto.
-            trialInFlight = false
-            openedAt = now
-            failureCount = 0
-            windowStartedAt = 0L
-            return
+    fun recordFailure(now: Long, threshold: Int, windowMs: Long, isTrial: Boolean) = synchronized(lock) {
+        when {
+            // La prueba falló: reabre ya, con un período de apertura nuevo; no hace falta
+            // volver a acumular `threshold` fallas.
+            isTrial -> openCircuit(now)
+            isOpen -> Unit // falla tardía de una request anterior a la apertura: ya está abierto
+            else -> {
+                if (!inWindow || now - windowStartedAt > windowMs) {
+                    inWindow = true
+                    windowStartedAt = now
+                    failureCount = 1
+                } else {
+                    failureCount++
+                }
+                if (failureCount >= threshold) openCircuit(now)
+            }
         }
+    }
 
-        if (windowStartedAt == 0L || now - windowStartedAt > windowMs) {
-            windowStartedAt = now
-            failureCount = 1
-        } else {
-            failureCount++
-        }
+    /** La prueba terminó sin evidencia (attestation, cancelación, error ajeno): otra puede intentar. */
+    fun releaseTrial(isTrial: Boolean) = synchronized(lock) {
+        if (isTrial) trialInFlight = false
+    }
 
-        if (failureCount >= threshold) {
-            openedAt = now
-        }
+    private fun openCircuit(now: Long) {
+        isOpen = true
+        openedAt = now
+        trialInFlight = false
+        clearWindow()
+    }
+
+    private fun closeCircuit() {
+        isOpen = false
+        trialInFlight = false
+        clearWindow()
+    }
+
+    private fun clearWindow() {
+        inWindow = false
+        windowStartedAt = 0L
+        failureCount = 0
     }
 }
