@@ -11,6 +11,24 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Fuente de tiempo del breaker. Inyectable para que los tests avancen el reloj a mano en vez
+ * de dormir (`Thread.sleep` hace los tests lentos y dependientes de la carga de la máquina).
+ *
+ * El de producción es monotónico (`System.nanoTime`), no la hora de pared: con
+ * `System.currentTimeMillis` un cambio de hora del sistema -- el usuario o la red móvil
+ * corrigen el reloj -- dejaba un circuito abierto por horas (reloj hacia atrás) o lo cerraba
+ * antes de tiempo (hacia adelante).
+ */
+fun interface MonotonicClock {
+    fun nowMs(): Long
+
+    companion object {
+        val SYSTEM = MonotonicClock { System.nanoTime() / NANOS_PER_MILLI }
+        private const val NANOS_PER_MILLI = 1_000_000L
+    }
+}
+
 /** Umbral, ventana y duración de apertura -- ver `CircuitBreakerInterceptor`, provisto desde `BuildConfig`. */
 data class CircuitBreakerConfig(
     val failureThreshold: Int,
@@ -64,9 +82,14 @@ internal fun endpointKeyOf(method: Method): String =
  * upstream.
  */
 @Singleton
-class CircuitBreakerInterceptor @Inject constructor(
+class CircuitBreakerInterceptor internal constructor(
     private val config: CircuitBreakerConfig,
+    private val clock: MonotonicClock,
 ) : Interceptor {
+
+    /** El constructor de producción; el de arriba existe para inyectar un reloj en los tests. */
+    @Inject
+    constructor(config: CircuitBreakerConfig) : this(config, MonotonicClock.SYSTEM)
 
     private val states = ConcurrentHashMap<String, CircuitState>()
 
@@ -74,7 +97,7 @@ class CircuitBreakerInterceptor @Inject constructor(
         val request = chain.request()
         val endpoint = endpointKeyOf(request)
         val state = states.getOrPut(endpoint) { CircuitState() }
-        val now = System.currentTimeMillis()
+        val now = clock.nowMs()
 
         if (!state.tryAcquire(now, config.openMs)) {
             throw CircuitBreakerOpenException(endpoint)

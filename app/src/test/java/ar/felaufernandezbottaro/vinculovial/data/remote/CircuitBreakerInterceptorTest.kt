@@ -2,7 +2,6 @@ package ar.felaufernandezbottaro.vinculovial.data.remote
 
 import ar.felaufernandezbottaro.vinculovial.data.alert.AlertApi
 import ar.felaufernandezbottaro.vinculovial.data.alert.VehicleCheckApi
-import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationUnavailableException
 import ar.felaufernandezbottaro.vinculovial.data.inbox.InboxApi
 import ar.felaufernandezbottaro.vinculovial.data.notifications.NotificationsApi
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.RefreshApi
@@ -32,10 +31,12 @@ import retrofit2.http.PUT
 import java.io.IOException
 
 /**
- * El estado del breaker en sí, contra un servidor real (MockWebServer) -- mismo patrón que
- * `AttestationInterceptorTest`. Que `CircuitBreakerOpenException` se mapee a `Unavailable` en
- * cada repositorio se cubre aparte, en cada `*RepositoryImplTest`, con un fake más simple:
- * acá sólo importa cuándo el circuito abre, rechaza y cierra.
+ * El breaker cableado con OkHttp y Retrofit reales, contra un servidor real (MockWebServer) --
+ * mismo patrón que `AttestationInterceptorTest`: un error de conexión de verdad, la clave por
+ * endpoint a través de Retrofit y la guarda sobre las APIs reales. Las transiciones del estado
+ * (ventana, semiabierto, cancelación) viven en `CircuitBreakerStateMachineTest`, sin red ni
+ * tiempo real. Que `CircuitBreakerOpenException` se mapee a `Unavailable` en cada repositorio
+ * se cubre en cada `*RepositoryImplTest`.
  */
 class CircuitBreakerInterceptorTest {
 
@@ -82,32 +83,6 @@ class CircuitBreakerInterceptorTest {
     }
 
     @Test
-    fun `4xx repetidos no abren el circuito`() {
-        val client = clientWith(CircuitBreakerConfig(failureThreshold = 2, windowMs = 60_000, openMs = 30_000))
-        repeat(5) { server.enqueue(MockResponse().setResponseCode(400)) }
-
-        repeat(5) { client.callOrNull() }
-
-        assertEquals(5, server.requestCount)
-    }
-
-    @Test
-    fun `N fallas 5xx abren el circuito -- la N+1 no toca la red`() {
-        val client = clientWith(CircuitBreakerConfig(failureThreshold = 2, windowMs = 60_000, openMs = 30_000))
-        server.enqueue(MockResponse().setResponseCode(503))
-        server.enqueue(MockResponse().setResponseCode(503))
-
-        client.callOrNull()
-        client.callOrNull()
-        assertEquals(2, server.requestCount)
-
-        val rejection = client.callOrNull()
-
-        assertTrue(rejection is CircuitBreakerOpenException)
-        assertEquals(2, server.requestCount) // la 3ra no incrementó el contador del server
-    }
-
-    @Test
     fun `un error de conexion cuenta como falla, igual que un 5xx`() {
         val client = clientWith(CircuitBreakerConfig(failureThreshold = 1, windowMs = 60_000, openMs = 30_000))
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
@@ -117,62 +92,6 @@ class CircuitBreakerInterceptorTest {
 
         val rejection = client.callOrNull()
         assertTrue(rejection is CircuitBreakerOpenException)
-    }
-
-    @Test
-    fun `un fallo de attestation no cuenta como falla del circuito`() {
-        val client = OkHttpClient.Builder()
-            .addInterceptor(CircuitBreakerInterceptor(CircuitBreakerConfig(failureThreshold = 1, windowMs = 60_000, openMs = 30_000)))
-            .addInterceptor {
-                throw AttestationUnavailableException("no disponible", AttestationUnavailableException.Reason.TRANSIENT)
-            }
-            .build()
-
-        // Si contara, ya con threshold=1 el circuito abriría en el primer intento y el
-        // segundo lanzaría CircuitBreakerOpenException en vez de AttestationUnavailableException.
-        repeat(5) { client.callOrNull() }
-
-        val lastException = client.callOrNull()
-        assertTrue(lastException is AttestationUnavailableException)
-    }
-
-    @Test
-    fun `tras el periodo de apertura deja pasar una prueba -- si funciona, cierra el circuito`() {
-        val client = clientWith(CircuitBreakerConfig(failureThreshold = 1, windowMs = 60_000, openMs = 50))
-        server.enqueue(MockResponse().setResponseCode(503)) // abre el circuito
-        client.callOrNull()
-        assertEquals(1, server.requestCount)
-
-        assertTrue(client.callOrNull() is CircuitBreakerOpenException) // sigue abierto
-        assertEquals(1, server.requestCount)
-
-        Thread.sleep(80) // supera openMs = 50
-
-        server.enqueue(MockResponse().setResponseCode(200)) // la prueba del semiabierto
-        assertEquals(null, client.callOrNull())
-        assertEquals(2, server.requestCount)
-
-        // Cerrado del todo: ya no es "la única prueba", la siguiente pasa normal.
-        server.enqueue(MockResponse().setResponseCode(200))
-        assertEquals(null, client.callOrNull())
-        assertEquals(3, server.requestCount)
-    }
-
-    @Test
-    fun `si la prueba del semiabierto falla, reabre de inmediato`() {
-        val client = clientWith(CircuitBreakerConfig(failureThreshold = 1, windowMs = 60_000, openMs = 50))
-        server.enqueue(MockResponse().setResponseCode(503)) // abre
-        client.callOrNull()
-        Thread.sleep(80)
-
-        server.enqueue(MockResponse().setResponseCode(503)) // la prueba también falla
-        client.callOrNull()
-        assertEquals(2, server.requestCount)
-
-        // Reabrió con un período nuevo: la siguiente no toca la red aunque ya pasaron
-        // los 50ms originales.
-        assertTrue(client.callOrNull() is CircuitBreakerOpenException)
-        assertEquals(2, server.requestCount)
     }
 
     // -- Clave por endpoint (método de Retrofit), no por ruta ----------------------------
