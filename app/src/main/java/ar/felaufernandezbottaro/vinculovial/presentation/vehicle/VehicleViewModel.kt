@@ -46,7 +46,7 @@ class VehicleViewModel @Inject constructor(
             _uiState.update {
                 when (val result = linkVehicle(cedula)) {
                     is LinkVehicleResult.Linked -> it.copy(status = VehicleStatus.Linked)
-                    is LinkVehicleResult.Failed -> it.copy(status = VehicleStatus.Failed(result.error))
+                    is LinkVehicleResult.Failed -> it.copy(status = VehicleStatus.Failed(result.error, cedula))
                 }
             }
 

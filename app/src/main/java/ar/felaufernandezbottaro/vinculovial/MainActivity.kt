@@ -22,8 +22,6 @@ class MainActivity : ComponentActivity() {
 
         pendingAlertType = intent?.getStringExtra(EXTRA_ALERT_TYPE)
 
-        pendingAlertType = intent?.getStringExtra(EXTRA_ALERT_TYPE)
-
         setContent {
             VinculoVialTheme {
                 VinculoVialNavHost(
