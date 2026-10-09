@@ -28,6 +28,11 @@ annotation class IdentityHpkePublicKey
 @Retention(AnnotationRetention.BINARY)
 annotation class VehicleHpkePublicKey
 
+/** Public Key HPKE de `vinculo-vial-ia` (US-08): cifra las fotos de evidencia de las alertas. */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class IaHpkePublicKey
+
 @Module
 @InstallIn(SingletonComponent::class)
 object CryptoModule {
@@ -47,6 +52,11 @@ object CryptoModule {
     @Singleton
     @VehicleHpkePublicKey
     fun provideVehicleHpkePublicKey(): String = BuildConfig.VEHICLE_HPKE_PUBLIC_KEY
+
+    @Provides
+    @Singleton
+    @IaHpkePublicKey
+    fun provideIaHpkePublicKey(): String = BuildConfig.IA_HPKE_PUBLIC_KEY
 
     @Provides
     @Singleton

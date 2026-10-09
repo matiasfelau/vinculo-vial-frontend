@@ -67,6 +67,14 @@ android {
             "VEHICLE_HPKE_PUBLIC_KEY",
             "\"${config("VEHICLE_HPKE_PUBLIC_KEY", "")}\"",
         )
+        // US-08: cifra las fotos de evidencia (y nada más) contra `vinculo-vial-ia`. Es la
+        // pública del par IA_HPKE_PRIVATE_KEY del repo de IA, la misma que usa Vehicle para
+        // `pat_enc_ia`.
+        buildConfigField(
+            "String",
+            "IA_HPKE_PUBLIC_KEY",
+            "\"${config("IA_HPKE_PUBLIC_KEY", "")}\"",
+        )
         buildConfigField("String", "APP_ATTESTATION_PSK", "\"${config("APP_ATTESTATION_PSK", "")}\"")
         buildConfigField("long", "ATTESTATION_TOKEN_TTL_SECONDS", config("ATTESTATION_TOKEN_TTL_SECONDS", "60") + "L")
         buildConfigField("long", "NETWORK_TIMEOUT_MS", config("NETWORK_TIMEOUT_MS", "15000") + "L")
