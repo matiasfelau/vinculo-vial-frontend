@@ -48,8 +48,9 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrange
 
 /**
- * Lista de solo lectura de los incidentes reportados sobre los vehículos del usuario. Sin
- * acciones sobre los ítems: no hay marcar como leída, resolver ni borrar -- ver CLAUDE.md.
+ * Lista de los incidentes reportados sobre los vehículos del usuario. Tocar un ítem abre su
+ * detalle (evidencia redactada, valoración y reporte al emisor); no hay marcar como leída,
+ * resolver ni borrar -- ver CLAUDE.md.
  */
 @Composable
 fun InboxScreen(
@@ -58,6 +59,7 @@ fun InboxScreen(
     onRetry: () -> Unit,
     onLoadNextPage: () -> Unit,
     onRetryNextPage: () -> Unit,
+    onOpenAlert: (String) -> Unit,
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -96,6 +98,7 @@ fun InboxScreen(
                     items = uiState.items,
                     isLoadingMore = uiState.isLoadingMore,
                     onLoadNextPage = onLoadNextPage,
+                    onOpenAlert = onOpenAlert,
                 )
                 is InboxUiState.Error -> InboxFullScreenError(message = uiState.error.message(), onRetry = onRetry)
                 is InboxUiState.ContentWithPageError -> InboxContentList(
@@ -103,6 +106,7 @@ fun InboxScreen(
                     pageErrorMessage = uiState.error.message(),
                     onRetryPage = onRetryNextPage,
                     onLoadNextPage = null,
+                    onOpenAlert = onOpenAlert,
                 )
             }
         }
@@ -188,6 +192,7 @@ private fun InboxContentList(
     pageErrorMessage: String? = null,
     onRetryPage: (() -> Unit)? = null,
     onLoadNextPage: (() -> Unit)? = null,
+    onOpenAlert: (String) -> Unit,
 ) {
     val listState = rememberLazyListState()
 
@@ -210,7 +215,7 @@ private fun InboxContentList(
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(items, key = { it.id }) { item -> AlertItemRow(item) }
+        items(items, key = { it.id }) { item -> AlertItemRow(item, onClick = { onOpenAlert(item.id) }) }
 
         if (isLoadingMore) {
             item {
@@ -238,10 +243,10 @@ private fun InboxContentList(
 }
 
 @Composable
-private fun AlertItemRow(item: AlertItem) {
+private fun AlertItemRow(item: AlertItem, onClick: () -> Unit) {
     val display = mapAlertTypeToDisplay(item.alertType)
 
-    Surface(shape = RoundedCornerShape(14.dp), color = VvMint) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(14.dp), color = VvMint) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -261,6 +266,9 @@ private fun AlertItemRow(item: AlertItem) {
                     color = VvMuted,
                     modifier = Modifier.padding(top = 2.dp),
                 )
+                item.reviewBadgeText()?.let { badge ->
+                    Box(modifier = Modifier.padding(top = 6.dp)) { ReviewBadge(badge) }
+                }
             }
         }
     }

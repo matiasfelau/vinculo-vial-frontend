@@ -12,6 +12,9 @@ fun InboxError.message(): String = when (this) {
     InboxError.Network ->
         "No pudimos comunicarnos con el servidor. Revisá tu conexión e intentá de nuevo."
 
+    InboxError.NotFound ->
+        "Esta alerta ya no está disponible."
+
     InboxError.Unexpected ->
         "No pudimos cargar tus alertas. Intentá de nuevo en unos minutos."
 }

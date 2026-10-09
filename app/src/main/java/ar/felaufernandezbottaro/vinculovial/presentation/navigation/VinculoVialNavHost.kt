@@ -1,6 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -8,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -18,6 +20,7 @@ import androidx.navigation.compose.rememberNavController
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.CameraPermissionGate
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.DocumentScanScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.LivenessCaptureScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxDetailScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.push.NotificationPermissionRequester
@@ -68,6 +71,7 @@ object Route {
     const val EVIDENCE_CAPTURE = "scan/evidence-capture"
 
     const val INBOX = "inbox"
+    const val INBOX_DETAIL = "inbox/detail"
 }
 
 @Composable
@@ -190,7 +194,40 @@ fun VinculoVialNavHost(
                 onRetry = viewModel::loadFirstPage,
                 onLoadNextPage = viewModel::loadNextPage,
                 onRetryNextPage = viewModel::retryNextPage,
+                onOpenAlert = { alertId ->
+                    viewModel.openAlert(alertId)
+                    navController.navigate(Route.INBOX_DETAIL)
+                },
             )
+        }
+
+        composable(Route.INBOX_DETAIL) { entry ->
+            // El mismo `InboxViewModel` que la lista: lo que cambia acá (valoración, reporte) se ve al volver.
+            val parentEntry = remember(entry) { navController.getBackStackEntry(Route.INBOX) }
+            val viewModel = hiltViewModel<InboxViewModel>(parentEntry)
+            val detail by viewModel.detail.collectAsStateWithLifecycle()
+
+            // Al salir del detalle (por el botón, el gesto de volver o cualquier otra vía) se cierra:
+            // las fotos que bajó se sobreescriben con ceros.
+            DisposableEffect(Unit) { onDispose { viewModel.closeAlert() } }
+
+            // Sin detalle abierto (p. ej. tras recrearse el proceso) no hay nada que mostrar. Sólo
+            // se sale si el destino está en primer plano: durante la animación de salida el detalle
+            // ya está cerrado y un segundo `popBackStack` se llevaría también al buzón.
+            val current = detail
+            if (current == null) {
+                LaunchedEffect(Unit) {
+                    if (entry.lifecycle.currentState == Lifecycle.State.RESUMED) navController.popBackStack()
+                }
+            } else {
+                InboxDetailScreen(
+                    detail = current,
+                    onBack = { navController.popBackStack() },
+                    onRetryEvidence = viewModel::retryEvidence,
+                    onRate = viewModel::onRate,
+                    onReportSender = viewModel::onReportSender,
+                )
+            }
         }
 
         composable(Route.LINK_VEHICLE) { entry ->
