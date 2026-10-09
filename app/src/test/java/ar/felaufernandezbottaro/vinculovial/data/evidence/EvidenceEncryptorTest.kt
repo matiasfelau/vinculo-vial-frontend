@@ -53,6 +53,14 @@ class EvidenceEncryptorTest {
     }
 
     @Test
+    fun `cifrar bytes y cifrar el buffer dan el mismo contenido descifrado`() {
+        val fromBytes = encryptor().encrypt(jpeg, attemptId)
+        val fromBuffer = encryptor().encrypt(SecureImageBuffer.copyOf(jpeg), attemptId)
+
+        assertArrayEquals(decrypt(iaKeyset, fromBytes, attemptId), decrypt(iaKeyset, fromBuffer, attemptId))
+    }
+
+    @Test
     fun `con otro attempt_id como info no se puede abrir`() {
         val sealed = encryptor().encrypt(SecureImageBuffer.copyOf(jpeg), attemptId)
 

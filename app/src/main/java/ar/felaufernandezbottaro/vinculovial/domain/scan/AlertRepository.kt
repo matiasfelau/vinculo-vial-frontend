@@ -1,11 +1,13 @@
 package ar.felaufernandezbottaro.vinculovial.domain.scan
 
+import ar.felaufernandezbottaro.vinculovial.domain.evidence.EvidencePhotoSet
+
 interface AlertRepository {
 
     /**
-     * Publica la alerta con [patEnc] tal cual se recibió -- nunca vuelve a cifrar la patente.
-     * [patEnc] tiene que ser el mismo que ya devolvió `/alerts/attempts`, según el flujo de dos
-     * llamadas de CLAUDE.md.
+     * Publica la alerta del intento [attemptId] con sus fotos. Las fotos se cifran acá, con
+     * [attemptId] como `info`: con otro `attemptId` el resultado es otro criptograma, y es así
+     * como se re-cifra tras renovar un intento vencido. [evidence] no se modifica ni se libera.
      */
-    suspend fun sendAlert(alertType: AlertType, patEnc: String): SendAlertResult
+    suspend fun sendAlert(attemptId: String, alertType: AlertType, evidence: EvidencePhotoSet): SendAlertResult
 }

@@ -1,6 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.data.evidence
 
 import ar.felaufernandezbottaro.vinculovial.data.edge.SecureImageBuffer
+import ar.felaufernandezbottaro.vinculovial.domain.evidence.EvidencePhotoSet
 import ar.felaufernandezbottaro.vinculovial.domain.evidence.EvidenceRole
 
 /**
@@ -10,7 +11,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.evidence.EvidenceRole
  *
  * No es thread-safe: lo usa el `ViewModel` desde el hilo principal.
  */
-class EvidenceBuffers {
+class EvidenceBuffers : EvidencePhotoSet {
 
     private data class Slot(val role: EvidenceRole, val index: Int)
 
@@ -28,8 +29,10 @@ class EvidenceBuffers {
     fun has(role: EvidenceRole, index: Int): Boolean = Slot(role, index) in slots
 
     /** Presta los bytes de la foto al [block]; `null` si el casillero está vacío. */
-    fun <R> read(role: EvidenceRole, index: Int, block: (ByteArray) -> R): R? =
+    override fun <R> read(role: EvidenceRole, index: Int, block: (ByteArray) -> R): R? =
         slots[Slot(role, index)]?.read(block)
+
+    override fun count(role: EvidenceRole): Int = slots.keys.count { it.role == role }
 
     /** Las fotos de [role], ordenadas por índice. El llamador no debe liberarlas ni guardarlas. */
     fun photos(role: EvidenceRole): List<SecureImageBuffer> =

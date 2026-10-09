@@ -22,8 +22,11 @@ class EvidenceEncryptor @Inject constructor(
 ) {
 
     /** `enc‖ct` en bytes crudos, sin base64: es lo que viaja como parte `application/octet-stream`. */
-    fun encrypt(photo: SecureImageBuffer, attemptId: String): ByteArray {
+    fun encrypt(jpeg: ByteArray, attemptId: String): ByteArray {
         val contextInfo = attemptId.toByteArray(Charsets.UTF_8)
-        return photo.read { jpeg -> encryptor.encrypt(jpeg, iaPublicKey, contextInfo).toCryptogramBytes() }
+        return encryptor.encrypt(jpeg, iaPublicKey, contextInfo).toCryptogramBytes()
     }
+
+    fun encrypt(photo: SecureImageBuffer, attemptId: String): ByteArray =
+        photo.read { jpeg -> encrypt(jpeg, attemptId) }
 }

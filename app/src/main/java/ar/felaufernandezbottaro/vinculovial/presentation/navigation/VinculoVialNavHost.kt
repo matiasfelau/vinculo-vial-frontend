@@ -270,6 +270,12 @@ fun VinculoVialNavHost(
                     },
                     onReportRequested = viewModel::onReportRequested,
                     onRetry = viewModel::onAlertRetry,
+                    onRestart = {
+                        viewModel.onFlowRestarted()
+                        navController.navigate(Route.SCAN_PLATE) {
+                            popUpTo(Route.REPORT_CHAT) { inclusive = true }
+                        }
+                    },
                     onFinished = { navController.popBackStack(Route.SETTINGS, inclusive = false) },
                     onCancel = {
                         viewModel.onReportCancelled()

@@ -1,59 +1,179 @@
 package ar.felaufernandezbottaro.vinculovial.domain.scan
 
+import ar.felaufernandezbottaro.vinculovial.data.evidence.EvidenceBuffers
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Test
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneOffset
 
 class SendAlertUseCaseTest {
 
-    private val patEnc = "pat-enc-ya-generado-por-el-intento"
+    private val now = Instant.parse("2030-01-01T00:05:00Z")
+    private val clock = Clock.fixed(now, ZoneOffset.UTC)
+
+    private val alertRepository = FakeAlertRepository()
+    private val attemptRepository = FakeAlertAttemptRepository()
+    private val evidence = EvidenceBuffers()
+
+    private val sendAlert = SendAlertUseCase(alertRepository, attemptRepository, clock)
+
+    private fun attempt(
+        id: String = "attempt-1",
+        expiresAt: Instant = now.plusSeconds(300),
+        patEnc: String = "pat-enc-del-intento",
+    ) = StartAlertAttemptResult.Started(attemptId = id, expiresAt = expiresAt, patEnc = patEnc)
+
+    private val expired = SendAlertResult.Failed(SendAlertError.AttemptExpired)
+
+    // -- Camino feliz -----------------------------------------------------------------------
 
     @Test
-    fun `pasa el alertType y el pat_enc al repositorio tal cual`() = runTest {
-        val repository = FakeAlertRepository()
-        val sendAlert = SendAlertUseCase(repository)
+    fun `con el intento vigente envia una sola vez con su attempt_id, el tipo y las fotos`() = runTest {
+        val outcome = sendAlert(attempt(), AlertType.CRASHED, evidence)
 
-        sendAlert(AlertType.CRASHED, patEnc)
-
-        assertEquals(listOf(AlertType.CRASHED to patEnc), repository.received)
+        assertEquals(SendAlertResult.Sent, outcome.result)
+        assertEquals(listOf("attempt-1"), alertRepository.received.map { it.attemptId })
+        assertEquals(listOf(AlertType.CRASHED), alertRepository.received.map { it.alertType })
+        assertSame(evidence, alertRepository.received.single().evidence)
+        assertEquals(emptyList<String>(), attemptRepository.renewed)
+        assertEquals("attempt-1", outcome.attempt.attemptId)
     }
 
     @Test
-    fun `devuelve el resultado del repositorio sin transformarlo`() = runTest {
-        val repository = FakeAlertRepository(result = SendAlertResult.Failed(SendAlertError.RateLimited))
-        val sendAlert = SendAlertUseCase(repository)
+    fun `un error que no es de vencimiento se devuelve tal cual, sin renovar`() = runTest {
+        listOf(
+            SendAlertError.RateLimited,
+            SendAlertError.Unavailable,
+            SendAlertError.Network,
+            SendAlertError.UnderReview,
+            SendAlertError.AttemptNotFound,
+            SendAlertError.InvalidEvidence,
+            SendAlertError.Unexpected,
+        ).forEach { error ->
+            alertRepository.received.clear()
+            alertRepository.result = SendAlertResult.Failed(error)
 
-        val result = sendAlert(AlertType.CRASHED, patEnc)
+            val outcome = sendAlert(attempt(), AlertType.CRASHED, evidence)
 
-        assertEquals(SendAlertResult.Failed(SendAlertError.RateLimited), result)
+            assertEquals(SendAlertResult.Failed(error), outcome.result)
+            assertEquals(1, alertRepository.received.size)
+        }
+        assertEquals(emptyList<String>(), attemptRepository.renewed)
     }
 
-    /**
-     * El requerimiento central del flujo de dos pasos de US-05: el `pat_enc` que
-     * `StartAlertAttemptUseCase` generó al escanear se reusa tal cual en `/alerts`, sin volver a
-     * escanear ni a cifrar. `SendAlertUseCase` no tiene `HpkeEncryptor` entre sus
-     * dependencias -- estructuralmente no podría generar un cifrado nuevo aunque quisiera --
-     * así que esta prueba encadena ambos casos de uso con el mismo repositorio falso de
-     * intento y confirma que el `pat_enc` que efectivamente viaja a `/alerts` es exactamente
-     * el mismo objeto que devolvió el intento, no uno nuevo.
-     */
+    // -- 410 ATTEMPT_EXPIRED: nuevo intento y un solo reenvio -------------------------------
+
     @Test
-    fun `reusa el pat_enc que devolvio el intento, no genera uno nuevo`() = runTest {
-        val attemptRepository = FakeAlertAttemptRepository(
-            result = StartAlertAttemptResult.Started(
-                attemptId = "attempt-de-prueba",
-                expiresAt = Instant.parse("2030-01-01T00:10:00Z"),
-                patEnc = patEnc,
-            ),
+    fun `410 renueva el intento con el pat_enc guardado y reenvia con el attempt_id nuevo`() = runTest {
+        alertRepository.queue += expired
+
+        val outcome = sendAlert(attempt(patEnc = "pat-enc-guardado"), AlertType.CRASHED, evidence)
+
+        assertEquals(SendAlertResult.Sent, outcome.result)
+        assertEquals(listOf("pat-enc-guardado"), attemptRepository.renewed)
+        assertEquals(listOf("attempt-1", "attempt-renovado"), alertRepository.received.map { it.attemptId })
+        assertEquals("attempt-renovado", outcome.attempt.attemptId)
+    }
+
+    @Test
+    fun `el reenvio usa las mismas fotos y el mismo tipo`() = runTest {
+        alertRepository.queue += expired
+
+        sendAlert(attempt(), AlertType.PARKED_ON_GARAGE, evidence)
+
+        assertEquals(listOf(AlertType.PARKED_ON_GARAGE, AlertType.PARKED_ON_GARAGE), alertRepository.received.map { it.alertType })
+        assertSame(alertRepository.received[0].evidence, alertRepository.received[1].evidence)
+    }
+
+    @Test
+    fun `si el 410 se repite tras renovar no hay un tercer envio ni otra renovacion`() = runTest {
+        alertRepository.queue += expired
+        alertRepository.queue += expired
+
+        val outcome = sendAlert(attempt(), AlertType.CRASHED, evidence)
+
+        assertEquals(expired, outcome.result)
+        assertEquals(2, alertRepository.received.size)
+        assertEquals(1, attemptRepository.renewed.size)
+        assertEquals("attempt-renovado", outcome.attempt.attemptId)
+    }
+
+    @Test
+    fun `un error tras renovar se devuelve tal cual y el intento vigente es el nuevo`() = runTest {
+        alertRepository.queue += expired
+        alertRepository.queue += SendAlertResult.Failed(SendAlertError.Unavailable)
+
+        val outcome = sendAlert(attempt(), AlertType.CRASHED, evidence)
+
+        assertEquals(SendAlertResult.Failed(SendAlertError.Unavailable), outcome.result)
+        assertEquals("attempt-renovado", outcome.attempt.attemptId)
+    }
+
+    // -- expires_at ya vencido antes de enviar ----------------------------------------------
+
+    @Test
+    fun `si el intento ya vencio antes de enviar lo renueva primero y envia una sola vez`() = runTest {
+        val outcome = sendAlert(attempt(expiresAt = now.minusSeconds(1)), AlertType.CRASHED, evidence)
+
+        assertEquals(SendAlertResult.Sent, outcome.result)
+        assertEquals(1, attemptRepository.renewed.size)
+        assertEquals(listOf("attempt-renovado"), alertRepository.received.map { it.attemptId })
+    }
+
+    @Test
+    fun `vencer justo ahora cuenta como vencido`() = runTest {
+        sendAlert(attempt(expiresAt = now), AlertType.CRASHED, evidence)
+
+        assertEquals(1, attemptRepository.renewed.size)
+    }
+
+    @Test
+    fun `tras renovar antes de enviar, un 410 no dispara otra renovacion`() = runTest {
+        alertRepository.queue += expired
+
+        val outcome = sendAlert(attempt(expiresAt = now.minusSeconds(1)), AlertType.CRASHED, evidence)
+
+        assertEquals(expired, outcome.result)
+        assertEquals(1, attemptRepository.renewed.size)
+        assertEquals(1, alertRepository.received.size)
+    }
+
+    // -- Fallas al renovar ------------------------------------------------------------------
+
+    @Test
+    fun `si renovar falla no se envia y el error se traduce`() = runTest {
+        val cases = mapOf(
+            StartAlertAttemptResult.NotInNetwork to SendAlertError.AttemptNotFound,
+            StartAlertAttemptResult.UnderReview to SendAlertError.UnderReview,
+            StartAlertAttemptResult.InvalidPlate to SendAlertError.InvalidData,
+            StartAlertAttemptResult.RateLimited to SendAlertError.RateLimited,
+            StartAlertAttemptResult.Unavailable to SendAlertError.Unavailable,
+            StartAlertAttemptResult.Unexpected to SendAlertError.Unexpected,
         )
-        val alertRepository = FakeAlertRepository()
-        val startAttempt = StartAlertAttemptUseCase(attemptRepository)
-        val sendAlert = SendAlertUseCase(alertRepository)
 
-        val attempt = startAttempt("GUQ856") as StartAlertAttemptResult.Started
-        sendAlert(AlertType.CRASHED, attempt.patEnc)
+        cases.forEach { (renewal, expected) ->
+            alertRepository.received.clear()
+            attemptRepository.renewResult = renewal
 
-        assertEquals(patEnc, alertRepository.received.single().second)
+            val outcome = sendAlert(attempt(expiresAt = now.minusSeconds(1)), AlertType.CRASHED, evidence)
+
+            assertEquals("renovación $renewal", SendAlertResult.Failed(expected), outcome.result)
+            assertEquals(0, alertRepository.received.size)
+            assertEquals("attempt-1", outcome.attempt.attemptId)
+        }
+    }
+
+    @Test
+    fun `si el 410 llega y renovar falla no hay reenvio`() = runTest {
+        alertRepository.queue += expired
+        attemptRepository.renewResult = StartAlertAttemptResult.Unavailable
+
+        val outcome = sendAlert(attempt(), AlertType.CRASHED, evidence)
+
+        assertEquals(SendAlertResult.Failed(SendAlertError.Unavailable), outcome.result)
+        assertEquals(1, alertRepository.received.size)
     }
 }
