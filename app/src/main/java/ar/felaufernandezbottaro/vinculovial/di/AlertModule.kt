@@ -1,9 +1,9 @@
 package ar.felaufernandezbottaro.vinculovial.di
 
+import ar.felaufernandezbottaro.vinculovial.data.alert.AlertAttemptRepositoryImpl
 import ar.felaufernandezbottaro.vinculovial.data.alert.AlertRepositoryImpl
-import ar.felaufernandezbottaro.vinculovial.data.alert.VehicleCheckRepositoryImpl
+import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertAttemptRepository
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertRepository
-import ar.felaufernandezbottaro.vinculovial.domain.scan.VehicleCheckRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -16,7 +16,7 @@ abstract class AlertModule {
 
     @Binds
     @Singleton
-    abstract fun bindVehicleCheckRepository(impl: VehicleCheckRepositoryImpl): VehicleCheckRepository
+    abstract fun bindAlertAttemptRepository(impl: AlertAttemptRepositoryImpl): AlertAttemptRepository
 
     @Binds
     @Singleton

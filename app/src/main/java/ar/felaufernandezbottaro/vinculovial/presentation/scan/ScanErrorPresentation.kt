@@ -1,22 +1,22 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.scan
 
-import ar.felaufernandezbottaro.vinculovial.domain.scan.CheckVehicleError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
+import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
 
-fun CheckVehicleError.message(): String = when (this) {
-    CheckVehicleError.RateLimited ->
+fun StartAlertAttemptResult.Failure.message(): String = when (this) {
+    StartAlertAttemptResult.UnderReview ->
+        "Tu cuenta está en revisión. Por ahora no podés enviar alertas."
+
+    StartAlertAttemptResult.InvalidPlate ->
+        "La patente no es válida. Revisala e intentá de nuevo."
+
+    StartAlertAttemptResult.RateLimited ->
         "Alcanzaste el límite de consultas. Esperá unos minutos antes de volver a intentar."
 
-    CheckVehicleError.Configuration ->
-        "La app no está configurada. Probá más tarde o escribinos."
+    StartAlertAttemptResult.Unavailable ->
+        "No pudimos comunicarnos con el servidor. Revisá tu conexión e intentá de nuevo en unos minutos."
 
-    CheckVehicleError.Unavailable ->
-        "El servidor no está disponible en este momento. Intentá de nuevo en unos minutos."
-
-    CheckVehicleError.Network ->
-        "No pudimos comunicarnos con el servidor. Revisá tu conexión e intentá de nuevo."
-
-    CheckVehicleError.Unexpected ->
+    StartAlertAttemptResult.Unexpected ->
         "No pudimos verificar la patente. Intentá de nuevo en unos minutos."
 }
 

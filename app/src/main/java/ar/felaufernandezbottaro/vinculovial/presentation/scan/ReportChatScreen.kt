@@ -54,7 +54,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrange
 
 /**
  * Reporte del incidente como un hilo de mensajería, no un menú flotante sobre la cámara: la
- * patente ya quedó validada contra `/vehicles/check` en `ScanPlateScreen` -- acá sólo falta
+ * patente ya quedó validada contra `/alerts/attempts` en `ScanPlateScreen` -- acá sólo falta
  * elegir el tipo de incidente y publicarlo. El catálogo cerrado se ofrece como respuestas
  * rápidas al pie, nunca como texto libre.
  */

@@ -219,7 +219,7 @@ fun VinculoVialNavHost(
                 val viewModel = entry.sharedScanViewModel(navController)
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-                // El check contra /vehicles/check terminó: el catálogo de incidentes y el
+                // El intento contra /alerts/attempts terminó: el catálogo de incidentes y el
                 // envío del reporte viven en ReportChatScreen, no en un menú flotante sobre
                 // la cámara. Se saca ScanPlateScreen del back stack al navegar: no tiene
                 // sentido volver a la cámara en vivo una vez identificado el vehículo.
