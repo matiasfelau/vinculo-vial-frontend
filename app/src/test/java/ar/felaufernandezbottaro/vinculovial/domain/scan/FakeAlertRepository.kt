@@ -1,14 +1,32 @@
 package ar.felaufernandezbottaro.vinculovial.domain.scan
 
-/** Repositorio falso: registra los pares (alertType, patEnc) recibidos y devuelve lo programado. */
+import ar.felaufernandezbottaro.vinculovial.domain.evidence.EvidencePhotoSet
+import kotlinx.coroutines.CompletableDeferred
+
+/** Un envío recibido por [FakeAlertRepository]. */
+data class SentAlert(val attemptId: String, val alertType: AlertType, val evidence: EvidencePhotoSet)
+
+/**
+ * Repositorio falso: registra los envíos y devuelve, en orden, los resultados programados en
+ * [queue]; cuando la cola se vacía devuelve [result].
+ */
 class FakeAlertRepository(
     var result: SendAlertResult = SendAlertResult.Sent,
 ) : AlertRepository {
 
-    val received = mutableListOf<Pair<AlertType, String>>()
+    val queue = ArrayDeque<SendAlertResult>()
+    val received = mutableListOf<SentAlert>()
 
-    override suspend fun sendAlert(alertType: AlertType, patEnc: String): SendAlertResult {
-        received += alertType to patEnc
-        return result
+    /** Si no es `null`, cada envío espera a que se complete: sirve para probar envíos en vuelo. */
+    var gate: CompletableDeferred<Unit>? = null
+
+    override suspend fun sendAlert(
+        attemptId: String,
+        alertType: AlertType,
+        evidence: EvidencePhotoSet,
+    ): SendAlertResult {
+        received += SentAlert(attemptId, alertType, evidence)
+        gate?.await()
+        return queue.removeFirstOrNull() ?: result
     }
 }

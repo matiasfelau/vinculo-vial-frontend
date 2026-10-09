@@ -14,8 +14,10 @@ import ar.felaufernandezbottaro.vinculovial.domain.scan.FakePlateRecognitionStra
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertResult
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertUseCase
+import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
 import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptUseCase
 import ar.felaufernandezbottaro.vinculovial.util.MainDispatcherRule
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -26,6 +28,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 
 /** La captura guiada de evidencia dentro de `ScanViewModel`: pasos, procesamiento y wipe. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -37,13 +42,14 @@ class ScanViewModelEvidenceTest {
     private val attemptRepository = FakeAlertAttemptRepository()
     private val alertRepository = FakeAlertRepository()
     private val rasterFactory = StubEvidenceRasterFactory()
+    private val clock = Clock.fixed(Instant.parse("2029-12-31T00:00:00Z"), ZoneOffset.UTC)
 
     private fun viewModel() = ScanViewModel(
         frameCropper = FrameCropper(),
         recognitionStrategy = FakePlateRecognitionStrategy(),
         regexFilter = PlateRegexFilter(),
         startAlertAttempt = StartAlertAttemptUseCase(attemptRepository),
-        sendAlert = SendAlertUseCase(alertRepository),
+        sendAlert = SendAlertUseCase(alertRepository, attemptRepository, clock),
         evidenceProcessor = EvidenceImageProcessor(rasterFactory, UnconfinedTestDispatcher()),
         galleryEvidenceSource = FakeGalleryEvidenceSource(),
     )
@@ -315,6 +321,138 @@ class ScanViewModelEvidenceTest {
 
         store.clear()
 
+        assertTrue(rasterFactory.allWiped())
+    }
+
+    // -- Envio: intento vencido, reintento, reinicio ------------------------------------------
+
+    private val expired = SendAlertResult.Failed(SendAlertError.AttemptExpired)
+
+    @Test
+    fun `un 410 renueva el intento y tras un reintento manual se usa el intento renovado`() = runTest {
+        alertRepository.queue += expired
+        alertRepository.queue += SendAlertResult.Failed(SendAlertError.Unavailable)
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onReportRequested()
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.Unavailable), viewModel.uiState.value.status)
+        assertEquals(listOf("attempt-de-prueba", "attempt-renovado"), alertRepository.received.map { it.attemptId })
+
+        viewModel.onAlertRetry()
+
+        assertEquals("attempt-renovado", alertRepository.received.last().attemptId)
+        assertEquals(ScanStatus.AlertSent, viewModel.uiState.value.status)
+        assertEquals(1, attemptRepository.renewed.size)
+    }
+
+    @Test
+    fun `un reintento manual conserva las fotos hasta que el envio sale bien`() = runTest {
+        alertRepository.queue += SendAlertResult.Failed(SendAlertError.Unavailable)
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onReportRequested()
+        assertTrue(rasterFactory.anyAlive())
+
+        viewModel.onAlertRetry()
+        assertTrue(rasterFactory.allWiped())
+    }
+
+    @Test
+    fun `404 ATTEMPT_NOT_FOUND descarta las fotos y reiniciar vuelve a escanear`() = runTest {
+        alertRepository.result = SendAlertResult.Failed(SendAlertError.AttemptNotFound)
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onReportRequested()
+
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.AttemptNotFound), viewModel.uiState.value.status)
+        assertTrue(rasterFactory.allWiped())
+
+        viewModel.onFlowRestarted()
+
+        assertEquals(ScanStatus.Scanning, viewModel.uiState.value.status)
+        assertNull(viewModel.uiState.value.selectedAlertType)
+        assertEquals(EvidencePhase.IDLE, viewModel.evidence.phase)
+    }
+
+    @Test
+    fun `tras reiniciar no se puede reenviar con el intento perdido`() = runTest {
+        alertRepository.result = SendAlertResult.Failed(SendAlertError.AttemptNotFound)
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
+        viewModel.onFlowRestarted()
+
+        viewModel.onAlertRetry()
+
+        assertEquals(1, alertRepository.received.size)
+    }
+
+    @Test
+    fun `una cuenta en revision descarta las fotos`() = runTest {
+        alertRepository.result = SendAlertResult.Failed(SendAlertError.UnderReview)
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onReportRequested()
+
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.UnderReview), viewModel.uiState.value.status)
+        assertTrue(rasterFactory.allWiped())
+    }
+
+    @Test
+    fun `un error de evidencia conserva las fotos hasta que el usuario cierra`() = runTest {
+        alertRepository.result = SendAlertResult.Failed(SendAlertError.InvalidEvidence)
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onReportRequested()
+        assertTrue(rasterFactory.anyAlive())
+
+        viewModel.onReportCancelled()
+        assertTrue(rasterFactory.allWiped())
+    }
+
+    @Test
+    fun `un doble toque no sube las fotos dos veces`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        alertRepository.gate = gate
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onReportRequested()
+        viewModel.onReportRequested()
+        viewModel.onAlertRetry()
+        gate.complete(Unit)
+
+        assertEquals(1, alertRepository.received.size)
+        assertEquals(ScanStatus.AlertSent, viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `tras terminar un envio se puede volver a enviar`() = runTest {
+        alertRepository.queue += SendAlertResult.Failed(SendAlertError.Network)
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
+
+        viewModel.onAlertRetry()
+
+        assertEquals(2, alertRepository.received.size)
+    }
+
+    @Test
+    fun `si renovar un intento vencido dice que el vehiculo ya no esta en la red se reinicia el flujo`() = runTest {
+        alertRepository.queue += expired
+        attemptRepository.renewResult = StartAlertAttemptResult.NotInNetwork
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onReportRequested()
+
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.AttemptNotFound), viewModel.uiState.value.status)
         assertTrue(rasterFactory.allWiped())
     }
 

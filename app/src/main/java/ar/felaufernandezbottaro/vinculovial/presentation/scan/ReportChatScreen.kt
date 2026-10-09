@@ -61,6 +61,7 @@ fun ReportChatScreen(
     onAlertTypeSelected: (AlertType) -> Unit,
     onReportRequested: () -> Unit,
     onRetry: () -> Unit,
+    onRestart: () -> Unit,
     onFinished: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -114,7 +115,9 @@ fun ReportChatScreen(
                 onAlertTypeSelected = onAlertTypeSelected,
                 onReportRequested = onReportRequested,
                 onRetry = onRetry,
+                onRestart = onRestart,
                 onFinished = onFinished,
+                onClose = onCancel,
             )
         }
     }
@@ -137,7 +140,9 @@ private fun ReportChatFooter(
     onAlertTypeSelected: (AlertType) -> Unit,
     onReportRequested: () -> Unit,
     onRetry: () -> Unit,
+    onRestart: () -> Unit,
     onFinished: () -> Unit,
+    onClose: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -159,7 +164,11 @@ private fun ReportChatFooter(
                     color = VvOrange,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
-                VvPrimaryButton(text = "Reintentar", onClick = onRetry)
+                when (status.error.recovery()) {
+                    SendAlertRecovery.RETRY -> VvPrimaryButton(text = "Reintentar", onClick = onRetry)
+                    SendAlertRecovery.RESTART -> VvPrimaryButton(text = "Volver a empezar", onClick = onRestart)
+                    SendAlertRecovery.CLOSE -> VvPrimaryButton(text = "Cerrar", onClick = onClose)
+                }
             }
             ScanStatus.AlertSent -> VvPrimaryButton(text = "Continuar", onClick = onFinished)
             else -> Unit
@@ -227,7 +236,7 @@ private fun chatMessages(uiState: ScanUiState): List<ChatMessage> = buildList {
     }
 
     if (uiState.status is ScanStatus.AlertSent) {
-        add(ChatMessage.System("Reporte enviado de forma anónima."))
+        add(ChatMessage.System("Alerta enviada. La estamos validando."))
     }
 }
 

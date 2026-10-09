@@ -43,9 +43,6 @@ class AlertAttemptRepositoryImpl @Inject constructor(
     private val errorAdapter = moshi.adapter(ApiErrorDto::class.java)
 
     override suspend fun startAttempt(patente: String): StartAlertAttemptResult = withContext(dispatcher) {
-        val accessToken = tokenStore.read()?.accessToken
-            ?: return@withContext StartAlertAttemptResult.Unexpected
-
         val patEnc = try {
             encryptPatente(patente)
         } catch (e: CryptoConfigurationException) {
@@ -54,7 +51,18 @@ class AlertAttemptRepositoryImpl @Inject constructor(
             return@withContext StartAlertAttemptResult.Unexpected
         }
 
-        try {
+        requestAttempt(patEnc)
+    }
+
+    override suspend fun renewAttempt(patEnc: String): StartAlertAttemptResult = withContext(dispatcher) {
+        requestAttempt(patEnc)
+    }
+
+    /** La llamada 1 con un [patEnc] ya cifrado: la comparten el intento inicial y su renovación. */
+    private suspend fun requestAttempt(patEnc: String): StartAlertAttemptResult {
+        val accessToken = tokenStore.read()?.accessToken ?: return StartAlertAttemptResult.Unexpected
+
+        return try {
             api.startAttempt(BEARER_PREFIX + accessToken, AlertAttemptRequestDto(patEnc)).toResult(patEnc)
         } catch (e: CancellationException) {
             throw e
@@ -72,7 +80,7 @@ class AlertAttemptRepositoryImpl @Inject constructor(
         return when {
             isSuccessful -> body()?.toStarted(patEnc) ?: StartAlertAttemptResult.Unexpected
             status == HTTP_BAD_REQUEST -> StartAlertAttemptResult.InvalidPlate
-            status == HTTP_FORBIDDEN && errorCode() == CODE_ISSUER_UNDER_REVIEW -> StartAlertAttemptResult.UnderReview
+            status == HTTP_FORBIDDEN && apiErrorCode(errorAdapter) == CODE_ISSUER_UNDER_REVIEW -> StartAlertAttemptResult.UnderReview
             status == HTTP_NOT_FOUND -> StartAlertAttemptResult.NotInNetwork
             status == HTTP_TOO_MANY_REQUESTS -> StartAlertAttemptResult.RateLimited
             status.isTransientUpstreamFailure() -> StartAlertAttemptResult.Unavailable
@@ -90,20 +98,6 @@ class AlertAttemptRepositoryImpl @Inject constructor(
         } catch (e: DateTimeParseException) {
             StartAlertAttemptResult.Unexpected
         }
-
-    /** `null` si el cuerpo no está o no es el JSON del contrato: nunca tumba el manejo del error. */
-    private fun Response<*>.errorCode(): String? {
-        val raw = try {
-            errorBody()?.string()
-        } catch (e: IOException) {
-            null
-        }
-        return try {
-            raw?.let { errorAdapter.fromJson(it) }?.code
-        } catch (e: IOException) {
-            null
-        }
-    }
 
     /**
      * Sin envoltorio JSON: a diferencia del `payload_enc` de US-04 (varios campos), acá se

@@ -13,6 +13,7 @@ import ar.felaufernandezbottaro.vinculovial.data.scan.PlateRegexFilter
 import ar.felaufernandezbottaro.vinculovial.domain.evidence.EvidencePlan
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
 import ar.felaufernandezbottaro.vinculovial.domain.scan.PlateRecognitionStrategy
+import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertResult
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
@@ -55,6 +56,9 @@ class ScanViewModel @Inject constructor(
 
     /** Barrera sincrónica contra disparar el mismo check dos veces. */
     private val checkInFlight = AtomicBoolean(false)
+
+    /** Barrera sincrónica contra subir las fotos dos veces con un doble toque. */
+    private val sendInFlight = AtomicBoolean(false)
 
     /** El intento que ya abrió el servidor, a la espera de que el usuario elija un tipo de incidente. */
     private var pendingAttempt: StartAlertAttemptResult.Started? = null
@@ -292,34 +296,53 @@ class ScanViewModel @Inject constructor(
         return evidenceBuffers.read(step.role, evidence.photoIndex) { SecureBitmap.decode(it, maxSidePx) }
     }
 
-    /** Con la evidencia completa, manda el reporte con el mismo `pat_enc` que devolvió el intento. */
+    /** Con la evidencia completa, manda el reporte: las fotos se cifran para IA con el `attempt_id` vigente. */
     fun onReportRequested() {
-        val state = _uiState.value
-        val alertType = state.selectedAlertType ?: return
-        val attempt = pendingAttempt ?: return
-        if (state.evidence.phase != EvidencePhase.COMPLETE) return
-
-        submitAlert(alertType, attempt.patEnc)
+        if (_uiState.value.evidence.phase != EvidencePhase.COMPLETE) return
+        submitAlert()
     }
 
-    /** Reintenta con el mismo tipo ya elegido -- no vuelve a mostrar el catálogo. */
-    fun onAlertRetry() {
+    /**
+     * Reintento manual (429, 503, red, error inesperado): reenvía con las mismas fotos, que se
+     * conservan hasta el envío exitoso o la cancelación. Si el intento venció, se renueva solo.
+     */
+    fun onAlertRetry() = submitAlert()
+
+    /** 404 `ATTEMPT_NOT_FOUND`: el intento se perdió. Se descarta todo y se vuelve a escanear la patente. */
+    fun onFlowRestarted() {
+        evidenceBuffers.clear()
+        pendingAttempt = null
+        _uiState.value = ScanUiState()
+    }
+
+    private fun submitAlert() {
         val alertType = _uiState.value.selectedAlertType ?: return
         val attempt = pendingAttempt ?: return
-        submitAlert(alertType, attempt.patEnc)
-    }
+        if (!sendInFlight.compareAndSet(false, true)) return
 
-    private fun submitAlert(alertType: AlertType, patEnc: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(status = ScanStatus.SendingAlert) }
+            try {
+                _uiState.update { it.copy(status = ScanStatus.SendingAlert) }
 
-            when (val result = sendAlert(alertType, patEnc)) {
-                SendAlertResult.Sent -> {
-                    evidenceBuffers.clear()
-                    _uiState.update { it.copy(status = ScanStatus.AlertSent) }
+                val outcome = sendAlert(attempt, alertType, evidenceBuffers)
+                pendingAttempt = outcome.attempt
+
+                when (val result = outcome.result) {
+                    SendAlertResult.Sent -> {
+                        evidenceBuffers.clear()
+                        _uiState.update { it.copy(status = ScanStatus.AlertSent) }
+                    }
+                    is SendAlertResult.Failed -> {
+                        // Sin intento vigente o sin permiso de enviar no hay reenvío posible:
+                        // las fotos ya no sirven.
+                        if (result.error == SendAlertError.AttemptNotFound || result.error == SendAlertError.UnderReview) {
+                            evidenceBuffers.clear()
+                        }
+                        _uiState.update { it.copy(status = ScanStatus.AlertFailed(result.error)) }
+                    }
                 }
-                is SendAlertResult.Failed ->
-                    _uiState.update { it.copy(status = ScanStatus.AlertFailed(result.error)) }
+            } finally {
+                sendInFlight.set(false)
             }
         }
     }

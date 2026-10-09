@@ -25,11 +25,9 @@ data class ApiErrorDto(
     @Json(name = "code") val code: String? = null,
 )
 
-/** Payload de `POST /api/v1/alerts`: reusa el `pat_enc` del intento, nunca lo vuelve a cifrar. */
+/** Parte `metadata` de `POST /api/v1/alerts`: el intento y el tipo. La patente ya no viaja acá. */
 @JsonClass(generateAdapter = true)
-data class SendAlertRequestDto(
+data class SendAlertMetadataDto(
+    @Json(name = "attempt_id") val attemptId: String,
     @Json(name = "alert_type") val alertType: String,
-    @Json(name = "pat_enc") val patEnc: String,
-) {
-    override fun toString(): String = "SendAlertRequestDto(alertType=$alertType, patEnc=***)"
-}
+)

@@ -20,7 +20,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneOffset
 
 /**
  * No ejercita `processFrame`: recorta/lee un `ImageProxy`/`Bitmap` real, que no existe en un
@@ -37,6 +39,7 @@ class ScanViewModelTest {
     private val alertRepository = FakeAlertRepository()
 
     private val rasterFactory = StubEvidenceRasterFactory()
+    private val clock = Clock.fixed(Instant.parse("2029-12-31T00:00:00Z"), ZoneOffset.UTC)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun viewModel() = ScanViewModel(
@@ -44,7 +47,7 @@ class ScanViewModelTest {
         recognitionStrategy = FakePlateRecognitionStrategy(),
         regexFilter = PlateRegexFilter(),
         startAlertAttempt = StartAlertAttemptUseCase(checkRepository),
-        sendAlert = SendAlertUseCase(alertRepository),
+        sendAlert = SendAlertUseCase(alertRepository, checkRepository, clock),
         evidenceProcessor = EvidenceImageProcessor(rasterFactory, UnconfinedTestDispatcher()),
         galleryEvidenceSource = FakeGalleryEvidenceSource(),
     )
@@ -243,7 +246,7 @@ class ScanViewModelTest {
     }
 
     @Test
-    fun `reportar con la evidencia completa reusa el pat_enc que devolvio el intento`() = runTest {
+    fun `reportar con la evidencia completa envia el intento y el tipo elegido`() = runTest {
         checkRepository.result = started("pat-enc-del-intento")
         val viewModel = viewModel()
         viewModel.onPlateFound(patente)
@@ -253,7 +256,10 @@ class ScanViewModelTest {
         viewModel.completeEvidence()
         viewModel.onReportRequested()
 
-        assertEquals(listOf(AlertType.CRASHED to "pat-enc-del-intento"), alertRepository.received)
+        assertEquals(
+            listOf("attempt-de-prueba" to AlertType.CRASHED),
+            alertRepository.received.map { it.attemptId to it.alertType },
+        )
     }
 
     @Test
@@ -299,7 +305,7 @@ class ScanViewModelTest {
     }
 
     @Test
-    fun `reintentar tras un error de alert reusa el mismo tipo y el mismo pat_enc, sin generar uno nuevo`() = runTest {
+    fun `reintentar tras un error de alert reusa el mismo tipo y el mismo intento, sin pedir uno nuevo`() = runTest {
         checkRepository.result = started("pat-enc-del-intento")
         alertRepository.result = SendAlertResult.Failed(SendAlertError.Unexpected)
         val viewModel = viewModel()
@@ -313,9 +319,10 @@ class ScanViewModelTest {
         viewModel.onAlertRetry()
 
         assertEquals(
-            listOf(AlertType.CRASHED to "pat-enc-del-intento", AlertType.CRASHED to "pat-enc-del-intento"),
-            alertRepository.received,
+            listOf("attempt-de-prueba" to AlertType.CRASHED, "attempt-de-prueba" to AlertType.CRASHED),
+            alertRepository.received.map { it.attemptId to it.alertType },
         )
+        assertEquals(listOf("GUQ856"), checkRepository.received)
         assertEquals(ScanStatus.AlertSent, viewModel.uiState.value.status)
     }
 
