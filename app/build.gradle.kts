@@ -159,6 +159,21 @@ android {
     }
 }
 
+/**
+ * US-08: el manifiesto mergeado de release no puede traer permisos de lectura de medios (la
+ * galería sólo existe en `debug`). `ReleaseNoGalleryTest` lo verifica leyendo el manifiesto que
+ * AGP genera para release; esta ruta se le pasa como propiedad del sistema.
+ */
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        val mergedManifest = variant.artifacts.get(com.android.build.api.artifact.SingleArtifact.MERGED_MANIFEST)
+        tasks.withType<Test>().matching { it.name == "testReleaseUnitTest" }.configureEach {
+            inputs.file(mergedManifest)
+            doFirst { systemProperty("mergedManifestPath", mergedManifest.get().asFile.absolutePath) }
+        }
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

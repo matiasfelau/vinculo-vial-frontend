@@ -8,8 +8,13 @@ data class ScanUiState(
     val status: ScanStatus = ScanStatus.Scanning,
     /** El tipo elegido en `ReportChatScreen`, para renderizarlo como la burbuja del usuario. */
     val selectedAlertType: AlertType? = null,
+    /** La captura guiada de evidencia del tipo elegido. */
+    val evidence: EvidenceCaptureState = EvidenceCaptureState(),
 ) {
-    val isBusy: Boolean get() = status is ScanStatus.Checking || status is ScanStatus.SendingAlert
+    val isBusy: Boolean
+        get() = status is ScanStatus.Checking ||
+            status is ScanStatus.SendingAlert ||
+            evidence.phase == EvidencePhase.PROCESSING
 }
 
 sealed interface ScanStatus {

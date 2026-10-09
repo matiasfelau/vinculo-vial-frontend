@@ -18,17 +18,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -55,13 +52,14 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrange
 /**
  * Reporte del incidente como un hilo de mensajería, no un menú flotante sobre la cámara: la
  * patente ya quedó validada contra `/alerts/attempts` en `ScanPlateScreen` -- acá sólo falta
- * elegir el tipo de incidente y publicarlo. El catálogo cerrado se ofrece como respuestas
- * rápidas al pie, nunca como texto libre.
+ * elegir el tipo de incidente, sacar las fotos de evidencia y publicarlo. El catálogo cerrado
+ * se ofrece como respuestas rápidas al pie, nunca como texto libre.
  */
 @Composable
 fun ReportChatScreen(
     uiState: ScanUiState,
     onAlertTypeSelected: (AlertType) -> Unit,
+    onReportRequested: () -> Unit,
     onRetry: () -> Unit,
     onFinished: () -> Unit,
     onCancel: () -> Unit,
@@ -112,7 +110,9 @@ fun ReportChatScreen(
 
             ReportChatFooter(
                 status = uiState.status,
+                evidencePhase = uiState.evidence.phase,
                 onAlertTypeSelected = onAlertTypeSelected,
+                onReportRequested = onReportRequested,
                 onRetry = onRetry,
                 onFinished = onFinished,
             )
@@ -133,7 +133,9 @@ fun ReportChatScreen(
 @Composable
 private fun ReportChatFooter(
     status: ScanStatus,
+    evidencePhase: EvidencePhase,
     onAlertTypeSelected: (AlertType) -> Unit,
+    onReportRequested: () -> Unit,
     onRetry: () -> Unit,
     onFinished: () -> Unit,
 ) {
@@ -144,7 +146,12 @@ private fun ReportChatFooter(
             .padding(horizontal = 20.dp, vertical = 16.dp),
     ) {
         when (status) {
-            ScanStatus.AwaitingAlertType -> AlertTypeComposer(onReport = onAlertTypeSelected)
+            ScanStatus.AwaitingAlertType ->
+                if (evidencePhase == EvidencePhase.COMPLETE) {
+                    VvPrimaryButton(text = "Reportar", onClick = onReportRequested)
+                } else {
+                    AlertTypeComposer(onStartEvidence = onAlertTypeSelected)
+                }
             is ScanStatus.AlertFailed -> {
                 Text(
                     text = status.error.message(),
@@ -162,16 +169,14 @@ private fun ReportChatFooter(
 
 /**
  * Selección del tipo de incidente, tal como lo pide el wireframe: un dropdown con el catálogo
- * cerrado (nunca texto libre) y un botón de evidencia aparte. La evidencia todavía no tiene
- * backend que la reciba, así que por ahora sólo informa que la función está en desarrollo en
- * vez de simular una carga que no va a ningún lado.
+ * cerrado (nunca texto libre). Sólo ofrece los tipos que tienen validación de IA; elegir uno
+ * arranca la captura guiada de la evidencia.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AlertTypeComposer(onReport: (AlertType) -> Unit) {
+private fun AlertTypeComposer(onStartEvidence: (AlertType) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<AlertType?>(null) }
-    var showEvidenceInDevelopment by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
@@ -187,7 +192,7 @@ private fun AlertTypeComposer(onReport: (AlertType) -> Unit) {
                     .fillMaxWidth(),
             )
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                AlertType.entries.forEach { alertType ->
+                AlertType.offered.forEach { alertType ->
                     DropdownMenuItem(
                         text = { Text(alertType.label) },
                         onClick = {
@@ -199,36 +204,12 @@ private fun AlertTypeComposer(onReport: (AlertType) -> Unit) {
             }
         }
 
-        OutlinedButton(
-            onClick = { showEvidenceInDevelopment = true },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(imageVector = Icons.Filled.AddAPhoto, contentDescription = null)
-            Text(text = "Agregar evidencia", modifier = Modifier.padding(start = 8.dp))
-        }
-
         VvPrimaryButton(
-            text = "Reportar",
-            onClick = { selected?.let(onReport) },
+            text = "Sacar fotos",
+            onClick = { selected?.let(onStartEvidence) },
             enabled = selected != null,
         )
     }
-
-    if (showEvidenceInDevelopment) {
-        EvidenceInDevelopmentDialog(onDismiss = { showEvidenceInDevelopment = false })
-    }
-}
-
-@Composable
-private fun EvidenceInDevelopmentDialog(onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Función en desarrollo") },
-        text = { Text("Agregar evidencia todavía no está disponible. Vas a poder hacerlo en una próxima actualización.") },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Entendido", color = VvNavy) }
-        },
-    )
 }
 
 private sealed interface ChatMessage {
@@ -240,6 +221,10 @@ private fun chatMessages(uiState: ScanUiState): List<ChatMessage> = buildList {
     add(ChatMessage.System("Vehículo identificado. ¿Qué infracción deseas reportar?"))
 
     uiState.selectedAlertType?.let { add(ChatMessage.User(it.label)) }
+
+    if (uiState.evidence.phase == EvidencePhase.COMPLETE) {
+        add(ChatMessage.System("Fotos listas. Ya podés enviar el reporte."))
+    }
 
     if (uiState.status is ScanStatus.AlertSent) {
         add(ChatMessage.System("Reporte enviado de forma anónima."))
