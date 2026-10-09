@@ -63,7 +63,7 @@ import java.util.concurrent.Executors
 
 /**
  * Escaneo en vivo de la patente: cámara + overlay rectangular, sin obturador. Cubre sólo hasta
- * que el check contra `/vehicles/check` responde: el catálogo de incidentes y el envío del
+ * que el intento contra `/alerts/attempts` responde: el catálogo de incidentes y el envío del
  * reporte viven en `ReportChatScreen`, una pantalla aparte -- no un menú flotante sobre la
  * cámara -- a la que el `NavHost` navega apenas el status pasa a `AwaitingAlertType`.
  */
@@ -238,7 +238,7 @@ fun ScanPlateScreen(
 
         val checkFailed = uiState.status as? ScanStatus.CheckFailed
         if (checkFailed != null) {
-            ScanErrorDialog(message = checkFailed.error.message(), onDismiss = onCheckErrorDismissed)
+            ScanErrorDialog(message = checkFailed.failure.message(), onDismiss = onCheckErrorDismissed)
         }
 
     }

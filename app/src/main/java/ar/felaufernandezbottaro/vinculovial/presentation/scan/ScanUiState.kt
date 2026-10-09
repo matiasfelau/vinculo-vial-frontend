@@ -1,8 +1,8 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.scan
 
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
-import ar.felaufernandezbottaro.vinculovial.domain.scan.CheckVehicleError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
+import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
 
 data class ScanUiState(
     val status: ScanStatus = ScanStatus.Scanning,
@@ -34,13 +34,13 @@ sealed interface ScanStatus {
      */
     data class ManualEntry(val error: String? = null) : ScanStatus
 
-    /** Cifrando y consultando `/vehicles/check`. */
+    /** Cifrando y abriendo el intento en `/alerts/attempts`. */
     data object Checking : ScanStatus
 
     /** 404: el vehículo no está en la red. No se ofrece alertar igual. */
     data object NotInNetwork : ScanStatus
 
-    /** 200: se abre el catálogo cerrado de incidentes. */
+    /** 201: se abre el catálogo cerrado de incidentes. */
     data object AwaitingAlertType : ScanStatus
 
     data object SendingAlert : ScanStatus
@@ -48,7 +48,7 @@ sealed interface ScanStatus {
     /** 202: confirmación genérica -- nunca cuántos dueños ni si llegó. */
     data object AlertSent : ScanStatus
 
-    data class CheckFailed(val error: CheckVehicleError) : ScanStatus
+    data class CheckFailed(val failure: StartAlertAttemptResult.Failure) : ScanStatus
 
     data class AlertFailed(val error: SendAlertError) : ScanStatus
 }

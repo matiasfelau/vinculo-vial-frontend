@@ -6,11 +6,11 @@ import androidx.lifecycle.viewModelScope
 import ar.felaufernandezbottaro.vinculovial.data.scan.FrameCropper
 import ar.felaufernandezbottaro.vinculovial.data.scan.PlateRegexFilter
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
-import ar.felaufernandezbottaro.vinculovial.domain.scan.CheckVehicleResult
-import ar.felaufernandezbottaro.vinculovial.domain.scan.CheckVehicleUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.scan.PlateRecognitionStrategy
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertResult
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertUseCase
+import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
+import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +23,7 @@ import javax.inject.Inject
 
 /**
  * Orquesta el pipeline de escaneo (recorte + OCR + filtro de formato) y el flujo de dos pasos
- * de US-05 (check + alert). Sólo `PlateRecognitionStrategy` es una interfaz de `domain`: el
+ * de US-05/US-08 (intento + alert). Sólo `PlateRecognitionStrategy` es una interfaz de `domain`: el
  * recorte y el filtro de formato son transformaciones de `data` sin estado de negocio propio,
  * así que se consumen directo acá -- mismo criterio que las funciones de `CameraInternals` en
  * `presentation.camera`.
@@ -33,7 +33,7 @@ class ScanViewModel @Inject constructor(
     private val frameCropper: FrameCropper,
     private val recognitionStrategy: PlateRecognitionStrategy,
     private val regexFilter: PlateRegexFilter,
-    private val checkVehicle: CheckVehicleUseCase,
+    private val startAlertAttempt: StartAlertAttemptUseCase,
     private val sendAlert: SendAlertUseCase,
 ) : ViewModel() {
 
@@ -46,8 +46,8 @@ class ScanViewModel @Inject constructor(
     /** Barrera sincrónica contra disparar el mismo check dos veces. */
     private val checkInFlight = AtomicBoolean(false)
 
-    /** El `pat_enc` que ya devolvió el check, a la espera de que el usuario elija un tipo de incidente. */
-    private var pendingPatEnc: String? = null
+    /** El intento que ya abrió el servidor, a la espera de que el usuario elija un tipo de incidente. */
+    private var pendingAttempt: StartAlertAttemptResult.Started? = null
 
     /**
      * Recorta, corre OCR y filtra un frame del análisis en vivo. Se llama desde el hilo del
@@ -135,15 +135,15 @@ class ScanViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(status = ScanStatus.Checking) }
 
-            when (val result = checkVehicle(patente)) {
-                is CheckVehicleResult.Found -> {
-                    pendingPatEnc = result.patEnc
+            when (val result = startAlertAttempt(patente)) {
+                is StartAlertAttemptResult.Started -> {
+                    pendingAttempt = result
                     _uiState.update { it.copy(status = ScanStatus.AwaitingAlertType) }
                 }
-                CheckVehicleResult.NotInNetwork ->
+                StartAlertAttemptResult.NotInNetwork ->
                     _uiState.update { it.copy(status = ScanStatus.NotInNetwork) }
-                is CheckVehicleResult.Failed ->
-                    _uiState.update { it.copy(status = ScanStatus.CheckFailed(result.error)) }
+                is StartAlertAttemptResult.Failure ->
+                    _uiState.update { it.copy(status = ScanStatus.CheckFailed(result)) }
             }
 
             checkInFlight.set(false)
@@ -153,19 +153,19 @@ class ScanViewModel @Inject constructor(
     /**
      * Elegida en el `ReportChatScreen`: se guarda en [ScanUiState.selectedAlertType] para
      * renderizarla como el mensaje del usuario en el hilo, y se manda con el mismo `pat_enc`
-     * que ya devolvió el check -- nunca uno nuevo.
+     * que ya devolvió el intento -- nunca uno nuevo.
      */
     fun onAlertTypeSelected(alertType: AlertType) {
-        val patEnc = pendingPatEnc ?: return
+        val attempt = pendingAttempt ?: return
         _uiState.update { it.copy(selectedAlertType = alertType) }
-        submitAlert(alertType, patEnc)
+        submitAlert(alertType, attempt.patEnc)
     }
 
     /** Reintenta con el mismo tipo ya elegido -- no vuelve a mostrar el catálogo. */
     fun onAlertRetry() {
         val alertType = _uiState.value.selectedAlertType ?: return
-        val patEnc = pendingPatEnc ?: return
-        submitAlert(alertType, patEnc)
+        val attempt = pendingAttempt ?: return
+        submitAlert(alertType, attempt.patEnc)
     }
 
     private fun submitAlert(alertType: AlertType, patEnc: String) {
@@ -186,7 +186,7 @@ class ScanViewModel @Inject constructor(
 
     /** Cierra el error del check (previo a la navegación al chat) y retoma el escaneo. */
     fun onCheckErrorDismissed() {
-        pendingPatEnc = null
+        pendingAttempt = null
         resumeScanning()
     }
 

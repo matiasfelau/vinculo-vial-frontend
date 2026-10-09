@@ -1,6 +1,6 @@
 package ar.felaufernandezbottaro.vinculovial.data.alert
 
-import ar.felaufernandezbottaro.vinculovial.data.alert.dto.VehicleCheckRequestDto
+import ar.felaufernandezbottaro.vinculovial.data.alert.dto.AlertAttemptRequestDto
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationTokenGenerator
 import ar.felaufernandezbottaro.vinculovial.data.crypto.MockAttestationProvider
@@ -19,14 +19,14 @@ import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 
 /**
- * Test de contrato contra el Gateway simulado para `/vehicles/check`: sólo la forma de la
- * request. El mapeo de códigos de respuesta a resultado de dominio vive en
- * `VehicleCheckRepositoryImpl`, no acá.
+ * Test de contrato contra el Gateway simulado para `/alerts/attempts`: sólo la forma de la
+ * request y de la respuesta 201. El mapeo de códigos de respuesta a resultado de dominio vive
+ * en `AlertAttemptRepositoryImpl`, no acá.
  */
-class VehicleCheckApiTest {
+class AlertAttemptApiTest {
 
     private lateinit var server: MockWebServer
-    private lateinit var api: VehicleCheckApi
+    private lateinit var api: AlertAttemptApi
 
     @Before
     fun setUp() {
@@ -50,7 +50,7 @@ class VehicleCheckApiTest {
             .client(client)
             .addConverterFactory(MoshiConverterFactory.create(Moshi.Builder().build()))
             .build()
-            .create(VehicleCheckApi::class.java)
+            .create(AlertAttemptApi::class.java)
     }
 
     @After
@@ -60,21 +60,21 @@ class VehicleCheckApiTest {
 
     @Test
     fun `publica en el endpoint del contrato con el bearer token`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(200))
+        server.enqueue(createdResponse())
 
-        api.checkVehicle("Bearer access-abc", VehicleCheckRequestDto("cryptograma"))
+        api.startAttempt("Bearer access-abc", AlertAttemptRequestDto("cryptograma"))
 
         val request = server.takeRequest()
         assertEquals("POST", request.method)
-        assertEquals("/api/v1/vehicles/check", request.path)
+        assertEquals("/api/v1/alerts/attempts", request.path)
         assertEquals("Bearer access-abc", request.getHeader("Authorization"))
     }
 
     @Test
     fun `el cuerpo lleva un unico pat_enc`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(200))
+        server.enqueue(createdResponse())
 
-        api.checkVehicle("Bearer access-abc", VehicleCheckRequestDto("cryptograma-de-la-patente"))
+        api.startAttempt("Bearer access-abc", AlertAttemptRequestDto("cryptograma-de-la-patente"))
 
         val body = JSONObject(server.takeRequest().body.readUtf8())
         assertEquals(1, body.length())
@@ -82,20 +82,17 @@ class VehicleCheckApiTest {
     }
 
     @Test
-    fun `200 no trae cuerpo que parsear`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(200))
+    fun `201 trae attempt_id y expires_at`() = runTest {
+        server.enqueue(createdResponse())
 
-        val response = api.checkVehicle("Bearer access-abc", VehicleCheckRequestDto("cryptograma"))
+        val response = api.startAttempt("Bearer access-abc", AlertAttemptRequestDto("cryptograma"))
 
-        assertEquals(200, response.code())
+        assertEquals(201, response.code())
+        assertEquals("3f2b8c1e-0000-4000-8000-000000000001", response.body()?.attemptId)
+        assertEquals("2030-01-01T00:10:00Z", response.body()?.expiresAt)
     }
 
-    @Test
-    fun `404 no trae cuerpo que parsear`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(404))
-
-        val response = api.checkVehicle("Bearer access-abc", VehicleCheckRequestDto("cryptograma"))
-
-        assertEquals(404, response.code())
-    }
+    private fun createdResponse() = MockResponse()
+        .setResponseCode(201)
+        .setBody("""{"attempt_id":"3f2b8c1e-0000-4000-8000-000000000001","expires_at":"2030-01-01T00:10:00Z"}""")
 }

@@ -86,10 +86,10 @@ class AttestationInterceptorTest {
     }
 
     @Test
-    fun `si la attestation falla en vehicles check la request sigue sin el header`() {
+    fun `si la attestation falla en alerts attempts la request sigue sin el header`() {
         server.enqueue(MockResponse().setResponseCode(200))
 
-        val response = clientWith(failingProvider()).newCall(requestTo("/api/v1/vehicles/check")).execute()
+        val response = clientWith(failingProvider()).newCall(requestTo("/api/v1/alerts/attempts")).execute()
 
         assertEquals(200, response.code)
         assertNull(server.takeRequest().getHeader(AttestationInterceptor.HEADER))

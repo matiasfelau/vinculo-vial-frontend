@@ -10,7 +10,7 @@ interface AlertApi {
 
     /**
      * Protegido por JWT (Kong) + Rate Limiting por `X-User-Id`, no por App Attestation --
-     * `AttestationInterceptor` trata este path en modo best-effort, igual que `/vehicles/check`.
+     * `AttestationInterceptor` trata este path en modo best-effort, igual que `/alerts/attempts`.
      */
     @POST("api/v1/alerts")
     suspend fun sendAlert(

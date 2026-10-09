@@ -3,7 +3,7 @@ package ar.felaufernandezbottaro.vinculovial.di
 import com.squareup.moshi.Moshi
 import ar.felaufernandezbottaro.vinculovial.BuildConfig
 import ar.felaufernandezbottaro.vinculovial.data.alert.AlertApi
-import ar.felaufernandezbottaro.vinculovial.data.alert.VehicleCheckApi
+import ar.felaufernandezbottaro.vinculovial.data.alert.AlertAttemptApi
 import ar.felaufernandezbottaro.vinculovial.data.inbox.InboxApi
 import ar.felaufernandezbottaro.vinculovial.data.notifications.NotificationsApi
 import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
@@ -162,11 +162,11 @@ object NetworkModule {
     fun provideVehicleApi(retrofit: Retrofit): VehicleApi =
         retrofit.create(VehicleApi::class.java)
 
-    /** Mismo cliente que `VehicleApi`: `/vehicles/check` es autenticado por JWT, no por attestation. */
+    /** Mismo cliente que `VehicleApi`: `/alerts/attempts` es autenticado por JWT, no por attestation. */
     @Provides
     @Singleton
-    fun provideVehicleCheckApi(retrofit: Retrofit): VehicleCheckApi =
-        retrofit.create(VehicleCheckApi::class.java)
+    fun provideAlertAttemptApi(retrofit: Retrofit): AlertAttemptApi =
+        retrofit.create(AlertAttemptApi::class.java)
 
     /** Mismo cliente que `VehicleApi`: `/alerts` es autenticado por JWT, no por attestation. */
     @Provides
