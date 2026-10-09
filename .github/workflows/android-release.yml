@@ -36,7 +36,9 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run unit tests (JVM)
-        run: ./gradlew testDebugUnitTest --console=plain
+        # testReleaseUnitTest corre además la guardia del manifiesto mergeado de release (US-08):
+        # sin permisos de lectura de medios y sin el código del picker de la galería.
+        run: ./gradlew testDebugUnitTest testReleaseUnitTest --console=plain
 
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --console=plain

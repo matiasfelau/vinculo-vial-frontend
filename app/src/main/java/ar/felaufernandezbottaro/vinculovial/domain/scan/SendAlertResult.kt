@@ -38,16 +38,26 @@ sealed interface SendAlertError {
     /** 404 `ATTEMPT_NOT_FOUND`: el intento no existe o es de otro usuario. Hay que reiniciar el flujo. */
     data object AttemptNotFound : SendAlertError
 
+    /**
+     * 404 `ATTEMPT_NOT_FOUND` en un reintento tras una falla de red al enviar: el primer envío
+     * pudo haber llegado y haber consumido el intento. No se reinicia el flujo en silencio ni se
+     * reenvía (podría duplicar la alerta): se avisa que pudo haberse enviado.
+     */
+    data object PossiblySent : SendAlertError
+
     /** 410 `ATTEMPT_EXPIRED` que persiste tras renovar el intento una vez. */
     data object AttemptExpired : SendAlertError
 
     /** 429: límite de Kong alcanzado. No reintentar automático. */
     data object RateLimited : SendAlertError
 
-    /** 502/503/504 o circuito abierto: el Gateway o una dependencia suya no está disponible. Transitorio. */
+    /** 502/503/504 o circuito abierto: el Gateway o una dependencia suya no está disponible. Transitorio, reintentable. */
     data object Unavailable : SendAlertError
 
-    /** Sin conexión, timeout o servidor inalcanzable. */
+    /**
+     * Sin conexión, timeout o servidor inalcanzable. Si el corte ocurrió después de empezar a
+     * subir las fotos, el envío pudo haber llegado: ver [PossiblySent].
+     */
     data object Network : SendAlertError
 
     /** Cualquier otra cosa, incluido 500, un 401 que TokenAuthenticator no pudo resolver y la configuración de build. */

@@ -26,6 +26,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -62,6 +63,7 @@ fun ReportChatScreen(
     onReportRequested: () -> Unit,
     onRetry: () -> Unit,
     onRestart: () -> Unit,
+    onOpenInbox: () -> Unit,
     onFinished: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -116,6 +118,7 @@ fun ReportChatScreen(
                 onReportRequested = onReportRequested,
                 onRetry = onRetry,
                 onRestart = onRestart,
+                onOpenInbox = onOpenInbox,
                 onFinished = onFinished,
                 onClose = onCancel,
             )
@@ -141,6 +144,7 @@ private fun ReportChatFooter(
     onReportRequested: () -> Unit,
     onRetry: () -> Unit,
     onRestart: () -> Unit,
+    onOpenInbox: () -> Unit,
     onFinished: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -167,6 +171,15 @@ private fun ReportChatFooter(
                 when (status.error.recovery()) {
                     SendAlertRecovery.RETRY -> VvPrimaryButton(text = "Reintentar", onClick = onRetry)
                     SendAlertRecovery.RESTART -> VvPrimaryButton(text = "Volver a empezar", onClick = onRestart)
+                    SendAlertRecovery.CHECK_INBOX -> {
+                        VvPrimaryButton(text = "Ir al buzón", onClick = onOpenInbox)
+                        OutlinedButton(
+                            onClick = onClose,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                        ) { Text("Cerrar") }
+                    }
                     SendAlertRecovery.CLOSE -> VvPrimaryButton(text = "Cerrar", onClick = onClose)
                 }
             }

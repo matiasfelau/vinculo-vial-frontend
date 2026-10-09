@@ -42,6 +42,10 @@ fun SendAlertError.message(): String = when (this) {
     SendAlertError.AttemptNotFound ->
         "Se perdió la verificación de la patente. Volvé a empezar."
 
+    SendAlertError.PossiblySent ->
+        "Se cortó la conexión mientras enviábamos la alerta y no pudimos confirmar si llegó. " +
+            "Puede que ya se haya enviado, así que no la reenviamos para no duplicarla."
+
     SendAlertError.AttemptExpired ->
         "La verificación de la patente venció. Intentá de nuevo."
 
@@ -60,11 +64,14 @@ fun SendAlertError.message(): String = when (this) {
 
 /** Qué se le ofrece al usuario tras un error del envío. */
 enum class SendAlertRecovery {
-    /** Reintento manual con las mismas fotos: errores transitorios (429, 503, red). */
+    /** Reintento manual con las mismas fotos: errores transitorios (429, 502/503/504, red). */
     RETRY,
 
     /** Empezar de nuevo desde la patente: el intento se perdió. */
     RESTART,
+
+    /** Pudo haberse enviado: no se reenvía ni se reinicia; se ofrece ir al buzón o cerrar. */
+    CHECK_INBOX,
 
     /** Nada que reintentar con lo que hay: sólo cerrar y descartar. */
     CLOSE,
@@ -79,6 +86,8 @@ fun SendAlertError.recovery(): SendAlertRecovery = when (this) {
     -> SendAlertRecovery.RETRY
 
     SendAlertError.AttemptNotFound -> SendAlertRecovery.RESTART
+
+    SendAlertError.PossiblySent -> SendAlertRecovery.CHECK_INBOX
 
     SendAlertError.InvalidEvidence,
     SendAlertError.AlertTypeDisabled,

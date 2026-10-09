@@ -60,6 +60,14 @@ class ScanViewModel @Inject constructor(
     /** Barrera sincrónica contra subir las fotos dos veces con un doble toque. */
     private val sendInFlight = AtomicBoolean(false)
 
+    /**
+     * Una falla de red cortó un envío: pudo haber llegado al servidor y haber consumido el
+     * intento. Si después un reintento recibe 404 `ATTEMPT_NOT_FOUND`, no se sabe si la alerta
+     * ya se creó (ver [SendAlertError.PossiblySent]). Se mantiene hasta que el envío sale bien o
+     * se descarta el reporte, aunque un reintento intermedio falle por otra causa.
+     */
+    private var sendMayHaveReachedServer = false
+
     /** El intento que ya abrió el servidor, a la espera de que el usuario elija un tipo de incidente. */
     private var pendingAttempt: StartAlertAttemptResult.Started? = null
 
@@ -280,6 +288,7 @@ class ScanViewModel @Inject constructor(
     /** Sale de la captura sin enviar: libera las fotos y vuelve a elegir el tipo. */
     fun onEvidenceDiscarded() {
         evidenceBuffers.clear()
+        sendMayHaveReachedServer = false
         _uiState.update { it.copy(selectedAlertType = null, evidence = EvidenceCaptureState()) }
     }
 
@@ -303,7 +312,7 @@ class ScanViewModel @Inject constructor(
     }
 
     /**
-     * Reintento manual (429, 503, red, error inesperado): reenvía con las mismas fotos, que se
+     * Reintento manual (429, 502/503/504, red, error inesperado): reenvía con las mismas fotos, que se
      * conservan hasta el envío exitoso o la cancelación. Si el intento venció, se renueva solo.
      */
     fun onAlertRetry() = submitAlert()
@@ -312,6 +321,7 @@ class ScanViewModel @Inject constructor(
     fun onFlowRestarted() {
         evidenceBuffers.clear()
         pendingAttempt = null
+        sendMayHaveReachedServer = false
         _uiState.value = ScanUiState()
     }
 
@@ -329,16 +339,29 @@ class ScanViewModel @Inject constructor(
 
                 when (val result = outcome.result) {
                     SendAlertResult.Sent -> {
+                        sendMayHaveReachedServer = false
                         evidenceBuffers.clear()
                         _uiState.update { it.copy(status = ScanStatus.AlertSent) }
                     }
                     is SendAlertResult.Failed -> {
+                        val error = if (result.error == SendAlertError.AttemptNotFound && sendMayHaveReachedServer) {
+                            SendAlertError.PossiblySent
+                        } else {
+                            result.error
+                        }
+                        if (result.error == SendAlertError.Network) sendMayHaveReachedServer = true
+
                         // Sin intento vigente o sin permiso de enviar no hay reenvío posible:
                         // las fotos ya no sirven.
-                        if (result.error == SendAlertError.AttemptNotFound || result.error == SendAlertError.UnderReview) {
-                            evidenceBuffers.clear()
+                        when (error) {
+                            SendAlertError.AttemptNotFound, SendAlertError.PossiblySent -> {
+                                evidenceBuffers.clear()
+                                pendingAttempt = null
+                            }
+                            SendAlertError.UnderReview -> evidenceBuffers.clear()
+                            else -> Unit
                         }
-                        _uiState.update { it.copy(status = ScanStatus.AlertFailed(result.error)) }
+                        _uiState.update { it.copy(status = ScanStatus.AlertFailed(error)) }
                     }
                 }
             } finally {

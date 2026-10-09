@@ -456,6 +456,152 @@ class ScanViewModelEvidenceTest {
         assertTrue(rasterFactory.allWiped())
     }
 
+    // -- Falla de red al enviar y 404 al reintentar: pudo haberse enviado ---------------------
+
+    private val networkFailure = SendAlertResult.Failed(SendAlertError.Network)
+    private val attemptNotFound = SendAlertResult.Failed(SendAlertError.AttemptNotFound)
+
+    @Test
+    fun `una falla de red y un 404 al reintentar avisan que pudo haberse enviado, sin reiniciar en silencio`() = runTest {
+        alertRepository.queue += networkFailure
+        alertRepository.queue += attemptNotFound
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onReportRequested()
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.Network), viewModel.uiState.value.status)
+
+        viewModel.onAlertRetry()
+
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.PossiblySent), viewModel.uiState.value.status)
+        assertEquals(SendAlertRecovery.CHECK_INBOX, SendAlertError.PossiblySent.recovery())
+    }
+
+    @Test
+    fun `el aviso de envio incierto descarta las fotos y no permite reenviar`() = runTest {
+        alertRepository.queue += networkFailure
+        alertRepository.queue += attemptNotFound
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
+        viewModel.onAlertRetry()
+
+        assertTrue(rasterFactory.allWiped())
+
+        viewModel.onAlertRetry()
+        viewModel.onReportRequested()
+
+        assertEquals(2, alertRepository.received.size)
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.PossiblySent), viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `sin una falla de red previa el 404 reinicia el flujo como antes`() = runTest {
+        alertRepository.queue += SendAlertResult.Failed(SendAlertError.Unavailable)
+        alertRepository.queue += attemptNotFound
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
+
+        viewModel.onAlertRetry()
+
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.AttemptNotFound), viewModel.uiState.value.status)
+        assertEquals(SendAlertRecovery.RESTART, SendAlertError.AttemptNotFound.recovery())
+    }
+
+    @Test
+    fun `un 404 en el primer envio reinicia el flujo, no hay duda de que no se envio`() = runTest {
+        alertRepository.queue += attemptNotFound
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onReportRequested()
+
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.AttemptNotFound), viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `la duda persiste aunque un reintento intermedio falle por otra causa`() = runTest {
+        alertRepository.queue += networkFailure
+        alertRepository.queue += SendAlertResult.Failed(SendAlertError.Unavailable)
+        alertRepository.queue += attemptNotFound
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
+        viewModel.onAlertRetry()
+
+        viewModel.onAlertRetry()
+
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.PossiblySent), viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `una falla de red tras renovar un intento vencido tambien deja la duda`() = runTest {
+        alertRepository.queue += expired
+        alertRepository.queue += networkFailure
+        alertRepository.queue += attemptNotFound
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.Network), viewModel.uiState.value.status)
+
+        viewModel.onAlertRetry()
+
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.PossiblySent), viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `reiniciar el flujo borra la duda de un envio anterior`() = runTest {
+        alertRepository.queue += networkFailure
+        alertRepository.queue += attemptNotFound
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
+        viewModel.onAlertRetry()
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.PossiblySent), viewModel.uiState.value.status)
+
+        viewModel.onFlowRestarted()
+        viewModel.onPlateFound("GUQ856")
+        viewModel.onPlateConfirmed()
+        viewModel.onAlertTypeSelected(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        alertRepository.queue += attemptNotFound
+        viewModel.onReportRequested()
+
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.AttemptNotFound), viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `un envio exitoso tras una falla de red no deja aviso`() = runTest {
+        alertRepository.queue += networkFailure
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
+
+        viewModel.onAlertRetry()
+
+        assertEquals(ScanStatus.AlertSent, viewModel.uiState.value.status)
+    }
+
+    // -- 504: el mismo manejo que un 503 -------------------------------------------------------
+
+    @Test
+    fun `una falla transitoria del servidor ofrece reintentar y el reintento funciona`() = runTest {
+        // El repositorio traduce 502, 503 y 504 al mismo `Unavailable` (ver AlertWireContractTest).
+        alertRepository.queue += SendAlertResult.Failed(SendAlertError.Unavailable)
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onReportRequested()
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.Unavailable), viewModel.uiState.value.status)
+        assertEquals(SendAlertRecovery.RETRY, SendAlertError.Unavailable.recovery())
+        assertTrue(rasterFactory.anyAlive())
+
+        viewModel.onAlertRetry()
+
+        assertEquals(ScanStatus.AlertSent, viewModel.uiState.value.status)
+    }
+
     // -- Reportar ----------------------------------------------------------------------------
 
     @Test

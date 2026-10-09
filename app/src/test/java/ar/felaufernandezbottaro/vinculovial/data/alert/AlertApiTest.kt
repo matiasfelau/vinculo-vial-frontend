@@ -101,7 +101,7 @@ class AlertApiTest {
 
         api.sendAlert("Bearer access-abc", parts)
 
-        val wire = parseMultipart(server.takeRequest().let { it.getHeader("Content-Type").orEmpty() to it.body.readByteArray() })
+        val wire = server.takeRequest().parseMultipartWire()
         assertEquals(listOf("metadata", "general", "detail"), wire.map { it.name })
         assertEquals(
             listOf("application/json", "application/octet-stream", "application/octet-stream"),
@@ -115,7 +115,7 @@ class AlertApiTest {
 
         api.sendAlert("Bearer access-abc", parts)
 
-        val wire = parseMultipart(server.takeRequest().let { it.getHeader("Content-Type").orEmpty() to it.body.readByteArray() })
+        val wire = server.takeRequest().parseMultipartWire()
         assertEquals("""{"attempt_id":"a-1","alert_type":"CRASHED"}""", String(wire[0].content, Charsets.UTF_8))
         assertArrayEquals(binary, wire[1].content)
         assertArrayEquals(binary, wire[2].content)
@@ -137,28 +137,5 @@ class AlertApiTest {
         val response = api.sendAlert("Bearer access-abc", parts)
 
         assertEquals(400, response.code())
-    }
-
-    private class WirePart(val name: String, val contentType: String?, val content: ByteArray)
-
-    /** Parser mínimo de multipart/form-data, binario-seguro (trabaja en ISO-8859-1). */
-    private fun parseMultipart(request: Pair<String, ByteArray>): List<WirePart> {
-        val (contentType, body) = request
-        val boundary = "--" + contentType.substringAfter("boundary=")
-        val text = String(body, Charsets.ISO_8859_1)
-
-        return text.split(boundary)
-            .drop(1)
-            .filterNot { it.startsWith("--") }
-            .map { section ->
-                val content = section.removePrefix("\r\n").removeSuffix("\r\n")
-                val headers = content.substringBefore("\r\n\r\n")
-                val payload = content.substringAfter("\r\n\r\n")
-                WirePart(
-                    name = Regex("""name="([^"]*)"""").find(headers)?.groupValues?.get(1).orEmpty(),
-                    contentType = Regex("""Content-Type: ([^\r\n]*)""").find(headers)?.groupValues?.get(1),
-                    content = payload.toByteArray(Charsets.ISO_8859_1),
-                )
-            }
     }
 }
