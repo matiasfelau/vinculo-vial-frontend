@@ -35,6 +35,8 @@ import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpFormScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpStatus
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpSuccessScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpViewModel
+import ar.felaufernandezbottaro.vinculovial.presentation.scan.EvidenceCaptureScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.scan.EvidencePhase
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.ReportChatScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanPlateScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanStatus
@@ -63,6 +65,7 @@ object Route {
     const val SCAN_GRAPH = "scan"
     const val SCAN_PLATE = "scan/plate"
     const val REPORT_CHAT = "scan/report-chat"
+    const val EVIDENCE_CAPTURE = "scan/evidence-capture"
 
     const val INBOX = "inbox"
 }
@@ -261,11 +264,54 @@ fun VinculoVialNavHost(
 
                 ReportChatScreen(
                     uiState = state,
-                    onAlertTypeSelected = viewModel::onAlertTypeSelected,
+                    onAlertTypeSelected = { alertType ->
+                        viewModel.onAlertTypeSelected(alertType)
+                        navController.navigate(Route.EVIDENCE_CAPTURE)
+                    },
+                    onReportRequested = viewModel::onReportRequested,
                     onRetry = viewModel::onAlertRetry,
                     onFinished = { navController.popBackStack(Route.SETTINGS, inclusive = false) },
-                    onCancel = { navController.popBackStack(Route.SETTINGS, inclusive = false) },
+                    onCancel = {
+                        viewModel.onReportCancelled()
+                        navController.popBackStack(Route.SETTINGS, inclusive = false)
+                    },
                 )
+            }
+
+            composable(Route.EVIDENCE_CAPTURE) { entry ->
+                val viewModel = entry.sharedScanViewModel(navController)
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+                // Todas las fotos están: se vuelve al chat, que ofrece enviar el reporte.
+                LaunchedEffect(state.evidence.phase) {
+                    if (state.evidence.phase == EvidencePhase.COMPLETE) navController.popBackStack()
+                }
+
+                val discard = {
+                    viewModel.onEvidenceDiscarded()
+                    navController.popBackStack()
+                }
+
+                CameraPermissionGate(
+                    onDenied = { discard() },
+                    deniedRationale = "Sin cámara no podemos sacar las fotos de la evidencia. Las fotos " +
+                        "se cifran en tu dispositivo antes de enviarse.",
+                    permanentlyDeniedRationale = "Activá el permiso de cámara desde los ajustes del " +
+                        "sistema para sacar las fotos de la evidencia. Las fotos se cifran en tu " +
+                        "dispositivo antes de enviarse.",
+                ) {
+                    EvidenceCaptureScreen(
+                        state = state.evidence,
+                        galleryEvidenceSource = viewModel.galleryEvidenceSource,
+                        decodeReviewPhoto = viewModel::decodeReviewPhoto,
+                        onPhotoCaptured = viewModel::onPhotoCaptured,
+                        onPhotoCaptureFailed = viewModel::onPhotoCaptureFailed,
+                        onPhotoRetake = viewModel::onPhotoRetake,
+                        onAddAnotherPhoto = viewModel::onAddAnotherPhoto,
+                        onStepConfirmed = viewModel::onStepConfirmed,
+                        onCancel = { discard() },
+                    )
+                }
             }
         }
 

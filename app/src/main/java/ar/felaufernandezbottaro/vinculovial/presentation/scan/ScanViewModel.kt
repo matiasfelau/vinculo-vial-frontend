@@ -1,16 +1,23 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.scan
 
+import android.graphics.Bitmap
 import androidx.camera.core.ImageProxy
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import ar.felaufernandezbottaro.vinculovial.data.edge.SecureBitmap
+import ar.felaufernandezbottaro.vinculovial.data.evidence.EvidenceBuffers
+import ar.felaufernandezbottaro.vinculovial.data.evidence.EvidenceImageProcessor
+import ar.felaufernandezbottaro.vinculovial.data.evidence.EvidenceProcessingResult
 import ar.felaufernandezbottaro.vinculovial.data.scan.FrameCropper
 import ar.felaufernandezbottaro.vinculovial.data.scan.PlateRegexFilter
+import ar.felaufernandezbottaro.vinculovial.domain.evidence.EvidencePlan
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
 import ar.felaufernandezbottaro.vinculovial.domain.scan.PlateRecognitionStrategy
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertResult
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
 import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptUseCase
+import ar.felaufernandezbottaro.vinculovial.presentation.evidence.GalleryEvidenceSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +42,9 @@ class ScanViewModel @Inject constructor(
     private val regexFilter: PlateRegexFilter,
     private val startAlertAttempt: StartAlertAttemptUseCase,
     private val sendAlert: SendAlertUseCase,
+    private val evidenceProcessor: EvidenceImageProcessor,
+    /** Sólo `debug` ofrece galería: en release es la no-op. */
+    val galleryEvidenceSource: GalleryEvidenceSource,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ScanUiState())
@@ -48,6 +58,12 @@ class ScanViewModel @Inject constructor(
 
     /** El intento que ya abrió el servidor, a la espera de que el usuario elija un tipo de incidente. */
     private var pendingAttempt: StartAlertAttemptResult.Started? = null
+
+    /**
+     * Las fotos de evidencia ya procesadas (JPEG en claro, sin EXIF). Se liberan al enviar con
+     * éxito, al cancelar y en [onCleared].
+     */
+    private val evidenceBuffers = EvidenceBuffers()
 
     /**
      * Recorta, corre OCR y filtra un frame del análisis en vivo. Se llama desde el hilo del
@@ -152,12 +168,137 @@ class ScanViewModel @Inject constructor(
 
     /**
      * Elegida en el `ReportChatScreen`: se guarda en [ScanUiState.selectedAlertType] para
-     * renderizarla como el mensaje del usuario en el hilo, y se manda con el mismo `pat_enc`
-     * que ya devolvió el intento -- nunca uno nuevo.
+     * renderizarla como el mensaje del usuario en el hilo, y arranca la captura guiada de
+     * evidencia de ese tipo. Un tipo que la app no ofrece se ignora.
      */
     fun onAlertTypeSelected(alertType: AlertType) {
+        if (pendingAttempt == null || !alertType.isOffered) return
+
+        evidenceBuffers.clear()
+        _uiState.update {
+            it.copy(
+                selectedAlertType = alertType,
+                evidence = EvidenceCaptureState(
+                    steps = EvidencePlan.stepsFor(alertType),
+                    phase = EvidencePhase.CAPTURING,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Una foto del paso actual, de la cámara o (sólo en `debug`) de la galería: las dos entran
+     * por acá y pasan por el mismo pipeline. [jpeg] se sobreescribe con ceros al terminar.
+     */
+    fun onPhotoCaptured(jpeg: ByteArray, rotationDegrees: Int) {
+        val evidence = _uiState.value.evidence
+        val step = evidence.currentStep
+        if (evidence.phase != EvidencePhase.CAPTURING || step == null) {
+            jpeg.fill(0)
+            return
+        }
+
+        _uiState.update { it.copy(evidence = it.evidence.copy(phase = EvidencePhase.PROCESSING, error = null)) }
+
+        viewModelScope.launch {
+            when (val result = evidenceProcessor.process(jpeg, rotationDegrees)) {
+                is EvidenceProcessingResult.Processed -> {
+                    evidenceBuffers.put(step.role, evidence.photoIndex, result.photo)
+                    _uiState.update {
+                        it.copy(
+                            evidence = it.evidence.copy(
+                                phase = EvidencePhase.REVIEWING,
+                                reviewVersion = it.evidence.reviewVersion + 1,
+                            ),
+                        )
+                    }
+                }
+                EvidenceProcessingResult.Unreadable -> failCapture(EvidenceError.UNREADABLE)
+                EvidenceProcessingResult.TooLarge -> failCapture(EvidenceError.TOO_LARGE)
+            }
+        }
+    }
+
+    /** La cámara no entregó la foto: se queda en el mismo paso para reintentar. */
+    fun onPhotoCaptureFailed() = failCapture(EvidenceError.CAPTURE_FAILED)
+
+    private fun failCapture(error: EvidenceError) {
+        _uiState.update { it.copy(evidence = it.evidence.copy(phase = EvidencePhase.CAPTURING, error = error)) }
+    }
+
+    /** Descarta la foto en revisión y vuelve a la cámara en el mismo casillero. */
+    fun onPhotoRetake() {
+        val evidence = _uiState.value.evidence
+        val step = evidence.currentStep ?: return
+        if (evidence.phase != EvidencePhase.REVIEWING) return
+
+        evidenceBuffers.remove(step.role, evidence.photoIndex)
+        _uiState.update { it.copy(evidence = it.evidence.copy(phase = EvidencePhase.CAPTURING, error = null)) }
+    }
+
+    /** Sólo el daño admite más de una foto (hasta 3): abre un casillero nuevo en el mismo paso. */
+    fun onAddAnotherPhoto() {
+        val evidence = _uiState.value.evidence
+        if (evidence.phase != EvidencePhase.REVIEWING || !evidence.canAddAnother) return
+
+        _uiState.update {
+            it.copy(
+                evidence = it.evidence.copy(
+                    photoIndex = it.evidence.photoIndex + 1,
+                    phase = EvidencePhase.CAPTURING,
+                    error = null,
+                ),
+            )
+        }
+    }
+
+    /** Da por buena la foto en revisión y pasa al paso siguiente, o termina si era el último. */
+    fun onStepConfirmed() {
+        val evidence = _uiState.value.evidence
+        if (evidence.phase != EvidencePhase.REVIEWING) return
+
+        _uiState.update {
+            it.copy(
+                evidence = if (evidence.isLastStep) {
+                    evidence.copy(phase = EvidencePhase.COMPLETE)
+                } else {
+                    evidence.copy(
+                        stepIndex = evidence.stepIndex + 1,
+                        photoIndex = 0,
+                        phase = EvidencePhase.CAPTURING,
+                        error = null,
+                    )
+                },
+            )
+        }
+    }
+
+    /** Sale de la captura sin enviar: libera las fotos y vuelve a elegir el tipo. */
+    fun onEvidenceDiscarded() {
+        evidenceBuffers.clear()
+        _uiState.update { it.copy(selectedAlertType = null, evidence = EvidenceCaptureState()) }
+    }
+
+    /** Cancela el reporte entero: libera las fotos. */
+    fun onReportCancelled() = onEvidenceDiscarded()
+
+    /**
+     * Decodifica la foto en revisión para mostrarla en memoria. El llamador debe liberar el
+     * `Bitmap` con `SecureBitmap.wipe`. `null` si no hay foto en ese casillero.
+     */
+    fun decodeReviewPhoto(maxSidePx: Int = REVIEW_PREVIEW_PX): Bitmap? {
+        val evidence = _uiState.value.evidence
+        val step = evidence.currentStep ?: return null
+        return evidenceBuffers.read(step.role, evidence.photoIndex) { SecureBitmap.decode(it, maxSidePx) }
+    }
+
+    /** Con la evidencia completa, manda el reporte con el mismo `pat_enc` que devolvió el intento. */
+    fun onReportRequested() {
+        val state = _uiState.value
+        val alertType = state.selectedAlertType ?: return
         val attempt = pendingAttempt ?: return
-        _uiState.update { it.copy(selectedAlertType = alertType) }
+        if (state.evidence.phase != EvidencePhase.COMPLETE) return
+
         submitAlert(alertType, attempt.patEnc)
     }
 
@@ -172,11 +313,13 @@ class ScanViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(status = ScanStatus.SendingAlert) }
 
-            _uiState.update {
-                when (val result = sendAlert(alertType, patEnc)) {
-                    SendAlertResult.Sent -> it.copy(status = ScanStatus.AlertSent)
-                    is SendAlertResult.Failed -> it.copy(status = ScanStatus.AlertFailed(result.error))
+            when (val result = sendAlert(alertType, patEnc)) {
+                SendAlertResult.Sent -> {
+                    evidenceBuffers.clear()
+                    _uiState.update { it.copy(status = ScanStatus.AlertSent) }
                 }
+                is SendAlertResult.Failed ->
+                    _uiState.update { it.copy(status = ScanStatus.AlertFailed(result.error)) }
             }
         }
     }
@@ -194,7 +337,13 @@ class ScanViewModel @Inject constructor(
         _uiState.update { it.copy(status = ScanStatus.Scanning) }
     }
 
+    override fun onCleared() {
+        evidenceBuffers.clear()
+        super.onCleared()
+    }
+
     private companion object {
+        const val REVIEW_PREVIEW_PX = 1_200
         const val MANUAL_ENTRY_ERROR = "Formato de patente inválido. Probá con AAA000 o AA000AA."
     }
 }

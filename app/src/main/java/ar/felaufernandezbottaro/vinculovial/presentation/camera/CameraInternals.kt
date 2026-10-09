@@ -74,6 +74,44 @@ internal fun ImageCapture.captureJpegInternal(
     )
 }
 
+/**
+ * Foto en memoria para la evidencia de alertas: entrega el JPEG **tal cual lo captura el
+ * sensor**, sin rotar ni recomprimir, junto con los grados que hay que rotarlo. El procesamiento
+ * de evidencia (`EvidenceImageProcessor`) aplica la rotación, reescala y re-codifica de una
+ * sola vez, en vez de recomprimir dos veces como hace [captureJpegInternal].
+ *
+ * Sigue siendo `OnImageCapturedCallback`: nada se escribe a archivo, MediaStore ni caché.
+ */
+internal fun ImageCapture.captureRawJpegInternal(
+    context: Context,
+    onJpeg: (jpeg: ByteArray, rotationDegrees: Int) -> Unit,
+    onFailure: (Throwable) -> Unit,
+) {
+    takePicture(
+        ContextCompat.getMainExecutor(context),
+        object : ImageCapture.OnImageCapturedCallback() {
+
+            override fun onCaptureSuccess(image: ImageProxy) {
+                try {
+                    image.use { proxy ->
+                        if (proxy.format != ImageFormat.JPEG) {
+                            onFailure(IllegalStateException("Formato inesperado: ${proxy.format}"))
+                        } else {
+                            onJpeg(proxy.readJpegBytesInternal(), proxy.imageInfo.rotationDegrees)
+                        }
+                    }
+                } catch (e: Exception) {
+                    onFailure(e)
+                }
+            }
+
+            override fun onError(exception: ImageCaptureException) {
+                onFailure(exception)
+            }
+        },
+    )
+}
+
 private const val TAG = "CameraCapture"
 
 /** Para un JPEG, el primer plano contiene la imagen completa ya comprimida. */

@@ -34,6 +34,13 @@ fun HpkeMessage.toCryptogram(): String = Base64.getEncoder().encodeToString(
 )
 
 /**
+ * Igual que [toCryptogram] pero en bytes crudos (`enc‖ct`, sin base64): es lo que viaja como
+ * parte binaria `application/octet-stream` en el multipart de las fotos de evidencia.
+ */
+fun HpkeMessage.toCryptogramBytes(): ByteArray =
+    Base64.getDecoder().decode(ephemeralPublicKey) + Base64.getDecoder().decode(ciphertext)
+
+/**
  * Cifra un payload contra una Public Key X25519 HPKE.
  *
  * HPKE modo BASE — KEM DHKEM(X25519, HKDF-SHA256), KDF HKDF-SHA256, AEAD AES-256-GCM.

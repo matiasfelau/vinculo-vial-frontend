@@ -1,5 +1,6 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.scan
 
+import ar.felaufernandezbottaro.vinculovial.data.evidence.EvidenceImageProcessor
 import ar.felaufernandezbottaro.vinculovial.data.scan.FrameCropper
 import ar.felaufernandezbottaro.vinculovial.data.scan.PlateRegexFilter
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
@@ -12,6 +13,8 @@ import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
 import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptUseCase
 import ar.felaufernandezbottaro.vinculovial.util.MainDispatcherRule
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -33,13 +36,26 @@ class ScanViewModelTest {
     private val checkRepository = FakeAlertAttemptRepository()
     private val alertRepository = FakeAlertRepository()
 
+    private val rasterFactory = StubEvidenceRasterFactory()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun viewModel() = ScanViewModel(
         frameCropper = FrameCropper(),
         recognitionStrategy = FakePlateRecognitionStrategy(),
         regexFilter = PlateRegexFilter(),
         startAlertAttempt = StartAlertAttemptUseCase(checkRepository),
         sendAlert = SendAlertUseCase(alertRepository),
+        evidenceProcessor = EvidenceImageProcessor(rasterFactory, UnconfinedTestDispatcher()),
+        galleryEvidenceSource = FakeGalleryEvidenceSource(),
     )
+
+    /** Saca y confirma una foto por cada paso de la captura guiada, hasta completarla. */
+    private fun ScanViewModel.completeEvidence() {
+        while (uiState.value.evidence.phase != EvidencePhase.COMPLETE) {
+            onPhotoCaptured(ByteArray(8) { 1 }, 0)
+            onStepConfirmed()
+        }
+    }
 
     private val patente = "GUQ856"
 
@@ -227,13 +243,15 @@ class ScanViewModelTest {
     }
 
     @Test
-    fun `elegir un tipo de incidente reusa el pat_enc que devolvio el intento`() = runTest {
+    fun `reportar con la evidencia completa reusa el pat_enc que devolvio el intento`() = runTest {
         checkRepository.result = started("pat-enc-del-intento")
         val viewModel = viewModel()
         viewModel.onPlateFound(patente)
         viewModel.onPlateConfirmed()
 
         viewModel.onAlertTypeSelected(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
 
         assertEquals(listOf(AlertType.CRASHED to "pat-enc-del-intento"), alertRepository.received)
     }
@@ -247,6 +265,8 @@ class ScanViewModelTest {
         viewModel.onPlateConfirmed()
 
         viewModel.onAlertTypeSelected(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
 
         assertEquals(ScanStatus.AlertSent, viewModel.uiState.value.status)
     }
@@ -260,6 +280,8 @@ class ScanViewModelTest {
         viewModel.onPlateConfirmed()
 
         viewModel.onAlertTypeSelected(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
 
         assertEquals(ScanStatus.AlertFailed(SendAlertError.InvalidData), viewModel.uiState.value.status)
     }
@@ -271,9 +293,9 @@ class ScanViewModelTest {
         viewModel.onPlateFound(patente)
         viewModel.onPlateConfirmed()
 
-        viewModel.onAlertTypeSelected(AlertType.PARKED_TOO_CLOSE)
+        viewModel.onAlertTypeSelected(AlertType.PARKED_ON_GARAGE)
 
-        assertEquals(AlertType.PARKED_TOO_CLOSE, viewModel.uiState.value.selectedAlertType)
+        assertEquals(AlertType.PARKED_ON_GARAGE, viewModel.uiState.value.selectedAlertType)
     }
 
     @Test
@@ -284,6 +306,8 @@ class ScanViewModelTest {
         viewModel.onPlateFound(patente)
         viewModel.onPlateConfirmed()
         viewModel.onAlertTypeSelected(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
 
         alertRepository.result = SendAlertResult.Sent
         viewModel.onAlertRetry()
