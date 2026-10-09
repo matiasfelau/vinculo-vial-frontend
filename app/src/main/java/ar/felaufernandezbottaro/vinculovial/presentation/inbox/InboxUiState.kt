@@ -1,6 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.inbox
 
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertItem
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.EvidenceRef
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.InboxError
 
 /**
@@ -35,3 +36,40 @@ sealed interface InboxUiState {
      */
     data class ContentWithPageError(val items: List<AlertItem>, val error: InboxError) : InboxUiState
 }
+
+/** Cómo va la descarga de una foto de evidencia redactada. */
+sealed interface EvidenceLoad {
+
+    data object Loading : EvidenceLoad
+
+    /** Los bytes del JPEG, sólo en memoria. El `ViewModel` los sobreescribe con ceros al cerrar el detalle. */
+    class Loaded(val bytes: ByteArray) : EvidenceLoad
+
+    /** 410: la retención venció. La UI muestra "La evidencia ya no está disponible". */
+    data object Expired : EvidenceLoad
+
+    data class Failed(val error: InboxError) : EvidenceLoad
+}
+
+data class EvidenceSlot(val ref: EvidenceRef, val load: EvidenceLoad)
+
+/** El reporte al emisor del detalle. Que ya esté reportado vive en [AlertItem.reported]. */
+sealed interface ReportUiState {
+    data object Idle : ReportUiState
+    data object Sending : ReportUiState
+    data class Failed(val error: InboxError) : ReportUiState
+}
+
+/**
+ * El detalle de una alerta del buzón: la evidencia redactada, la valoración del dueño y el
+ * reporte al emisor. [item] se mantiene al día con la valoración y el reporte, y la lista se
+ * actualiza con los mismos valores.
+ *
+ * @property feedbackFailed la última valoración no se pudo guardar y se deshizo.
+ */
+data class AlertDetailUiState(
+    val item: AlertItem,
+    val evidence: List<EvidenceSlot>,
+    val feedbackFailed: Boolean = false,
+    val report: ReportUiState = ReportUiState.Idle,
+)

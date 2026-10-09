@@ -1,5 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.data.inbox
 
+import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.ReportRequestDto
+import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.FeedbackRequestDto
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationTokenGenerator
 import ar.felaufernandezbottaro.vinculovial.data.crypto.MockAttestationProvider
@@ -129,5 +131,118 @@ class InboxApiTest {
         val response = api.getInbox("Bearer access-abc")
 
         assertEquals(429, response.code())
+    }
+
+    @Test
+    fun `parsea los campos de US-08 del item del buzon`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """
+                {
+                  "items": [{
+                    "id": "uuid-1", "alert_type": "CRASHED", "created_at": "2026-08-18T10:00:00Z",
+                    "requires_review": true,
+                    "evidence": [{"role": "GENERAL", "index": 0}, {"role": "DETAIL", "index": 1}],
+                    "evidence_expires_at": "2026-09-17T10:00:00Z",
+                    "my_feedback": "UP",
+                    "reported": true
+                  }],
+                  "next_cursor": null
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val item = api.getInbox("Bearer access-abc").body()!!.items.single()
+
+        assertEquals(true, item.requiresReview)
+        assertEquals(listOf("GENERAL" to 0, "DETAIL" to 1), item.evidence!!.map { it.role to it.index })
+        assertEquals("2026-09-17T10:00:00Z", item.evidenceExpiresAt)
+        assertEquals("UP", item.myFeedback)
+        assertEquals(true, item.reported)
+    }
+
+    @Test
+    fun `un item sin los campos de US-08 se parsea con sus defaults`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"items":[{"id":"u","alert_type":"CRASHED","created_at":"2026-08-18T10:00:00Z"}],"next_cursor":null}""",
+            ),
+        )
+
+        val item = api.getInbox("Bearer access-abc").body()!!.items.single()
+
+        assertEquals(false, item.requiresReview)
+        assertNull(item.evidence)
+        assertNull(item.evidenceExpiresAt)
+        assertNull(item.myFeedback)
+        assertEquals(false, item.reported)
+    }
+
+    @Test
+    fun `un item con evidence_expires_at y my_feedback en null se parsea`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"items":[{"id":"u","alert_type":"CRASHED","created_at":"2026-08-18T10:00:00Z","evidence":[],"evidence_expires_at":null,"my_feedback":null}],"next_cursor":null}""",
+            ),
+        )
+
+        val item = api.getInbox("Bearer access-abc").body()!!.items.single()
+
+        assertEquals(emptyList<Any>(), item.evidence)
+        assertNull(item.evidenceExpiresAt)
+        assertNull(item.myFeedback)
+    }
+
+    @Test
+    fun `la evidencia se pide por GET con alerta, rol e indice en la ruta y llega como bytes`() = runTest {
+        val jpeg = ByteArray(256) { it.toByte() }
+        server.enqueue(
+            MockResponse().setResponseCode(200).setHeader("Content-Type", "image/jpeg")
+                .setHeader("Cache-Control", "no-store").setBody(okio.Buffer().write(jpeg)),
+        )
+
+        val response = api.getEvidence("Bearer access-abc", "alerta-1", "GENERAL", 2)
+
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/api/v1/alerts/alerta-1/evidence/GENERAL/2", request.path)
+        assertEquals("Bearer access-abc", request.getHeader("Authorization"))
+        org.junit.Assert.assertArrayEquals(jpeg, response.body()!!.bytes())
+    }
+
+    @Test
+    fun `los segmentos de la ruta de la evidencia se codifican, no se interpretan`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("x"))
+
+        api.getEvidence("Bearer access-abc", "a/b", "RO LE", 0)
+
+        assertEquals("/api/v1/alerts/a%2Fb/evidence/RO%20LE/0", server.takeRequest().path)
+    }
+
+    @Test
+    fun `la valoracion es un PUT con rating`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val response = api.putFeedback("Bearer access-abc", "alerta-1", FeedbackRequestDto("DOWN"))
+
+        val request = server.takeRequest()
+        assertEquals("PUT", request.method)
+        assertEquals("/api/v1/alerts/alerta-1/feedback", request.path)
+        assertEquals("""{"rating":"DOWN"}""", request.body.readUtf8())
+        assertEquals(204, response.code())
+    }
+
+    @Test
+    fun `el reporte es un POST con reason`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(202))
+
+        val response = api.reportSender("Bearer access-abc", "alerta-1", ReportRequestDto("FALSE_ALERT"))
+
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/alerts/alerta-1/report", request.path)
+        assertEquals("""{"reason":"FALSE_ALERT"}""", request.body.readUtf8())
+        assertEquals(202, response.code())
     }
 }
