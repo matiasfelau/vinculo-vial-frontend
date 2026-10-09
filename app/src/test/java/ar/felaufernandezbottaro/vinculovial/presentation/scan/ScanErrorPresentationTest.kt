@@ -15,6 +15,7 @@ class ScanErrorPresentationTest {
         SendAlertError.EvidenceTooLarge,
         SendAlertError.UnderReview,
         SendAlertError.AttemptNotFound,
+        SendAlertError.PossiblySent,
         SendAlertError.AttemptExpired,
         SendAlertError.RateLimited,
         SendAlertError.Unavailable,
@@ -31,7 +32,7 @@ class ScanErrorPresentationTest {
     }
 
     @Test
-    fun `429, 503 y red se reintentan a mano`() {
+    fun `429, 502, 503, 504 y red se reintentan a mano, con el mismo mensaje para los 5xx`() {
         listOf(SendAlertError.RateLimited, SendAlertError.Unavailable, SendAlertError.Network).forEach {
             assertEquals(SendAlertRecovery.RETRY, it.recovery())
         }
@@ -40,6 +41,19 @@ class ScanErrorPresentationTest {
     @Test
     fun `un intento perdido reinicia el flujo`() {
         assertEquals(SendAlertRecovery.RESTART, SendAlertError.AttemptNotFound.recovery())
+    }
+
+    @Test
+    fun `si la alerta pudo haberse enviado no se reinicia ni se reintenta, se ofrece el buzon o cerrar`() {
+        assertEquals(SendAlertRecovery.CHECK_INBOX, SendAlertError.PossiblySent.recovery())
+    }
+
+    @Test
+    fun `el aviso de envio incierto dice que pudo haberse enviado y no promete reenviar`() {
+        val message = SendAlertError.PossiblySent.message()
+
+        assertTrue(message.contains("Puede que ya se haya enviado"))
+        assertTrue(message.contains("no la reenviamos"))
     }
 
     @Test

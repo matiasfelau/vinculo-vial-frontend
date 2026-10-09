@@ -313,6 +313,12 @@ fun VinculoVialNavHost(
                             popUpTo(Route.REPORT_CHAT) { inclusive = true }
                         }
                     },
+                    onOpenInbox = {
+                        viewModel.onReportCancelled()
+                        navController.navigate(Route.INBOX) {
+                            popUpTo(Route.SETTINGS) { inclusive = false }
+                        }
+                    },
                     onFinished = { navController.popBackStack(Route.SETTINGS, inclusive = false) },
                     onCancel = {
                         viewModel.onReportCancelled()

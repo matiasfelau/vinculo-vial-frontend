@@ -300,8 +300,14 @@ class InboxRepositoryImplTest {
 
     @Test
     fun `errores de la valoracion se traducen`() = runTest {
-        mapOf(404 to InboxError.NotFound, 429 to InboxError.RateLimited, 503 to InboxError.Unavailable, 500 to InboxError.Unexpected)
-            .forEach { (status, expected) ->
+        mapOf(
+            404 to InboxError.NotFound,
+            429 to InboxError.RateLimited,
+            502 to InboxError.Unavailable,
+            503 to InboxError.Unavailable,
+            504 to InboxError.Unavailable,
+            500 to InboxError.Unexpected,
+        ).forEach { (status, expected) ->
                 api.feedbackResponse = errorResponseOf(status)
 
                 assertEquals("status $status", FeedbackResult.Failed(expected), repository().setFeedback("a", FeedbackRating.UP))
@@ -327,8 +333,14 @@ class InboxRepositoryImplTest {
 
     @Test
     fun `errores del reporte se traducen`() = runTest {
-        mapOf(404 to InboxError.NotFound, 429 to InboxError.RateLimited, 503 to InboxError.Unavailable, 500 to InboxError.Unexpected)
-            .forEach { (status, expected) ->
+        mapOf(
+            404 to InboxError.NotFound,
+            429 to InboxError.RateLimited,
+            502 to InboxError.Unavailable,
+            503 to InboxError.Unavailable,
+            504 to InboxError.Unavailable,
+            500 to InboxError.Unexpected,
+        ).forEach { (status, expected) ->
                 api.reportResponse = errorResponseOf(status)
 
                 assertEquals("status $status", ReportResult.Failed(expected), repository().reportSender("a", ReportReason.SPAM))
