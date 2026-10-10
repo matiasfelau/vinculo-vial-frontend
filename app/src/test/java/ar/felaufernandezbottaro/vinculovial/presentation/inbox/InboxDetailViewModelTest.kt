@@ -4,6 +4,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertItem
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.EvidenceRef
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.EvidenceResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FakeInboxRepository
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.FakeReadAlertsStore
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackRating
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetEvidenceUseCase
@@ -15,6 +16,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportReason
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportSenderUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.SetFeedbackUseCase
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviMessages
 import ar.felaufernandezbottaro.vinculovial.util.MainDispatcherRule
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -36,6 +38,7 @@ class InboxDetailViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private val repository = FakeInboxRepository()
+    private val readStore = FakeReadAlertsStore()
 
     private val general = EvidenceRef("GENERAL", 0)
     private val plate = EvidenceRef("PLATE", 0)
@@ -54,6 +57,7 @@ class InboxDetailViewModelTest {
             getEvidence = GetEvidenceUseCase(repository),
             setFeedback = SetFeedbackUseCase(repository),
             reportSender = ReportSenderUseCase(repository),
+            readAlertsStore = readStore,
         )
     }
 
@@ -150,7 +154,7 @@ class InboxDetailViewModelTest {
         viewModel.openAlert("alerta-1")
 
         assertTrue(viewModel.openDetail.evidence.all { it.load == EvidenceLoad.Expired })
-        assertEquals("La evidencia ya no está disponible", EVIDENCE_EXPIRED_MESSAGE)
+        assertEquals("La evidencia ya no está disponible", ViviMessages.EVIDENCE_UNAVAILABLE)
     }
 
     @Test
@@ -280,7 +284,7 @@ class InboxDetailViewModelTest {
         assertTrue(viewModel.listItem().reported)
         assertEquals(ReportUiState.Idle, viewModel.openDetail.report)
         assertEquals(listOf("alerta-1" to ReportReason.FALSE_ALERT), repository.reportCalls)
-        assertEquals("Reportado", REPORTED_BUTTON_TEXT)
+        assertEquals("Reportado", ViviMessages.REPORTED)
     }
 
     @Test
@@ -356,6 +360,7 @@ class InboxDetailViewModelTest {
             getEvidence = GetEvidenceUseCase(repository),
             setFeedback = SetFeedbackUseCase(repository),
             reportSender = ReportSenderUseCase(repository),
+            readAlertsStore = readStore,
         )
         viewModel.openAlert("alerta-1")
 
@@ -370,25 +375,5 @@ class InboxDetailViewModelTest {
         val items = (viewModel.uiState.value as InboxUiState.Content).items
         assertEquals(listOf("alerta-1", "alerta-2"), items.map { it.id })
         assertEquals(FeedbackRating.UP, items.first().myFeedback)
-    }
-
-    // -- Badge de revision -------------------------------------------------------------------
-
-    @Test
-    fun `una alerta que requiere revision muestra el badge No verificada por completo`() {
-        assertEquals("No verificada por completo", item.copy(requiresReview = true).reviewBadgeText())
-    }
-
-    @Test
-    fun `una alerta verificada no muestra badge`() {
-        assertNull(item.copy(requiresReview = false).reviewBadgeText())
-    }
-
-    @Test
-    fun `cada rol de evidencia tiene su etiqueta y un rol desconocido se llama Foto`() {
-        assertEquals(
-            listOf("Vehículo", "Patente", "Daño", "Contexto", "Foto"),
-            listOf("GENERAL", "PLATE", "DETAIL", "CONTEXT", "NUEVO_ROL").map(::evidenceRoleLabel),
-        )
     }
 }

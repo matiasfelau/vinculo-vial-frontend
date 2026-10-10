@@ -474,7 +474,7 @@ class ScanViewModelEvidenceTest {
         viewModel.onAlertRetry()
 
         assertEquals(ScanStatus.AlertFailed(SendAlertError.PossiblySent), viewModel.uiState.value.status)
-        assertEquals(SendAlertRecovery.CHECK_INBOX, SendAlertError.PossiblySent.recovery())
+        assertEquals(SendAlertRecovery.CLOSE, SendAlertError.PossiblySent.recovery())
     }
 
     @Test

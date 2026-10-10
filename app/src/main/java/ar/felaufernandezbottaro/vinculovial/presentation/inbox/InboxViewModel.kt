@@ -11,6 +11,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetEvidenceUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetInboxResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetInboxUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.InboxPage
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReadAlertsStore
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportReason
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportSenderUseCase
@@ -26,8 +27,9 @@ import javax.inject.Inject
 
 /**
  * Carga la primera página del buzón al crearse y pagina hacia adelante por cursor. También
- * maneja el detalle de una alerta (evidencia redactada, valoración, reporte al emisor) sobre
- * la misma lista, para que lo que cambia en el detalle se vea igual al volver a ella.
+ * maneja el chat de una alerta (evidencia redactada, valoración, reporte al emisor) sobre la
+ * misma lista, para que lo que cambia en el chat se vea igual al volver a ella, y recuerda en
+ * el dispositivo cuáles alertas ya se abrieron.
  */
 @HiltViewModel
 class InboxViewModel @Inject constructor(
@@ -35,6 +37,7 @@ class InboxViewModel @Inject constructor(
     private val getEvidence: GetEvidenceUseCase,
     private val setFeedback: SetFeedbackUseCase,
     private val reportSender: ReportSenderUseCase,
+    private val readAlertsStore: ReadAlertsStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<InboxUiState>(InboxUiState.Loading)
@@ -44,6 +47,11 @@ class InboxViewModel @Inject constructor(
 
     /** El detalle abierto, o `null` si no hay ninguno. */
     val detail: StateFlow<AlertDetailUiState?> = _detail.asStateFlow()
+
+    private val _readAlertIds = MutableStateFlow(readAlertsStore.readIds())
+
+    /** Los ids de las alertas que el usuario ya abrió. Sólo existen en este dispositivo: nunca se envían. */
+    val readAlertIds: StateFlow<Set<String>> = _readAlertIds.asStateFlow()
 
     /** Barrera contra pedir la misma página dos veces: sin ella, un scroll rápido dispara
      * varias peticiones con el mismo cursor, duplica ítems y quema el cupo de 20/min. */
@@ -123,12 +131,18 @@ class InboxViewModel @Inject constructor(
     fun openAlert(alertId: String) {
         val item = currentItems()?.firstOrNull { it.id == alertId } ?: return
 
+        markRead(item.id)
         wipeEvidence()
         _detail.value = AlertDetailUiState(
             item = item,
             evidence = item.evidence.map { EvidenceSlot(it, EvidenceLoad.Loading) },
         )
         item.evidence.forEach { loadEvidence(item.id, it) }
+    }
+
+    private fun markRead(alertId: String) {
+        readAlertsStore.markRead(alertId)
+        _readAlertIds.update { it + alertId }
     }
 
     /** Cierra el detalle y sobreescribe con ceros las fotos que había bajado. */
