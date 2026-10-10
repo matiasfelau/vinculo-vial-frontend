@@ -187,10 +187,11 @@ fun VinculoVialNavHost(
         composable(Route.INBOX) { entry ->
             val viewModel = hiltViewModel<InboxViewModel>(entry)
             val state by viewModel.uiState.collectAsStateWithLifecycle()
+            val readIds by viewModel.readAlertIds.collectAsStateWithLifecycle()
 
             InboxScreen(
                 uiState = state,
-                onBack = { navController.popBackStack() },
+                readIds = readIds,
                 onRetry = viewModel::loadFirstPage,
                 onLoadNextPage = viewModel::loadNextPage,
                 onRetryNextPage = viewModel::retryNextPage,
@@ -311,12 +312,6 @@ fun VinculoVialNavHost(
                         viewModel.onFlowRestarted()
                         navController.navigate(Route.SCAN_PLATE) {
                             popUpTo(Route.REPORT_CHAT) { inclusive = true }
-                        }
-                    },
-                    onOpenInbox = {
-                        viewModel.onReportCancelled()
-                        navController.navigate(Route.INBOX) {
-                            popUpTo(Route.SETTINGS) { inclusive = false }
                         }
                     },
                     onFinished = { navController.popBackStack(Route.SETTINGS, inclusive = false) },

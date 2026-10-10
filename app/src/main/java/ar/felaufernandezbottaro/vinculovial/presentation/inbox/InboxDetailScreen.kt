@@ -2,28 +2,39 @@ package ar.felaufernandezbottaro.vinculovial.presentation.inbox
 
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.DirectionsCar
+import androidx.compose.material.icons.outlined.Flag
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.ThumbDown
+import androidx.compose.material.icons.outlined.ThumbUp
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,33 +47,50 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import ar.felaufernandezbottaro.vinculovial.data.edge.SecureBitmap
-import ar.felaufernandezbottaro.vinculovial.data.inbox.mapAlertTypeToDisplay
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertConfidence
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.EvidenceRef
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackRating
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportReason
-import ar.felaufernandezbottaro.vinculovial.presentation.components.VvBottomBar
-import ar.felaufernandezbottaro.vinculovial.presentation.components.VvCircleIconButton
-import ar.felaufernandezbottaro.vinculovial.presentation.components.VvPrimaryButton
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvAmber
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvAmberSurface
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvInk
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMint
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMintDark
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMuted
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrange
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrangeDark
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvTile
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ConfidencePill
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.DayChip
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ReviewBadge
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviBubble
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviCard
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviChatHeader
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviMessages
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.alertMessage
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.evidenceNote
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.evidenceTileLabel
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.message
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.time.Instant
 
 /**
- * Detalle de una alerta del buzón: la evidencia redactada, la valoración (👍/👎) de la validación
- * de IA y el reporte al emisor. La evidencia se baja como bytes y se decodifica en memoria: no
- * hay caché de disco del cliente de imágenes.
+ * El chat de una alerta, del lado del dueño: ViVIAna avisa que hay un mensaje, lo muestra en
+ * una tarjeta con la evidencia redactada y dice cuánto confía en la validación. Al pie, la
+ * valoración (👍/👎) y el reporte al emisor. La evidencia se baja como bytes y se decodifica en
+ * memoria: no hay caché de disco del cliente de imágenes.
  */
 @Composable
 fun InboxDetailScreen(
@@ -74,57 +102,37 @@ fun InboxDetailScreen(
 ) {
     var showReportDialog by remember { mutableStateOf(false) }
     val item = detail.item
-    val display = mapAlertTypeToDisplay(item.alertType)
+    val medium = item.confidence == AlertConfidence.MEDIUM
 
     BackHandler(onBack = onBack)
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                VvCircleIconButton(
-                    icon = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Volver",
-                    onClick = onBack,
-                )
-                Text(
-                    text = display.label,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = VvNavy,
-                    modifier = Modifier.padding(start = 12.dp),
-                )
-            }
-        },
-        bottomBar = { VvBottomBar() },
-    ) { padding ->
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        ViviChatHeader(onBack = onBack, backDescription = "Volver al buzón")
+        HorizontalDivider(color = VvMintDark)
+
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
+                .weight(1f)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(
-                text = item.createdAt.toFriendlyAlertDate(),
-                style = MaterialTheme.typography.labelMedium,
-                color = VvMuted,
-            )
-
-            item.reviewBadgeText()?.let { ReviewBadge(it) }
-
-            EvidenceSection(detail = detail, onRetryEvidence = onRetryEvidence)
-
-            FeedbackSection(detail = detail, onRate = onRate)
-
-            ReportSection(detail = detail, onReportClick = { showReportDialog = true })
+            DayChip(item.createdAt.toChatDayStamp(now = remember { Instant.now() }))
+            ViviBubble(ViviMessages.OWNER_GREETING)
+            MessageCard(detail = detail, medium = medium, onRetryEvidence = onRetryEvidence)
+            ConfidenceMessage(confidence = item.confidence)
         }
+
+        HorizontalDivider(color = VvMintDark)
+        ChatFooter(
+            detail = detail,
+            onRate = onRate,
+            onReportClick = { showReportDialog = true },
+        )
     }
 
     if (showReportDialog) {
@@ -138,76 +146,150 @@ fun InboxDetailScreen(
     }
 }
 
+/** La tarjeta del mensaje: qué avisó el emisor (siempre una frase fija) y la evidencia redactada. */
 @Composable
-fun ReviewBadge(text: String) {
-    Surface(shape = RoundedCornerShape(50), color = VvOrange.copy(alpha = 0.15f)) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium,
-            color = VvOrange,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-        )
-    }
-}
+private fun MessageCard(detail: AlertDetailUiState, medium: Boolean, onRetryEvidence: (EvidenceRef) -> Unit) {
+    val item = detail.item
 
-@Composable
-private fun EvidenceSection(detail: AlertDetailUiState, onRetryEvidence: (EvidenceRef) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(text = "Evidencia", style = MaterialTheme.typography.titleMedium, color = VvNavy)
-
-        if (detail.evidence.isEmpty()) {
-            Text(text = NO_EVIDENCE_MESSAGE, style = MaterialTheme.typography.bodyMedium, color = VvMuted)
+    ViviCard(
+        modifier = Modifier.fillMaxWidth(),
+        borderColor = if (medium) VvAmber else VvMintDark,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            SectionLabel("Mensaje")
+            if (item.requiresReview) ReviewBadge()
         }
 
-        detail.evidence.forEach { slot ->
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
+            Icon(
+                imageVector = if (item.alertType == "CRASHED") Icons.Outlined.Warning else Icons.Outlined.DirectionsCar,
+                contentDescription = null,
+                tint = VvNavy,
+                modifier = Modifier
+                    .padding(top = 1.dp)
+                    .size(22.dp),
+            )
+            Text(
+                text = alertMessage(item.alertType),
+                style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold),
+                color = VvNavy,
+            )
+        }
+
+        SectionLabel("Evidencia", modifier = Modifier.padding(top = 4.dp))
+
+        if (detail.evidence.isEmpty()) {
+            Text(text = ViviMessages.EVIDENCE_EMPTY, style = MaterialTheme.typography.bodyMedium, color = VvMuted)
+        } else {
+            EvidenceGrid(detail = detail, onRetryEvidence = onRetryEvidence)
+            if (detail.evidence.any { it.load !is EvidenceLoad.Expired }) {
                 Text(
-                    text = evidenceRoleLabel(slot.ref.role),
+                    text = evidenceNote(item.evidenceExpiresAt),
                     style = MaterialTheme.typography.labelMedium,
                     color = VvMuted,
                 )
-                EvidenceSlotContent(slot = slot, onRetry = { onRetryEvidence(slot.ref) })
             }
         }
     }
 }
 
 @Composable
-private fun EvidenceSlotContent(slot: EvidenceSlot, onRetry: () -> Unit) {
-    Surface(shape = RoundedCornerShape(12.dp), color = VvMint, modifier = Modifier.fillMaxWidth()) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            contentAlignment = Alignment.Center,
-        ) {
+private fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text.uppercase(),
+        style = MaterialTheme.typography.labelMedium,
+        letterSpacing = 1.2.sp,
+        color = VvMuted,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun EvidenceGrid(detail: AlertDetailUiState, onRetryEvidence: (EvidenceRef) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        detail.evidence.chunked(2).forEach { pair ->
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                pair.forEach { slot ->
+                    val countInRole = detail.evidence.count { it.ref.role == slot.ref.role }
+                    EvidenceTile(
+                        slot = slot,
+                        label = evidenceTileLabel(slot.ref.role, slot.ref.index, countInRole),
+                        onRetry = { onRetryEvidence(slot.ref) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+/**
+ * Un casillero de evidencia: la foto redactada si ya llegó; si no, un placeholder con el ícono y
+ * la etiqueta, que además dice "La evidencia ya no está disponible" ante un 410.
+ */
+@Composable
+private fun EvidenceTile(slot: EvidenceSlot, label: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(shape = RoundedCornerShape(10.dp), color = VvTile, modifier = modifier.height(96.dp)) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             when (val load = slot.load) {
-                EvidenceLoad.Loading -> CircularProgressIndicator(color = VvNavy, modifier = Modifier.size(28.dp))
+                EvidenceLoad.Loading -> CircularProgressIndicator(color = VvNavy, modifier = Modifier.size(24.dp))
 
-                is EvidenceLoad.Loaded -> EvidenceImage(bytes = load.bytes)
+                is EvidenceLoad.Loaded -> {
+                    EvidenceImage(bytes = load.bytes)
+                    TileLabelChip(label = label, modifier = Modifier.align(Alignment.BottomStart))
+                }
 
-                EvidenceLoad.Expired -> Text(
-                    text = EVIDENCE_EXPIRED_MESSAGE,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = VvMuted,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(16.dp),
-                )
+                EvidenceLoad.Expired -> TilePlaceholder(label = label, note = ViviMessages.EVIDENCE_UNAVAILABLE)
 
                 is EvidenceLoad.Failed -> Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(8.dp),
+                    modifier = Modifier.padding(4.dp),
                 ) {
                     Text(
                         text = load.error.message(),
                         style = MaterialTheme.typography.labelMedium,
-                        color = VvOrange,
+                        color = VvOrangeDark,
                         textAlign = TextAlign.Center,
+                        maxLines = 3,
                     )
                     TextButton(onClick = onRetry) { Text("Reintentar", color = VvNavy) }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TilePlaceholder(label: String, note: String? = null) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(Icons.Outlined.Image, contentDescription = null, tint = VvMuted, modifier = Modifier.size(20.dp))
+        Text(text = label, style = MaterialTheme.typography.labelMedium, color = VvMuted)
+        if (note != null) {
+            Text(
+                text = note,
+                style = MaterialTheme.typography.labelMedium,
+                color = VvMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TileLabelChip(label: String, modifier: Modifier = Modifier) {
+    Surface(shape = RoundedCornerShape(topEnd = 8.dp), color = Color.Black.copy(alpha = 0.55f), modifier = modifier) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+        )
     }
 }
 
@@ -226,79 +308,109 @@ private fun EvidenceImage(bytes: ByteArray) {
         Image(
             bitmap = it.asImageBitmap(),
             contentDescription = "Foto de la evidencia",
-            contentScale = ContentScale.FillWidth,
-            modifier = Modifier.fillMaxWidth(),
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(),
         )
-    } ?: CircularProgressIndicator(color = VvNavy, modifier = Modifier.size(28.dp))
+    } ?: CircularProgressIndicator(color = VvNavy, modifier = Modifier.size(24.dp))
+}
+
+/** Lo que ViVIAna concluye sobre la validación: verde si la confianza es alta, ámbar si es media. */
+@Composable
+private fun ConfidenceMessage(confidence: AlertConfidence) {
+    val medium = confidence == AlertConfidence.MEDIUM
+
+    ViviCard(
+        containerColor = if (medium) VvAmberSurface else VvMint,
+        borderColor = if (medium) VvAmber else VvMintDark,
+    ) {
+        ConfidencePill(confidence = confidence)
+        Text(text = confidence.message(), style = MaterialTheme.typography.bodyMedium, color = VvInk)
+    }
 }
 
 @Composable
-private fun FeedbackSection(detail: AlertDetailUiState, onRate: (FeedbackRating) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "¿Fue correcta la validación de esta alerta?",
-            style = MaterialTheme.typography.titleMedium,
-            color = VvNavy,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            RatingButton(
-                emoji = "👍",
-                description = "Valoración positiva",
-                selected = detail.item.myFeedback == FeedbackRating.UP,
-                onClick = { onRate(FeedbackRating.UP) },
-            )
-            RatingButton(
-                emoji = "👎",
-                description = "Valoración negativa",
-                selected = detail.item.myFeedback == FeedbackRating.DOWN,
-                onClick = { onRate(FeedbackRating.DOWN) },
-            )
-        }
+private fun ChatFooter(detail: AlertDetailUiState, onRate: (FeedbackRating) -> Unit, onReportClick: () -> Unit) {
+    val reported = detail.item.reported
+    val sending = detail.report == ReportUiState.Sending
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         if (detail.feedbackFailed) {
             Text(
                 text = "No pudimos guardar tu valoración. Intentá de nuevo.",
                 style = MaterialTheme.typography.labelMedium,
-                color = VvOrange,
+                color = VvOrangeDark,
             )
+        }
+        (detail.report as? ReportUiState.Failed)?.let {
+            Text(text = it.error.message(), style = MaterialTheme.typography.labelMedium, color = VvOrangeDark)
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(text = ViviMessages.FEEDBACK_PROMPT, style = MaterialTheme.typography.bodyMedium, color = VvInk)
+            RatingButton(
+                selected = detail.item.myFeedback == FeedbackRating.UP,
+                description = "Me sirvió",
+                icon = Icons.Outlined.ThumbUp,
+                onClick = { onRate(FeedbackRating.UP) },
+            )
+            RatingButton(
+                selected = detail.item.myFeedback == FeedbackRating.DOWN,
+                description = "No me sirvió",
+                icon = Icons.Outlined.ThumbDown,
+                onClick = { onRate(FeedbackRating.DOWN) },
+            )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            TextButton(onClick = onReportClick, enabled = !reported && !sending) {
+                if (sending) {
+                    CircularProgressIndicator(color = VvOrangeDark, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.Flag,
+                        contentDescription = null,
+                        tint = if (reported) VvMuted else VvOrangeDark,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (reported) ViviMessages.REPORTED else ViviMessages.REPORT_SENDER,
+                    fontWeight = FontWeight.Bold,
+                    color = if (reported) VvMuted else VvOrangeDark,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun RatingButton(emoji: String, description: String, selected: Boolean, onClick: () -> Unit) {
+private fun RatingButton(
+    selected: Boolean,
+    description: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) VvNavy else VvMint,
-        modifier = Modifier
-            .size(56.dp)
-            .semantics { contentDescription = description },
+        shape = CircleShape,
+        color = if (selected) VvNavy else Color.White,
+        border = BorderStroke(1.5.dp, if (selected) VvNavy else VvMintDark),
+        modifier = Modifier.size(44.dp),
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Text(text = emoji, style = MaterialTheme.typography.titleLarge)
-        }
-    }
-}
-
-@Composable
-private fun ReportSection(detail: AlertDetailUiState, onReportClick: () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        val reported = detail.item.reported
-
-        if (reported) {
-            OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
-                Text(REPORTED_BUTTON_TEXT)
-            }
-        } else {
-            VvPrimaryButton(
-                text = "Reportar emisor",
-                onClick = onReportClick,
-                loading = detail.report == ReportUiState.Sending,
+            Icon(
+                imageVector = icon,
+                contentDescription = description,
+                tint = if (selected) Color.White else VvNavy,
+                modifier = Modifier.size(20.dp),
             )
-        }
-
-        (detail.report as? ReportUiState.Failed)?.let {
-            Text(text = it.error.message(), style = MaterialTheme.typography.labelMedium, color = VvOrange)
         }
     }
 }

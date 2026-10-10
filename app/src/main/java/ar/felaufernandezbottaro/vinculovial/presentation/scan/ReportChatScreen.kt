@@ -1,60 +1,70 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.scan
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.DirectionsCar
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
-import ar.felaufernandezbottaro.vinculovial.presentation.components.VvBottomBar
-import ar.felaufernandezbottaro.vinculovial.presentation.components.VvCircleIconButton
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvPrimaryButton
-import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvInk
-import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMint
+import ar.felaufernandezbottaro.vinculovial.presentation.inbox.toChatDayStamp
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMintDark
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMuted
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrange
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.DayChip
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.UserBubble
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviBubble
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviChatHeader
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviMessages
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.senderMessage
+import java.time.Instant
 
 /**
- * Reporte del incidente como un hilo de mensajería, no un menú flotante sobre la cámara: la
- * patente ya quedó validada contra `/alerts/attempts` en `ScanPlateScreen` -- acá sólo falta
- * elegir el tipo de incidente, sacar las fotos de evidencia y publicarlo. El catálogo cerrado
- * se ofrece como respuestas rápidas al pie, nunca como texto libre.
+ * El chat del emisor con ViVIAna. La patente ya quedó validada contra `/alerts/attempts` en
+ * `ScanPlateScreen`: acá sólo falta elegir qué avisar, sacar las fotos de evidencia y enviarlo.
+ * El emisor nunca escribe: elige entre mensajes fijos, para que el dueño no pueda identificarlo.
  */
 @Composable
 fun ReportChatScreen(
@@ -63,66 +73,56 @@ fun ReportChatScreen(
     onReportRequested: () -> Unit,
     onRetry: () -> Unit,
     onRestart: () -> Unit,
-    onOpenInbox: () -> Unit,
     onFinished: () -> Unit,
     onCancel: () -> Unit,
 ) {
     var showCancelDialog by remember { mutableStateOf(false) }
+    val startedAt = remember { Instant.now() }
 
     BackHandler(enabled = !uiState.isBusy) { showCancelDialog = true }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(16.dp),
-            ) {
-                VvCircleIconButton(
-                    icon = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Cancelar",
-                    enabled = !uiState.isBusy,
-                    onClick = { showCancelDialog = true },
-                )
-            }
-        },
-        bottomBar = { VvBottomBar() },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            val messages = remember(uiState) { chatMessages(uiState) }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        ViviChatHeader(
+            onBack = { showCancelDialog = true },
+            backDescription = "Cancelar",
+            backEnabled = !uiState.isBusy,
+        )
+        HorizontalDivider(color = VvMintDark)
 
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(messages) { message -> ChatBubble(message) }
+        val items = remember(uiState) { senderChatItems(uiState) }
+        val listState = rememberLazyListState()
 
-                if (uiState.status is ScanStatus.SendingAlert) {
-                    item { TypingBubble() }
-                }
-            }
-
-            ReportChatFooter(
-                status = uiState.status,
-                evidencePhase = uiState.evidence.phase,
-                onAlertTypeSelected = onAlertTypeSelected,
-                onReportRequested = onReportRequested,
-                onRetry = onRetry,
-                onRestart = onRestart,
-                onOpenInbox = onOpenInbox,
-                onFinished = onFinished,
-                onClose = onCancel,
-            )
+        // La conversación crece hacia abajo: al sumarse un mensaje se muestra el último.
+        LaunchedEffect(items.size) {
+            if (items.isNotEmpty()) listState.animateScrollToItem(items.size)
         }
+
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item { DayChip(startedAt.toChatDayStamp()) }
+            items(items) { item -> SenderChatRow(item) }
+        }
+
+        HorizontalDivider(color = VvMintDark)
+        SenderChatFooter(
+            uiState = uiState,
+            onAlertTypeSelected = onAlertTypeSelected,
+            onReportRequested = onReportRequested,
+            onRetry = onRetry,
+            onRestart = onRestart,
+            onFinished = onFinished,
+            onClose = onCancel,
+        )
     }
 
     if (showCancelDialog) {
@@ -137,164 +137,167 @@ fun ReportChatScreen(
 }
 
 @Composable
-private fun ReportChatFooter(
-    status: ScanStatus,
-    evidencePhase: EvidencePhase,
+private fun SenderChatRow(item: SenderChatItem) {
+    when (item) {
+        is SenderChatItem.Vivi -> ViviBubble(text = item.text, isWarning = item.isWarning)
+        is SenderChatItem.User -> UserBubble(text = item.text)
+        is SenderChatItem.Attachment -> AttachmentBubble(item)
+        SenderChatItem.Typing -> TypingBubble()
+    }
+}
+
+@Composable
+private fun SenderChatFooter(
+    uiState: ScanUiState,
     onAlertTypeSelected: (AlertType) -> Unit,
     onReportRequested: () -> Unit,
     onRetry: () -> Unit,
     onRestart: () -> Unit,
-    onOpenInbox: () -> Unit,
     onFinished: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val status = uiState.status
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .background(Color.White)
             .navigationBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        when (status) {
-            ScanStatus.AwaitingAlertType ->
-                if (evidencePhase == EvidencePhase.COMPLETE) {
-                    VvPrimaryButton(text = "Reportar", onClick = onReportRequested)
-                } else {
-                    AlertTypeComposer(onStartEvidence = onAlertTypeSelected)
-                }
-            is ScanStatus.AlertFailed -> {
-                Text(
-                    text = status.error.message(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = VvOrange,
-                    modifier = Modifier.padding(bottom = 8.dp),
-                )
-                when (status.error.recovery()) {
-                    SendAlertRecovery.RETRY -> VvPrimaryButton(text = "Reintentar", onClick = onRetry)
-                    SendAlertRecovery.RESTART -> VvPrimaryButton(text = "Volver a empezar", onClick = onRestart)
-                    SendAlertRecovery.CHECK_INBOX -> {
-                        VvPrimaryButton(text = "Ir al buzón", onClick = onOpenInbox)
-                        OutlinedButton(
-                            onClick = onClose,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                        ) { Text("Cerrar") }
-                    }
-                    SendAlertRecovery.CLOSE -> VvPrimaryButton(text = "Cerrar", onClick = onClose)
-                }
+        when {
+            status is ScanStatus.AlertSent -> VvPrimaryButton(text = "Cerrar", onClick = onFinished)
+
+            status is ScanStatus.AlertFailed -> when (status.error.recovery()) {
+                SendAlertRecovery.RETRY -> VvPrimaryButton(text = "Reintentar", onClick = onRetry)
+                SendAlertRecovery.RESTART -> VvPrimaryButton(text = "Volver a empezar", onClick = onRestart)
+                SendAlertRecovery.CLOSE -> VvPrimaryButton(text = "Cerrar", onClick = onClose)
             }
-            ScanStatus.AlertSent -> VvPrimaryButton(text = "Continuar", onClick = onFinished)
+
+            status is ScanStatus.AwaitingAlertType && uiState.selectedAlertType == null ->
+                MessageOptions(onAlertTypeSelected = onAlertTypeSelected)
+
+            status is ScanStatus.AwaitingAlertType && uiState.evidence.phase == EvidencePhase.COMPLETE ->
+                VvPrimaryButton(text = "Enviar", onClick = onReportRequested)
+
             else -> Unit
         }
     }
 }
 
-/**
- * Selección del tipo de incidente, tal como lo pide el wireframe: un dropdown con el catálogo
- * cerrado (nunca texto libre). Sólo ofrece los tipos que tienen validación de IA; elegir uno
- * arranca la captura guiada de la evidencia.
- */
-@OptIn(ExperimentalMaterial3Api::class)
+/** Los mensajes fijos entre los que el emisor elige: sólo los tipos con validación de IA. */
 @Composable
-private fun AlertTypeComposer(onStartEvidence: (AlertType) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    var selected by remember { mutableStateOf<AlertType?>(null) }
+private fun MessageOptions(onAlertTypeSelected: (AlertType) -> Unit) {
+    Text(
+        text = ViviMessages.SENDER_OPTIONS_HEADER.uppercase(),
+        style = MaterialTheme.typography.labelMedium,
+        color = VvMuted,
+    )
 
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-            OutlinedTextField(
-                value = selected?.label.orEmpty(),
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Tipo de alerta") },
-                placeholder = { Text("Elegí qué querés reportar") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                modifier = Modifier
-                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                    .fillMaxWidth(),
+    AlertType.offered.forEach { alertType ->
+        OutlinedButton(
+            onClick = { onAlertTypeSelected(alertType) },
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.5.dp, VvNavy),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 56.dp),
+        ) {
+            Icon(
+                imageVector = optionIcon(alertType),
+                contentDescription = null,
+                tint = VvNavy,
+                modifier = Modifier.size(22.dp),
             )
-            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                AlertType.offered.forEach { alertType ->
-                    DropdownMenuItem(
-                        text = { Text(alertType.label) },
-                        onClick = {
-                            selected = alertType
-                            expanded = false
-                        },
-                    )
-                }
-            }
+            Text(
+                text = alertType.senderMessage(),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = VvNavy,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp),
+            )
         }
+    }
 
-        VvPrimaryButton(
-            text = "Sacar fotos",
-            onClick = { selected?.let(onStartEvidence) },
-            enabled = selected != null,
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+        Icon(Icons.Outlined.Lock, contentDescription = null, tint = VvMuted, modifier = Modifier.size(14.dp))
+        Text(
+            text = ViviMessages.SENDER_FIXED_NOTE,
+            style = MaterialTheme.typography.labelMedium,
+            color = VvMuted,
+            modifier = Modifier.padding(start = 8.dp),
         )
     }
 }
 
-private sealed interface ChatMessage {
-    data class System(val text: String) : ChatMessage
-    data class User(val text: String) : ChatMessage
+private fun optionIcon(alertType: AlertType): ImageVector = when (alertType) {
+    AlertType.CRASHED -> Icons.Outlined.Warning
+    else -> Icons.Outlined.DirectionsCar
 }
 
-private fun chatMessages(uiState: ScanUiState): List<ChatMessage> = buildList {
-    add(ChatMessage.System("Vehículo identificado. ¿Qué infracción deseas reportar?"))
-
-    uiState.selectedAlertType?.let { add(ChatMessage.User(it.label)) }
-
-    if (uiState.evidence.phase == EvidencePhase.COMPLETE) {
-        add(ChatMessage.System("Fotos listas. Ya podés enviar el reporte."))
-    }
-
-    if (uiState.status is ScanStatus.AlertSent) {
-        add(ChatMessage.System("Alerta enviada. La estamos validando."))
+/** Las fotos como adjunto del usuario: una etiqueta por foto, sin mostrar la imagen. */
+@Composable
+private fun AttachmentBubble(item: SenderChatItem.Attachment) {
+    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Surface(
+            shape = RoundedCornerShape(topStart = 18.dp, topEnd = 4.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
+            color = VvNavy,
+        ) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item.labels.chunked(ATTACHMENT_COLUMNS).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { label -> AttachmentTile(label) }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                    Text(
+                        text = item.summary,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White,
+                        modifier = Modifier.padding(start = 6.dp),
+                    )
+                }
+            }
+        }
+        if (item.sent) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Check, contentDescription = null, tint = VvMuted, modifier = Modifier.size(14.dp))
+                Text(
+                    text = "Enviado",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = VvMuted,
+                    modifier = Modifier.padding(start = 4.dp),
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun ChatBubble(message: ChatMessage) {
-    when (message) {
-        is ChatMessage.System -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-            Surface(
-                shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
-                color = VvMint,
-                modifier = Modifier.widthIn(max = 280.dp),
-            ) {
-                Text(
-                    text = message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = VvInk,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                )
+private fun AttachmentTile(label: String) {
+    Column(modifier = Modifier.width(58.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFF34508F), modifier = Modifier.size(58.dp)) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.Image, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
             }
         }
-
-        is ChatMessage.User -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            Surface(
-                shape = RoundedCornerShape(topStart = 18.dp, topEnd = 4.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
-                color = VvNavy,
-                modifier = Modifier.widthIn(max = 280.dp),
-            ) {
-                Text(
-                    text = message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                )
-            }
-        }
+        Text(text = label, style = MaterialTheme.typography.labelMedium, color = Color.White, maxLines = 1)
     }
 }
 
-/** Burbuja del sistema mientras se publica el reporte -- simula "escribiendo…". */
+/** ViVIAna "escribiendo" mientras se publica el envío. */
 @Composable
 private fun TypingBubble() {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Surface(
             shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
-            color = VvMint,
+            color = Color.White,
+            border = BorderStroke(1.dp, VvMintDark),
         ) {
             Box(modifier = Modifier.padding(14.dp)) {
                 CircularProgressIndicator(color = VvNavy, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
@@ -317,3 +320,5 @@ private fun CancelReportDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
         },
     )
 }
+
+private const val ATTACHMENT_COLUMNS = 4

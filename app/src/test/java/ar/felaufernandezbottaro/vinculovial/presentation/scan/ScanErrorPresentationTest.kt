@@ -44,16 +44,16 @@ class ScanErrorPresentationTest {
     }
 
     @Test
-    fun `si la alerta pudo haberse enviado no se reinicia ni se reintenta, se ofrece el buzon o cerrar`() {
-        assertEquals(SendAlertRecovery.CHECK_INBOX, SendAlertError.PossiblySent.recovery())
+    fun `si la alerta pudo haberse enviado no se reinicia ni se reintenta, solo se cierra`() {
+        assertEquals(SendAlertRecovery.CLOSE, SendAlertError.PossiblySent.recovery())
     }
 
     @Test
-    fun `el aviso de envio incierto dice que pudo haberse enviado y no promete reenviar`() {
+    fun `el aviso de envio incierto es el texto de ViVIAna, sin ofrecer el buzon`() {
         val message = SendAlertError.PossiblySent.message()
 
-        assertTrue(message.contains("Puede que ya se haya enviado"))
-        assertTrue(message.contains("no la reenviamos"))
+        assertEquals("No pudimos confirmar el envío. Puede que tu alerta se haya enviado.", message)
+        assertTrue(!message.contains("buzón"))
     }
 
     @Test

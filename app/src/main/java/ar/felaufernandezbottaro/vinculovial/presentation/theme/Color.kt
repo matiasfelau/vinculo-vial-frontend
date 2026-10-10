@@ -20,3 +20,12 @@ val VvMint = Color(0xFFDCF3E9)
 val VvMintDark = Color(0xFFBFE4D3)
 val VvInk = Color(0xFF13203D)
 val VvMuted = Color(0xFF5B6472)
+
+/** Confianza media y avisos que piden cuidado (ámbar), y el texto de hora de lo no leído. */
+val VvAmberSurface = Color(0xFFFEF3C7)
+val VvAmber = Color(0xFFF59E0B)
+val VvAmberDark = Color(0xFF92400E)
+val VvOrangeDark = Color(0xFFC2410C)
+
+/** Fondo de los casilleros de evidencia mientras la foto no está. */
+val VvTile = Color(0xFFE8EFEC)

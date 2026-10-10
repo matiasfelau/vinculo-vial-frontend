@@ -2,6 +2,7 @@ package ar.felaufernandezbottaro.vinculovial.presentation.scan
 
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviMessages
 
 fun StartAlertAttemptResult.Failure.message(): String = when (this) {
     StartAlertAttemptResult.UnderReview ->
@@ -42,9 +43,7 @@ fun SendAlertError.message(): String = when (this) {
     SendAlertError.AttemptNotFound ->
         "Se perdió la verificación de la patente. Volvé a empezar."
 
-    SendAlertError.PossiblySent ->
-        "Se cortó la conexión mientras enviábamos la alerta y no pudimos confirmar si llegó. " +
-            "Puede que ya se haya enviado, así que no la reenviamos para no duplicarla."
+    SendAlertError.PossiblySent -> ViviMessages.SENDER_POSSIBLY_SENT
 
     SendAlertError.AttemptExpired ->
         "La verificación de la patente venció. Intentá de nuevo."
@@ -70,9 +69,6 @@ enum class SendAlertRecovery {
     /** Empezar de nuevo desde la patente: el intento se perdió. */
     RESTART,
 
-    /** Pudo haberse enviado: no se reenvía ni se reinicia; se ofrece ir al buzón o cerrar. */
-    CHECK_INBOX,
-
     /** Nada que reintentar con lo que hay: sólo cerrar y descartar. */
     CLOSE,
 }
@@ -87,8 +83,8 @@ fun SendAlertError.recovery(): SendAlertRecovery = when (this) {
 
     SendAlertError.AttemptNotFound -> SendAlertRecovery.RESTART
 
-    SendAlertError.PossiblySent -> SendAlertRecovery.CHECK_INBOX
 
+    SendAlertError.PossiblySent,
     SendAlertError.InvalidEvidence,
     SendAlertError.AlertTypeDisabled,
     SendAlertError.InvalidAlertType,
