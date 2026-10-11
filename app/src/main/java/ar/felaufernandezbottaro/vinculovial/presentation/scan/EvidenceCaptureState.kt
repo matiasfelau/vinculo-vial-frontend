@@ -7,6 +7,13 @@ enum class EvidencePhase {
     /** Todavía no se eligió el tipo de alerta. */
     IDLE,
 
+    /**
+     * Ya se eligió el mensaje y ViVIAna explicó qué fotos hacen falta, pero la cámara todavía no
+     * se abrió: el usuario lee y recién cuando quiere toca "Tomar fotos". Es también el estado al
+     * que se vuelve si se sale de la cámara sin terminar.
+     */
+    READY,
+
     /** Esperando la foto del paso actual: cámara en vivo. */
     CAPTURING,
 
@@ -51,4 +58,11 @@ data class EvidenceCaptureState(
 
     /** `true` si el paso actual admite otra foto más (sólo el daño, hasta 3). */
     val canAddAnother: Boolean get() = currentStep?.let { photoIndex + 1 < it.maxPhotos } == true
+
+    /**
+     * Cuántas fotos se sacaron hasta ahora. Los pasos anteriores al actual tienen una sola foto
+     * (sólo el daño admite varias y es el último paso); el actual, tantas como índices recorrió.
+     * Con la captura [EvidencePhase.COMPLETE] es el total que se adjunta.
+     */
+    fun photoCount(): Int = if (steps.isEmpty()) 0 else stepIndex + photoIndex + 1
 }

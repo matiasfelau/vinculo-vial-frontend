@@ -60,7 +60,11 @@ class ScanViewModelEvidenceTest {
         it.onPlateConfirmed()
     }
 
-    private fun ScanViewModel.capturing(alertType: AlertType) = apply { onAlertTypeSelected(alertType) }
+    /** Elige el mensaje y toca "Tomar fotos": queda en la cámara, listo para sacar la primera foto. */
+    private fun ScanViewModel.capturing(alertType: AlertType) = apply {
+        onAlertTypeSelected(alertType)
+        onCaptureStarted()
+    }
 
     private val ScanViewModel.evidence: EvidenceCaptureState get() = uiState.value.evidence
 
@@ -68,6 +72,7 @@ class ScanViewModelEvidenceTest {
         onPhotoCaptured(ByteArray(8) { 1 }, rotationDegrees)
 
     private fun ScanViewModel.completeEvidence() {
+        if (evidence.phase == EvidencePhase.READY) onCaptureStarted()
         while (evidence.phase != EvidencePhase.COMPLETE) {
             takePhoto()
             onStepConfirmed()
@@ -77,17 +82,138 @@ class ScanViewModelEvidenceTest {
     // -- Elegir el tipo ---------------------------------------------------------------------
 
     @Test
-    fun `elegir un tipo ofrecido arranca la captura en el primer paso`() = runTest {
+    fun `elegir un tipo ofrecido deja la captura lista pero no abre la camara`() = runTest {
         val viewModel = withAttempt()
 
         viewModel.onAlertTypeSelected(AlertType.CRASHED)
 
-        assertEquals(EvidencePhase.CAPTURING, viewModel.evidence.phase)
+        assertEquals(AlertType.CRASHED, viewModel.uiState.value.selectedAlertType)
+        assertEquals(EvidencePhase.READY, viewModel.evidence.phase)
         assertEquals(
             listOf(EvidenceRole.GENERAL, EvidenceRole.PLATE, EvidenceRole.DETAIL),
             viewModel.evidence.steps.map { it.role },
         )
         assertEquals(EvidenceRole.GENERAL, viewModel.evidence.currentStep?.role)
+    }
+
+    @Test
+    fun `mientras el usuario lee no se acepta ninguna foto`() = runTest {
+        val viewModel = withAttempt()
+        viewModel.onAlertTypeSelected(AlertType.CRASHED)
+        val early = ByteArray(8) { 1 }
+
+        viewModel.onPhotoCaptured(early, 0)
+
+        assertArrayEquals(ByteArray(8), early)
+        assertEquals(EvidencePhase.READY, viewModel.evidence.phase)
+        assertEquals(emptyList<Int>(), rasterFactory.rotationsReceived)
+    }
+
+    // -- "Tomar fotos" y volver de la cámara --------------------------------------------------
+
+    @Test
+    fun `Tomar fotos abre la captura en el primer paso`() = runTest {
+        val viewModel = withAttempt()
+        viewModel.onAlertTypeSelected(AlertType.CRASHED)
+
+        viewModel.onCaptureStarted()
+
+        assertEquals(EvidencePhase.CAPTURING, viewModel.evidence.phase)
+        assertEquals(0, viewModel.evidence.stepIndex)
+        assertEquals(0, viewModel.evidence.photoIndex)
+    }
+
+    @Test
+    fun `Tomar fotos sin haber elegido un mensaje no hace nada`() = runTest {
+        val viewModel = withAttempt()
+
+        viewModel.onCaptureStarted()
+
+        assertEquals(EvidencePhase.IDLE, viewModel.evidence.phase)
+    }
+
+    @Test
+    fun `tocar Tomar fotos de nuevo en plena captura no la reinicia`() = runTest {
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.takePhoto()
+
+        viewModel.onCaptureStarted()
+
+        assertEquals(EvidencePhase.REVIEWING, viewModel.evidence.phase)
+        assertTrue(rasterFactory.anyAlive())
+    }
+
+    @Test
+    fun `volver atras desde la camara regresa al chat con el mensaje elegido y las fotos descartadas`() = runTest {
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.takePhoto()
+        viewModel.onStepConfirmed()
+        viewModel.takePhoto()
+
+        viewModel.onCaptureCancelled()
+
+        assertEquals(EvidencePhase.READY, viewModel.evidence.phase)
+        assertEquals(AlertType.CRASHED, viewModel.uiState.value.selectedAlertType)
+        assertEquals(0, viewModel.evidence.stepIndex)
+        assertEquals(3, viewModel.evidence.steps.size)
+        assertTrue(rasterFactory.allWiped())
+    }
+
+    @Test
+    fun `volver atras sin haber sacado fotos tambien regresa a Tomar fotos`() = runTest {
+        val viewModel = withAttempt().capturing(AlertType.PARKED_ON_GARAGE)
+
+        viewModel.onCaptureCancelled()
+
+        assertEquals(EvidencePhase.READY, viewModel.evidence.phase)
+        assertEquals(AlertType.PARKED_ON_GARAGE, viewModel.uiState.value.selectedAlertType)
+    }
+
+    @Test
+    fun `despues de volver se puede tomar las fotos de nuevo desde el primer paso`() = runTest {
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.takePhoto()
+        viewModel.onStepConfirmed()
+        viewModel.onCaptureCancelled()
+
+        viewModel.onCaptureStarted()
+
+        assertEquals(EvidencePhase.CAPTURING, viewModel.evidence.phase)
+        assertEquals(0, viewModel.evidence.stepIndex)
+        viewModel.completeEvidence()
+        assertEquals(EvidencePhase.COMPLETE, viewModel.evidence.phase)
+    }
+
+    @Test
+    fun `con las fotos completas volver atras no las descarta`() = runTest {
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onCaptureCancelled()
+
+        assertEquals(EvidencePhase.COMPLETE, viewModel.evidence.phase)
+        assertTrue(rasterFactory.anyAlive())
+    }
+
+    @Test
+    fun `cancelar el reporte despues de volver de la camara descarta tambien la eleccion`() = runTest {
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.onCaptureCancelled()
+
+        viewModel.onReportCancelled()
+
+        assertNull(viewModel.uiState.value.selectedAlertType)
+        assertEquals(EvidencePhase.IDLE, viewModel.evidence.phase)
+    }
+
+    @Test
+    fun `solo se puede enviar con las fotos completas, no mientras el usuario lee`() = runTest {
+        val viewModel = withAttempt()
+        viewModel.onAlertTypeSelected(AlertType.CRASHED)
+
+        viewModel.onReportRequested()
+
+        assertEquals(emptyList<Any>(), alertRepository.received)
     }
 
     @Test
@@ -119,7 +245,8 @@ class ScanViewModelEvidenceTest {
 
         assertTrue(rasterFactory.allWiped())
         assertEquals(0, viewModel.evidence.stepIndex)
-        assertEquals(EvidencePhase.CAPTURING, viewModel.evidence.phase)
+        assertEquals(EvidencePhase.READY, viewModel.evidence.phase)
+        assertEquals(AlertType.PARKED_ON_GARAGE, viewModel.uiState.value.selectedAlertType)
     }
 
     // -- Procesar la foto ------------------------------------------------------------------

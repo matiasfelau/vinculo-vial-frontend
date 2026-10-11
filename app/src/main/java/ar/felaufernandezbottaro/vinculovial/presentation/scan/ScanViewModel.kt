@@ -180,8 +180,9 @@ class ScanViewModel @Inject constructor(
 
     /**
      * Elegida en el `ReportChatScreen`: se guarda en [ScanUiState.selectedAlertType] para
-     * renderizarla como el mensaje del usuario en el hilo, y arranca la captura guiada de
-     * evidencia de ese tipo. Un tipo que la app no ofrece se ignora.
+     * renderizarla como el mensaje del usuario en el hilo. **No abre la cámara**: ViVIAna explica
+     * qué fotos hacen falta y el usuario lo lee; la captura arranca recién con [onCaptureStarted].
+     * Un tipo que la app no ofrece se ignora.
      */
     fun onAlertTypeSelected(alertType: AlertType) {
         if (pendingAttempt == null || !alertType.isOffered) return
@@ -192,10 +193,41 @@ class ScanViewModel @Inject constructor(
                 selectedAlertType = alertType,
                 evidence = EvidenceCaptureState(
                     steps = EvidencePlan.stepsFor(alertType),
-                    phase = EvidencePhase.CAPTURING,
+                    phase = EvidencePhase.READY,
                 ),
             )
         }
+    }
+
+    /** "Tomar fotos": abre la captura guiada desde el primer paso. Sólo desde [EvidencePhase.READY]. */
+    fun onCaptureStarted() {
+        val evidence = _uiState.value.evidence
+        if (evidence.phase != EvidencePhase.READY) return
+
+        evidenceBuffers.clear()
+        _uiState.update {
+            it.copy(
+                evidence = evidence.copy(
+                    stepIndex = 0,
+                    photoIndex = 0,
+                    phase = EvidencePhase.CAPTURING,
+                    error = null,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Se sale de la cámara sin terminar: se descartan las fotos sacadas y se vuelve al chat con
+     * el mensaje elegido y el botón "Tomar fotos", sin perder la elección. No hace nada fuera de
+     * la captura (por ejemplo, con las fotos ya completas o mientras una foto se procesa).
+     */
+    fun onCaptureCancelled() {
+        val evidence = _uiState.value.evidence
+        if (evidence.phase != EvidencePhase.CAPTURING && evidence.phase != EvidencePhase.REVIEWING) return
+
+        evidenceBuffers.clear()
+        _uiState.update { it.copy(evidence = EvidenceCaptureState(steps = evidence.steps, phase = EvidencePhase.READY)) }
     }
 
     /**
@@ -285,7 +317,7 @@ class ScanViewModel @Inject constructor(
         }
     }
 
-    /** Sale de la captura sin enviar: libera las fotos y vuelve a elegir el tipo. */
+    /** Descarta la elección y las fotos: vuelve a mostrar los mensajes para elegir. */
     fun onEvidenceDiscarded() {
         evidenceBuffers.clear()
         sendMayHaveReachedServer = false

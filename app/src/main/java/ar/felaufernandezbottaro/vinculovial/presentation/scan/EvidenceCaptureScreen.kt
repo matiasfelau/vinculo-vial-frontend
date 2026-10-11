@@ -170,7 +170,7 @@ fun EvidenceCaptureScreen(
         ) {
             VvCircleIconButton(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Cancelar",
+                contentDescription = "Volver al chat",
                 enabled = !busy,
                 onClick = { showCancelDialog = true },
             )
@@ -250,7 +250,7 @@ fun EvidenceCaptureScreen(
                     onConfirm = onStepConfirmed,
                 )
 
-                EvidencePhase.IDLE, EvidencePhase.COMPLETE -> Unit
+                EvidencePhase.IDLE, EvidencePhase.READY, EvidencePhase.COMPLETE -> Unit
             }
         }
     }
@@ -258,18 +258,18 @@ fun EvidenceCaptureScreen(
     if (showCancelDialog) {
         AlertDialog(
             onDismissRequest = { showCancelDialog = false },
-            title = { Text("¿Deseás cancelar el reporte?") },
-            text = { Text("Las fotos que sacaste se descartan y no se envía ningún reporte.") },
+            title = { Text("¿Volver al chat?") },
+            text = { Text("Las fotos que sacaste se descartan y vas a tener que sacarlas de nuevo.") },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showCancelDialog = false
                         onCancel()
                     },
-                ) { Text("Sí, cancelar", color = VvOrange) }
+                ) { Text("Sí, volver", color = VvOrange) }
             },
             dismissButton = {
-                TextButton(onClick = { showCancelDialog = false }) { Text("Seguir", color = VvNavy) }
+                TextButton(onClick = { showCancelDialog = false }) { Text("Seguir sacando", color = VvNavy) }
             },
         )
     }

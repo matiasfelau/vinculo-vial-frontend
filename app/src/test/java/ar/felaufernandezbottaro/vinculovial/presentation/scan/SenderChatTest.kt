@@ -38,44 +38,73 @@ class SenderChatTest {
         )
     }
 
+    private fun readyEvidence(alertType: AlertType) =
+        EvidenceCaptureState(steps = EvidencePlan.stepsFor(alertType), phase = EvidencePhase.READY)
+
     @Test
-    fun `elegir un mensaje lo muestra como mensaje del usuario y ViVIAna pide las fotos`() {
-        val items = senderChatItems(
-            stateOf(
-                alertType = AlertType.CRASHED,
-                evidence = EvidenceCaptureState(steps = EvidencePlan.stepsFor(AlertType.CRASHED), phase = EvidencePhase.CAPTURING),
-            ),
-        )
+    fun `elegir un mensaje lo muestra como mensaje del usuario y ViVIAna explica que fotos hacen falta`() {
+        val items = senderChatItems(stateOf(AlertType.CRASHED, evidence = readyEvidence(AlertType.CRASHED)))
 
         assertEquals(SenderChatItem.User("Tu auto fue chocado."), items[1])
-        assertTrue((items[2] as SenderChatItem.Vivi).text.startsWith("Para avisarle necesito fotos."))
+        assertEquals(
+            SenderChatItem.Vivi(
+                "Para avisarle necesito fotos. Te guío con la cámara: el auto con la patente visible, " +
+                    "la patente de cerca y el daño.",
+            ),
+            items[2],
+        )
         assertEquals(3, items.size)
     }
 
     @Test
-    fun `con las fotos listas se muestran como adjunto del usuario`() {
-        val items = senderChatItems(stateOf(AlertType.CRASHED, evidence = completedEvidence(AlertType.CRASHED, details = 2)))
+    fun `mientras el usuario lee la explicacion no hay adjunto ni indicio de camara`() {
+        val items = senderChatItems(stateOf(AlertType.PARKED_ON_GARAGE, evidence = readyEvidence(AlertType.PARKED_ON_GARAGE)))
 
-        val attachment = items.last() as SenderChatItem.Attachment
-        assertEquals(listOf("General", "Patente", "Daño 1", "Daño 2"), attachment.labels)
-        assertEquals("4 fotos, cifradas en tu teléfono", attachment.summary)
-        assertEquals(false, attachment.sent)
+        assertTrue(items.none { it is SenderChatItem.Attachment })
+        assertTrue(items.none { it is SenderChatItem.Typing })
+        assertTrue(items.filterIsInstance<SenderChatItem.Vivi>().none { it.isWarning })
     }
 
     @Test
-    fun `las fotos de PARKED_ON_GARAGE son general, patente y contexto`() {
+    fun `tras volver de la camara la conversacion es la misma que antes de abrirla`() {
+        val before = senderChatItems(stateOf(AlertType.CRASHED, evidence = readyEvidence(AlertType.CRASHED)))
+        val capturing = senderChatItems(
+            stateOf(AlertType.CRASHED, evidence = readyEvidence(AlertType.CRASHED).copy(phase = EvidencePhase.CAPTURING)),
+        )
+
+        assertEquals(before, capturing)
+    }
+
+    @Test
+    fun `con las fotos listas se muestran como una sola burbuja de adjunto`() {
+        val items = senderChatItems(stateOf(AlertType.CRASHED, evidence = completedEvidence(AlertType.CRASHED, details = 2)))
+
+        val attachments = items.filterIsInstance<SenderChatItem.Attachment>()
+        assertEquals(1, attachments.size)
+        assertEquals("4 fotos cifradas adjuntas", attachments.single().summary)
+        assertEquals(false, attachments.single().sent)
+    }
+
+    @Test
+    fun `el adjunto cuenta las fotos segun el tipo`() {
+        assertEquals(3, completedEvidence(AlertType.CRASHED, details = 1).photoCount())
+        assertEquals(4, completedEvidence(AlertType.CRASHED, details = 2).photoCount())
+        assertEquals(5, completedEvidence(AlertType.CRASHED, details = 3).photoCount())
+        assertEquals(3, completedEvidence(AlertType.PARKED_ON_GARAGE).photoCount())
+    }
+
+    @Test
+    fun `PARKED_ON_GARAGE adjunta 3 fotos cifradas`() {
         val items = senderChatItems(stateOf(AlertType.PARKED_ON_GARAGE, evidence = completedEvidence(AlertType.PARKED_ON_GARAGE)))
 
         val attachment = items.last() as SenderChatItem.Attachment
-        assertEquals(listOf("General", "Patente", "Contexto"), attachment.labels)
-        assertEquals("3 fotos, cifradas en tu teléfono", attachment.summary)
+        assertEquals(3, attachment.photoCount)
+        assertEquals("3 fotos cifradas adjuntas", attachment.summary)
     }
 
     @Test
-    fun `una sola foto de daño no lleva numero`() {
-        val state = completedEvidence(AlertType.CRASHED, details = 1)
-
-        assertEquals(listOf("General", "Patente", "Daño"), state.photoLabels())
+    fun `sin captura el conteo de fotos es cero`() {
+        assertEquals(0, EvidenceCaptureState().photoCount())
     }
 
     @Test

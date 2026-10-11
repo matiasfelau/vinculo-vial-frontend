@@ -302,8 +302,9 @@ fun VinculoVialNavHost(
 
                 ReportChatScreen(
                     uiState = state,
-                    onAlertTypeSelected = { alertType ->
-                        viewModel.onAlertTypeSelected(alertType)
+                    onAlertTypeSelected = viewModel::onAlertTypeSelected,
+                    onStartCapture = {
+                        viewModel.onCaptureStarted()
                         navController.navigate(Route.EVIDENCE_CAPTURE)
                     },
                     onReportRequested = viewModel::onReportRequested,
@@ -331,8 +332,9 @@ fun VinculoVialNavHost(
                     if (state.evidence.phase == EvidencePhase.COMPLETE) navController.popBackStack()
                 }
 
+                // Salir de la cámara sin terminar vuelve al chat con el mensaje elegido y "Tomar fotos".
                 val discard = {
-                    viewModel.onEvidenceDiscarded()
+                    viewModel.onCaptureCancelled()
                     navController.popBackStack()
                 }
 
