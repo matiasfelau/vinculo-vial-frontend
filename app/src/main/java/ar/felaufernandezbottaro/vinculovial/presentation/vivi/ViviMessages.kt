@@ -67,9 +67,11 @@ object ViviMessages {
                 "la patente de cerca y el auto junto a la rampa, desde la vereda."
     }
 
-    /** "4 fotos, cifradas en tu teléfono". */
+    const val SENDER_TAKE_PHOTOS = "Tomar fotos"
+
+    /** "3 fotos cifradas adjuntas": el único texto del adjunto del emisor, sin detalle por foto. */
     fun senderAttachmentSummary(photoCount: Int): String =
-        "$photoCount ${if (photoCount == 1) "foto" else "fotos"}, cifradas en tu teléfono"
+        if (photoCount == 1) "1 foto cifrada adjunta" else "$photoCount fotos cifradas adjuntas"
 }
 
 /** La etiqueta de la confianza: "Confianza alta" / "Confianza media". */

@@ -1,7 +1,6 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.scan
 
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviMessages
-import ar.felaufernandezbottaro.vinculovial.presentation.vivi.evidenceTileLabel
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.senderMessage
 
 /** Un elemento de la conversación del emisor con ViVIAna. */
@@ -13,22 +12,11 @@ sealed interface SenderChatItem {
     /** El mensaje fijo que eligió el emisor. */
     data class User(val text: String) : SenderChatItem
 
-    /** Las fotos como adjunto del usuario: una etiqueta por foto y el resumen "N fotos, cifradas en tu teléfono". */
-    data class Attachment(val labels: List<String>, val summary: String, val sent: Boolean) : SenderChatItem
+    /** Las fotos como un único adjunto del usuario: un candado y "N fotos cifradas adjuntas", sin detalle por foto. */
+    data class Attachment(val photoCount: Int, val summary: String, val sent: Boolean) : SenderChatItem
 
     /** ViVIAna "escribiendo" mientras se sube el envío. */
     data object Typing : SenderChatItem
-}
-
-/**
- * Las etiquetas de las fotos sacadas, en orden ("General", "Patente", "Daño 1", "Daño 2"). Los
- * pasos anteriores al actual tienen una sola foto; el actual, tantas como índices recorrió.
- */
-fun EvidenceCaptureState.photoLabels(): List<String> = buildList {
-    steps.take(stepIndex + 1).forEachIndexed { index, step ->
-        val count = if (index < stepIndex) 1 else photoIndex + 1
-        repeat(count) { photo -> add(evidenceTileLabel(step.role.name, photo, count)) }
-    }
 }
 
 /**
@@ -48,11 +36,11 @@ fun senderChatItems(state: ScanUiState): List<SenderChatItem> = buildList {
     add(SenderChatItem.Vivi(ViviMessages.senderPhotosIntro(alertType)))
 
     if (state.evidence.phase == EvidencePhase.COMPLETE) {
-        val labels = state.evidence.photoLabels()
+        val photoCount = state.evidence.photoCount()
         add(
             SenderChatItem.Attachment(
-                labels = labels,
-                summary = ViviMessages.senderAttachmentSummary(labels.size),
+                photoCount = photoCount,
+                summary = ViviMessages.senderAttachmentSummary(photoCount),
                 sent = state.status is ScanStatus.AlertSent,
             ),
         )

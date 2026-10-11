@@ -193,8 +193,14 @@ class ViviMessagesTest {
 
     @Test
     fun `el resumen del adjunto cuenta las fotos y dice que estan cifradas`() {
-        assertEquals("4 fotos, cifradas en tu teléfono", ViviMessages.senderAttachmentSummary(4))
-        assertEquals("1 foto, cifradas en tu teléfono", ViviMessages.senderAttachmentSummary(1))
+        assertEquals("3 fotos cifradas adjuntas", ViviMessages.senderAttachmentSummary(3))
+        assertEquals("5 fotos cifradas adjuntas", ViviMessages.senderAttachmentSummary(5))
+        assertEquals("1 foto cifrada adjunta", ViviMessages.senderAttachmentSummary(1))
+    }
+
+    @Test
+    fun `el boton que abre la camara guiada se llama Tomar fotos`() {
+        assertEquals("Tomar fotos", ViviMessages.SENDER_TAKE_PHOTOS)
     }
 
     @Test

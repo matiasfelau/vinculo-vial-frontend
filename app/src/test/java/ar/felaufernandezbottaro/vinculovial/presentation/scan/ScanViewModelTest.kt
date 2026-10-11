@@ -54,6 +54,7 @@ class ScanViewModelTest {
 
     /** Saca y confirma una foto por cada paso de la captura guiada, hasta completarla. */
     private fun ScanViewModel.completeEvidence() {
+        if (uiState.value.evidence.phase == EvidencePhase.READY) onCaptureStarted()
         while (uiState.value.evidence.phase != EvidencePhase.COMPLETE) {
             onPhotoCaptured(ByteArray(8) { 1 }, 0)
             onStepConfirmed()

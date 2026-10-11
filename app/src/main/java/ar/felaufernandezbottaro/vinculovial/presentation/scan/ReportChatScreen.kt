@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -22,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.DirectionsCar
-import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
@@ -70,6 +68,7 @@ import java.time.Instant
 fun ReportChatScreen(
     uiState: ScanUiState,
     onAlertTypeSelected: (AlertType) -> Unit,
+    onStartCapture: () -> Unit,
     onReportRequested: () -> Unit,
     onRetry: () -> Unit,
     onRestart: () -> Unit,
@@ -117,6 +116,7 @@ fun ReportChatScreen(
         SenderChatFooter(
             uiState = uiState,
             onAlertTypeSelected = onAlertTypeSelected,
+            onStartCapture = onStartCapture,
             onReportRequested = onReportRequested,
             onRetry = onRetry,
             onRestart = onRestart,
@@ -150,6 +150,7 @@ private fun SenderChatRow(item: SenderChatItem) {
 private fun SenderChatFooter(
     uiState: ScanUiState,
     onAlertTypeSelected: (AlertType) -> Unit,
+    onStartCapture: () -> Unit,
     onReportRequested: () -> Unit,
     onRetry: () -> Unit,
     onRestart: () -> Unit,
@@ -177,6 +178,9 @@ private fun SenderChatFooter(
 
             status is ScanStatus.AwaitingAlertType && uiState.selectedAlertType == null ->
                 MessageOptions(onAlertTypeSelected = onAlertTypeSelected)
+
+            status is ScanStatus.AwaitingAlertType && uiState.evidence.phase == EvidencePhase.READY ->
+                VvPrimaryButton(text = ViviMessages.SENDER_TAKE_PHOTOS, onClick = onStartCapture)
 
             status is ScanStatus.AwaitingAlertType && uiState.evidence.phase == EvidencePhase.COMPLETE ->
                 VvPrimaryButton(text = "Enviar", onClick = onReportRequested)
@@ -239,7 +243,7 @@ private fun optionIcon(alertType: AlertType): ImageVector = when (alertType) {
     else -> Icons.Outlined.DirectionsCar
 }
 
-/** Las fotos como adjunto del usuario: una etiqueta por foto, sin mostrar la imagen. */
+/** Las fotos como un único adjunto del usuario: un candado y "N fotos cifradas adjuntas". */
 @Composable
 private fun AttachmentBubble(item: SenderChatItem.Attachment) {
     Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -247,21 +251,13 @@ private fun AttachmentBubble(item: SenderChatItem.Attachment) {
             shape = RoundedCornerShape(topStart = 18.dp, topEnd = 4.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
             color = VvNavy,
         ) {
-            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                item.labels.chunked(ATTACHMENT_COLUMNS).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        row.forEach { label -> AttachmentTile(label) }
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
-                    Text(
-                        text = item.summary,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White,
-                        modifier = Modifier.padding(start = 6.dp),
-                    )
-                }
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.Outlined.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Text(text = item.summary, style = MaterialTheme.typography.bodyMedium, color = Color.White)
             }
         }
         if (item.sent) {
@@ -275,18 +271,6 @@ private fun AttachmentBubble(item: SenderChatItem.Attachment) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun AttachmentTile(label: String) {
-    Column(modifier = Modifier.width(58.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFF34508F), modifier = Modifier.size(58.dp)) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.Image, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-            }
-        }
-        Text(text = label, style = MaterialTheme.typography.labelMedium, color = Color.White, maxLines = 1)
     }
 }
 
@@ -320,5 +304,3 @@ private fun CancelReportDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
         },
     )
 }
-
-private const val ATTACHMENT_COLUMNS = 4
