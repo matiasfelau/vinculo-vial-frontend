@@ -1,6 +1,5 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.vivi
 
-import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertConfidence
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertItem
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackRating
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
@@ -24,14 +23,11 @@ object ViviMessages {
 
     const val OWNER_GREETING = "Hola, soy ViVIAna. Tenés un nuevo mensaje sobre uno de tus vehículos."
 
-    const val CONFIDENCE_HIGH_LABEL = "Confianza alta"
-    const val CONFIDENCE_MEDIUM_LABEL = "Confianza media"
+    /** Lo que ViVIAna cierra en todas las alertas: no distingue entre más o menos validadas. */
+    const val OWNER_REVIEW_PROMPT = "Revisá las fotos antes de actuar."
 
-    const val CONFIDENCE_HIGH_MESSAGE = "Validé las fotos y coinciden con lo que dice el mensaje."
-    const val CONFIDENCE_MEDIUM_MESSAGE = "Validé las fotos, pero no estoy del todo segura de que muestren lo que " +
-        "dice el mensaje. Revisalas con cuidado antes de actuar."
-
-    const val REVIEW_BADGE = "No verificada por completo"
+    /** Pill de cada fila de Recibidos: invita a abrir el mensaje. */
+    const val INBOX_VIEW_PHOTOS = "Ver fotos"
 
     const val EVIDENCE_REDACTED_NOTE = "Ocultamos rostros y otras patentes."
     const val EVIDENCE_UNAVAILABLE = "La evidencia ya no está disponible"
@@ -61,7 +57,7 @@ object ViviMessages {
     fun senderPhotosIntro(alertType: AlertType): String = when (alertType) {
         AlertType.CRASHED ->
             "Para avisarle necesito fotos. Te guío con la cámara: el auto con la patente visible, " +
-                "la patente de cerca y el daño."
+                "la patente de cerca y una foto del daño."
         else ->
             "Para avisarle necesito fotos. Te guío con la cámara: el auto con la patente visible, " +
                 "la patente de cerca y el auto junto a la rampa, desde la vereda."
@@ -72,18 +68,6 @@ object ViviMessages {
     /** "3 fotos cifradas adjuntas": el único texto del adjunto del emisor, sin detalle por foto. */
     fun senderAttachmentSummary(photoCount: Int): String =
         if (photoCount == 1) "1 foto cifrada adjunta" else "$photoCount fotos cifradas adjuntas"
-}
-
-/** La etiqueta de la confianza: "Confianza alta" / "Confianza media". */
-fun AlertConfidence.label(): String = when (this) {
-    AlertConfidence.HIGH -> ViviMessages.CONFIDENCE_HIGH_LABEL
-    AlertConfidence.MEDIUM -> ViviMessages.CONFIDENCE_MEDIUM_LABEL
-}
-
-/** Lo que ViVIAna dice sobre la validación en el chat del dueño. */
-fun AlertConfidence.message(): String = when (this) {
-    AlertConfidence.HIGH -> ViviMessages.CONFIDENCE_HIGH_MESSAGE
-    AlertConfidence.MEDIUM -> ViviMessages.CONFIDENCE_MEDIUM_MESSAGE
 }
 
 /**
@@ -119,16 +103,15 @@ fun alertTitle(rawAlertType: String): String = alertTypeOf(rawAlertType)?.let(SH
 
 /**
  * La línea del último mensaje de ViVIAna que se ve en la fila del buzón. Gana lo último que
- * hizo el usuario (reportó, valoró); si no hizo nada y no hay evidencia, eso; si no, lo que
- * ViVIAna concluyó sobre la validación.
+ * hizo el usuario (reportó, valoró); si no hizo nada y no hay evidencia, eso; si no, el mismo
+ * pedido de revisar las fotos que cierra el chat.
  */
 fun AlertItem.inboxPreview(): String = when {
     reported -> "Reportaste al emisor."
     myFeedback == FeedbackRating.UP -> "Marcaste que el aviso te sirvió."
     myFeedback == FeedbackRating.DOWN -> "Marcaste que el aviso no te sirvió."
     evidence.isEmpty() -> "${ViviMessages.EVIDENCE_UNAVAILABLE}."
-    confidence == AlertConfidence.MEDIUM -> "${ViviMessages.NAME}: Revisá la evidencia con cuidado antes de actuar."
-    else -> "${ViviMessages.NAME}: Validé las fotos y coinciden con el aviso."
+    else -> "${ViviMessages.NAME}: ${ViviMessages.OWNER_REVIEW_PROMPT}"
 }
 
 /**

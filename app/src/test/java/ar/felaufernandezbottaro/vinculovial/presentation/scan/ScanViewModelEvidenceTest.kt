@@ -350,27 +350,23 @@ class ScanViewModelEvidenceTest {
     }
 
     @Test
-    fun `solo el daño admite agregar otra foto, hasta 3`() = runTest {
+    fun `CRASHED pide exactamente una foto de daño y no ofrece agregar otra`() = runTest {
         val viewModel = withAttempt().capturing(AlertType.CRASHED)
         repeat(2) {
             viewModel.takePhoto()
             viewModel.onStepConfirmed()
         }
-
-        viewModel.takePhoto()
-        assertTrue(viewModel.evidence.canAddAnother)
-        viewModel.onAddAnotherPhoto()
-        assertEquals(1, viewModel.evidence.photoIndex)
-
-        viewModel.takePhoto()
-        viewModel.onAddAnotherPhoto()
-        assertEquals(2, viewModel.evidence.photoIndex)
+        assertEquals(EvidenceRole.DETAIL, viewModel.evidence.currentStep?.role)
 
         viewModel.takePhoto()
         assertFalse(viewModel.evidence.canAddAnother)
         viewModel.onAddAnotherPhoto()
-        assertEquals(2, viewModel.evidence.photoIndex)
+        assertEquals(0, viewModel.evidence.photoIndex)
         assertEquals(EvidencePhase.REVIEWING, viewModel.evidence.phase)
+
+        viewModel.onStepConfirmed()
+        assertEquals(EvidencePhase.COMPLETE, viewModel.evidence.phase)
+        assertEquals(3, viewModel.evidence.photoCount())
     }
 
     @Test

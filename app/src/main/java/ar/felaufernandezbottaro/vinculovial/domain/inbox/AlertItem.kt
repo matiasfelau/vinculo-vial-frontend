@@ -7,8 +7,8 @@ import java.time.Instant
  * el vehículo, ni ningún otro identificador viajan hasta acá -- el backend los filtra antes de
  * responder, no la app.
  *
- * @property requiresReview la validación de IA no fue concluyente (YELLOW): la alerta se muestra
- * con el badge "No verificada por completo" y confianza media.
+ * @property requiresReview la validación de IA no fue concluyente (YELLOW). Se parsea porque es
+ * parte del contrato, pero la app no distingue: todas las alertas piden revisar las fotos.
  * @property evidence las fotos redactadas disponibles; vacío si IA no pudo redactar o si la
  * retención ya venció.
  * @property evidenceExpiresAt hasta cuándo se conserva la evidencia, si el servidor lo informa.
@@ -24,14 +24,7 @@ data class AlertItem(
     val evidenceExpiresAt: Instant? = null,
     val myFeedback: FeedbackRating? = null,
     val reported: Boolean = false,
-) {
-    /** Cuánto confía ViVIAna en la validación: sale sólo de `requires_review`. */
-    val confidence: AlertConfidence
-        get() = if (requiresReview) AlertConfidence.MEDIUM else AlertConfidence.HIGH
-}
-
-/** Confianza de la validación de IA, tal como se le muestra al dueño. */
-enum class AlertConfidence { HIGH, MEDIUM }
+)
 
 /**
  * Una foto de evidencia redactada. [role] es el del contrato (`GENERAL`, `PLATE`, `DETAIL`,

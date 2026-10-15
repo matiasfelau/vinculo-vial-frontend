@@ -280,7 +280,7 @@ class ScanViewModel @Inject constructor(
         _uiState.update { it.copy(evidence = it.evidence.copy(phase = EvidencePhase.CAPTURING, error = null)) }
     }
 
-    /** Sólo el daño admite más de una foto (hasta 3): abre un casillero nuevo en el mismo paso. */
+    /** Abre un casillero nuevo en el mismo paso, si el paso pide más de una foto (hoy ninguno). */
     fun onAddAnotherPhoto() {
         val evidence = _uiState.value.evidence
         if (evidence.phase != EvidencePhase.REVIEWING || !evidence.canAddAnother) return

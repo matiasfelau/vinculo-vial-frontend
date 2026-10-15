@@ -9,14 +9,9 @@ import org.junit.Test
 
 class SenderChatTest {
 
-    private fun completedEvidence(alertType: AlertType, details: Int = 1): EvidenceCaptureState {
+    private fun completedEvidence(alertType: AlertType): EvidenceCaptureState {
         val steps = EvidencePlan.stepsFor(alertType)
-        return EvidenceCaptureState(
-            steps = steps,
-            stepIndex = steps.lastIndex,
-            photoIndex = if (alertType == AlertType.CRASHED) details - 1 else 0,
-            phase = EvidencePhase.COMPLETE,
-        )
+        return EvidenceCaptureState(steps = steps, stepIndex = steps.lastIndex, photoIndex = 0, phase = EvidencePhase.COMPLETE)
     }
 
     private fun stateOf(
@@ -49,7 +44,7 @@ class SenderChatTest {
         assertEquals(
             SenderChatItem.Vivi(
                 "Para avisarle necesito fotos. Te guío con la cámara: el auto con la patente visible, " +
-                    "la patente de cerca y el daño.",
+                    "la patente de cerca y una foto del daño.",
             ),
             items[2],
         )
@@ -77,19 +72,17 @@ class SenderChatTest {
 
     @Test
     fun `con las fotos listas se muestran como una sola burbuja de adjunto`() {
-        val items = senderChatItems(stateOf(AlertType.CRASHED, evidence = completedEvidence(AlertType.CRASHED, details = 2)))
+        val items = senderChatItems(stateOf(AlertType.CRASHED, evidence = completedEvidence(AlertType.CRASHED)))
 
         val attachments = items.filterIsInstance<SenderChatItem.Attachment>()
         assertEquals(1, attachments.size)
-        assertEquals("4 fotos cifradas adjuntas", attachments.single().summary)
+        assertEquals("3 fotos cifradas adjuntas", attachments.single().summary)
         assertEquals(false, attachments.single().sent)
     }
 
     @Test
-    fun `el adjunto cuenta las fotos segun el tipo`() {
-        assertEquals(3, completedEvidence(AlertType.CRASHED, details = 1).photoCount())
-        assertEquals(4, completedEvidence(AlertType.CRASHED, details = 2).photoCount())
-        assertEquals(5, completedEvidence(AlertType.CRASHED, details = 3).photoCount())
+    fun `el adjunto cuenta 3 fotos en todos los tipos, CRASHED pide una sola de daño`() {
+        assertEquals(3, completedEvidence(AlertType.CRASHED).photoCount())
         assertEquals(3, completedEvidence(AlertType.PARKED_ON_GARAGE).photoCount())
     }
 

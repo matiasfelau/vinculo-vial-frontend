@@ -57,12 +57,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ar.felaufernandezbottaro.vinculovial.data.edge.SecureBitmap
-import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertConfidence
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.EvidenceRef
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackRating
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportReason
-import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvAmber
-import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvAmberSurface
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvInk
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMint
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMintDark
@@ -71,9 +68,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrange
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrangeDark
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvTile
-import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ConfidencePill
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.DayChip
-import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ReviewBadge
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviBubble
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviCard
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviChatHeader
@@ -81,7 +76,6 @@ import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviMessages
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.alertMessage
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.evidenceNote
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.evidenceTileLabel
-import ar.felaufernandezbottaro.vinculovial.presentation.vivi.message
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -102,7 +96,6 @@ fun InboxDetailScreen(
 ) {
     var showReportDialog by remember { mutableStateOf(false) }
     val item = detail.item
-    val medium = item.confidence == AlertConfidence.MEDIUM
 
     BackHandler(onBack = onBack)
 
@@ -123,8 +116,8 @@ fun InboxDetailScreen(
         ) {
             DayChip(item.createdAt.toChatDayStamp(now = remember { Instant.now() }))
             ViviBubble(ViviMessages.OWNER_GREETING)
-            MessageCard(detail = detail, medium = medium, onRetryEvidence = onRetryEvidence)
-            ConfidenceMessage(confidence = item.confidence)
+            MessageCard(detail = detail, onRetryEvidence = onRetryEvidence)
+            ViviBubble(ViviMessages.OWNER_REVIEW_PROMPT)
         }
 
         HorizontalDivider(color = VvMintDark)
@@ -148,21 +141,11 @@ fun InboxDetailScreen(
 
 /** La tarjeta del mensaje: qué avisó el emisor (siempre una frase fija) y la evidencia redactada. */
 @Composable
-private fun MessageCard(detail: AlertDetailUiState, medium: Boolean, onRetryEvidence: (EvidenceRef) -> Unit) {
+private fun MessageCard(detail: AlertDetailUiState, onRetryEvidence: (EvidenceRef) -> Unit) {
     val item = detail.item
 
-    ViviCard(
-        modifier = Modifier.fillMaxWidth(),
-        borderColor = if (medium) VvAmber else VvMintDark,
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            SectionLabel("Mensaje")
-            if (item.requiresReview) ReviewBadge()
-        }
+    ViviCard(modifier = Modifier.fillMaxWidth()) {
+        SectionLabel("Mensaje")
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
             Icon(
@@ -312,20 +295,6 @@ private fun EvidenceImage(bytes: ByteArray) {
             modifier = Modifier.fillMaxSize(),
         )
     } ?: CircularProgressIndicator(color = VvNavy, modifier = Modifier.size(24.dp))
-}
-
-/** Lo que ViVIAna concluye sobre la validación: verde si la confianza es alta, ámbar si es media. */
-@Composable
-private fun ConfidenceMessage(confidence: AlertConfidence) {
-    val medium = confidence == AlertConfidence.MEDIUM
-
-    ViviCard(
-        containerColor = if (medium) VvAmberSurface else VvMint,
-        borderColor = if (medium) VvAmber else VvMintDark,
-    ) {
-        ConfidencePill(confidence = confidence)
-        Text(text = confidence.message(), style = MaterialTheme.typography.bodyMedium, color = VvInk)
-    }
 }
 
 @Composable
