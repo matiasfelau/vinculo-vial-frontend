@@ -55,9 +55,9 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMuted
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrange
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrangeDark
-import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ConfidencePill
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.LockedFootnote
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.UnreadDot
+import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViewPhotosPill
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviAvatar
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviMessages
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.alertTitle
@@ -448,7 +448,7 @@ private fun InboxChatRow(item: AlertItem, unread: Boolean, now: Instant, onClick
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        ConfidencePill(confidence = item.confidence)
+                        ViewPhotosPill()
                         if (unread) UnreadDot()
                     }
                 }

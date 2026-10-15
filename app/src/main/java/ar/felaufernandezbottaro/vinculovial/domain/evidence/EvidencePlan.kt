@@ -13,7 +13,8 @@ enum class EvidenceRole {
 /**
  * Un paso de la captura guiada.
  *
- * @property maxPhotos cuántas fotos admite el paso: sólo `DETAIL` admite más de una (hasta 3).
+ * @property maxPhotos cuántas fotos pide la captura guiada en el paso. No es lo que acepta el
+ * servidor: eso es [EvidencePlan.contractMaxPhotos].
  * @property overlayHint texto del encuadre guiado que se dibuja sobre la cámara, si el paso lo tiene.
  */
 data class EvidenceStep(
@@ -26,7 +27,11 @@ data class EvidenceStep(
 /** Pasos de la captura guiada según el tipo de alerta. */
 object EvidencePlan {
 
+    /** Lo que acepta `POST /alerts` de `DETAIL` (1 a 3). La captura guiada pide una sola. */
     const val MAX_DETAIL_PHOTOS = 3
+
+    /** Cuántas fotos de [role] acepta el contrato de `vinculo-vial-alert` por alerta. */
+    fun contractMaxPhotos(role: EvidenceRole): Int = if (role == EvidenceRole.DETAIL) MAX_DETAIL_PHOTOS else 1
 
     private val general = EvidenceStep(
         role = EvidenceRole.GENERAL,
@@ -40,13 +45,12 @@ object EvidencePlan {
 
     private val detail = EvidenceStep(
         role = EvidenceRole.DETAIL,
-        instruction = "Sacá un primer plano del daño",
-        maxPhotos = MAX_DETAIL_PHOTOS,
+        instruction = "Sacá una foto del daño. No la saques demasiado cerca.",
     )
 
     private val context = EvidenceStep(
         role = EvidenceRole.CONTEXT,
-        instruction = "Sacá la foto desde la vereda",
+        instruction = "Sacá la foto desde la vereda. No la saques demasiado cerca: tienen que verse el auto y la rampa.",
         overlayHint = "Que entren el rebaje y la rueda más cercana",
     )
 

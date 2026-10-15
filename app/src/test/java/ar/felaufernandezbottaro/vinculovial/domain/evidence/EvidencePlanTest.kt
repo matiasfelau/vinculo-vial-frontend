@@ -18,10 +18,25 @@ class EvidencePlanTest {
     }
 
     @Test
-    fun `el daño admite hasta 3 fotos y los demas pasos una sola`() {
+    fun `la captura pide exactamente una foto por paso, tambien el daño`() {
         val steps = EvidencePlan.stepsFor(AlertType.CRASHED)
 
-        assertEquals(listOf(1, 1, 3), steps.map { it.maxPhotos })
+        assertEquals(listOf(1, 1, 1), steps.map { it.maxPhotos })
+    }
+
+    @Test
+    fun `el contrato sigue aceptando de 1 a 3 fotos de daño y una de los demas roles`() {
+        assertEquals(3, EvidencePlan.contractMaxPhotos(EvidenceRole.DETAIL))
+        assertEquals(1, EvidencePlan.contractMaxPhotos(EvidenceRole.GENERAL))
+        assertEquals(1, EvidencePlan.contractMaxPhotos(EvidenceRole.PLATE))
+        assertEquals(1, EvidencePlan.contractMaxPhotos(EvidenceRole.CONTEXT))
+    }
+
+    @Test
+    fun `la guia de la foto del daño pide no sacarla demasiado cerca`() {
+        val detail = EvidencePlan.stepsFor(AlertType.CRASHED).single { it.role == EvidenceRole.DETAIL }
+
+        assertEquals("Sacá una foto del daño. No la saques demasiado cerca.", detail.instruction)
     }
 
     @Test
@@ -30,6 +45,16 @@ class EvidencePlanTest {
 
         assertEquals(listOf(EvidenceRole.GENERAL, EvidenceRole.PLATE, EvidenceRole.CONTEXT), steps.map { it.role })
         assertTrue(steps.all { it.maxPhotos == 1 })
+    }
+
+    @Test
+    fun `la guia de la foto de contexto pide no sacarla demasiado cerca`() {
+        val context = EvidencePlan.stepsFor(AlertType.PARKED_ON_GARAGE).single { it.role == EvidenceRole.CONTEXT }
+
+        assertEquals(
+            "Sacá la foto desde la vereda. No la saques demasiado cerca: tienen que verse el auto y la rampa.",
+            context.instruction,
+        )
     }
 
     @Test

@@ -56,7 +56,7 @@ data class EvidenceCaptureState(
 
     val isLastStep: Boolean get() = stepIndex == steps.lastIndex
 
-    /** `true` si el paso actual admite otra foto más (sólo el daño, hasta 3). */
+    /** `true` si el paso actual pide otra foto más (hoy ningún paso pide más de una). */
     val canAddAnother: Boolean get() = currentStep?.let { photoIndex + 1 < it.maxPhotos } == true
 
     /**

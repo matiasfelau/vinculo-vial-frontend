@@ -18,8 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.VerifiedUser
-import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -35,14 +34,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import ar.felaufernandezbottaro.vinculovial.R
-import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertConfidence
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvAmber
-import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvAmberDark
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvAmberSurface
-import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvGreen
-import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvGreenDark
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvInk
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMint
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMintDark
@@ -175,14 +169,13 @@ fun DayChip(text: String) {
     }
 }
 
-/** "Confianza alta" (verde) o "Confianza media" (ámbar). */
+/** "Ver fotos": la pill de cada fila de Recibidos, que invita a abrir el mensaje. */
 @Composable
-fun ConfidencePill(confidence: AlertConfidence, modifier: Modifier = Modifier) {
-    val high = confidence == AlertConfidence.HIGH
+fun ViewPhotosPill(modifier: Modifier = Modifier) {
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = if (high) VvMint else VvAmberSurface,
-        border = BorderStroke(1.dp, if (high) VvGreen else VvAmber),
+        color = VvMint,
+        border = BorderStroke(1.dp, VvNavy),
         modifier = modifier.height(24.dp),
     ) {
         Row(
@@ -191,30 +184,17 @@ fun ConfidencePill(confidence: AlertConfidence, modifier: Modifier = Modifier) {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Icon(
-                imageVector = if (high) Icons.Outlined.VerifiedUser else Icons.Outlined.Warning,
+                imageVector = Icons.Outlined.PhotoLibrary,
                 contentDescription = null,
-                tint = if (high) VvGreenDark else VvAmberDark,
+                tint = VvNavy,
                 modifier = Modifier.size(14.dp),
             )
             Text(
-                text = confidence.label(),
+                text = ViviMessages.INBOX_VIEW_PHOTOS,
                 style = MaterialTheme.typography.labelMedium,
-                color = if (high) VvGreenDark else VvAmberDark,
+                color = VvNavy,
             )
         }
-    }
-}
-
-/** El badge "No verificada por completo" de las alertas de confianza media. */
-@Composable
-fun ReviewBadge(modifier: Modifier = Modifier) {
-    Surface(shape = RoundedCornerShape(11.dp), color = VvAmberSurface, modifier = modifier) {
-        Text(
-            text = ViviMessages.REVIEW_BADGE,
-            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
-            color = VvAmberDark,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-        )
     }
 }
 

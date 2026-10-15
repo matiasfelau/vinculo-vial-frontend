@@ -1,6 +1,5 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.vivi
 
-import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertConfidence
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertItem
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.EvidenceRef
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackRating
@@ -22,33 +21,11 @@ class ViviMessagesTest {
         evidence = listOf(EvidenceRef("GENERAL", 0)),
     )
 
-    // -- Confianza ---------------------------------------------------------------------------
+    // -- Sin variantes de confianza ------------------------------------------------------------
 
     @Test
-    fun `confianza alta es una pill verde con su etiqueta y su mensaje`() {
-        assertEquals("Confianza alta", AlertConfidence.HIGH.label())
-        assertEquals("Validé las fotos y coinciden con lo que dice el mensaje.", AlertConfidence.HIGH.message())
-    }
-
-    @Test
-    fun `confianza media tiene su etiqueta y su mensaje de cuidado`() {
-        assertEquals("Confianza media", AlertConfidence.MEDIUM.label())
-        assertEquals(
-            "Validé las fotos, pero no estoy del todo segura de que muestren lo que dice el mensaje. " +
-                "Revisalas con cuidado antes de actuar.",
-            AlertConfidence.MEDIUM.message(),
-        )
-    }
-
-    @Test
-    fun `requires_review false es confianza alta y true es confianza media`() {
-        assertEquals("Confianza alta", item.copy(requiresReview = false).confidence.label())
-        assertEquals("Confianza media", item.copy(requiresReview = true).confidence.label())
-    }
-
-    @Test
-    fun `el badge de las alertas de confianza media es No verificada por completo`() {
-        assertEquals("No verificada por completo", ViviMessages.REVIEW_BADGE)
+    fun `todas las alertas cierran con Revisá las fotos antes de actuar`() {
+        assertEquals("Revisá las fotos antes de actuar.", ViviMessages.OWNER_REVIEW_PROMPT)
     }
 
     // -- Chat del dueño ----------------------------------------------------------------------
@@ -115,49 +92,6 @@ class ViviMessagesTest {
         assertEquals("Daño 1", evidenceTileLabel("DETAIL", 0, 2))
         assertEquals("Daño 3", evidenceTileLabel("DETAIL", 2, 3))
         assertEquals("Foto", evidenceTileLabel("ROL_NUEVO", 0, 1))
-    }
-
-    // -- Última línea de la fila del buzón ---------------------------------------------------
-
-    @Test
-    fun `una alerta de confianza alta muestra que ViVIAna valido las fotos`() {
-        assertEquals("ViVIAna: Validé las fotos y coinciden con el aviso.", item.inboxPreview())
-    }
-
-    @Test
-    fun `una alerta de confianza media pide revisar la evidencia con cuidado`() {
-        assertEquals(
-            "ViVIAna: Revisá la evidencia con cuidado antes de actuar.",
-            item.copy(requiresReview = true).inboxPreview(),
-        )
-    }
-
-    @Test
-    fun `sin evidencia la fila dice que ya no esta disponible`() {
-        assertEquals("La evidencia ya no está disponible.", item.copy(evidence = emptyList()).inboxPreview())
-    }
-
-    @Test
-    fun `lo que hizo el usuario gana sobre la conclusion de ViVIAna`() {
-        assertEquals("Marcaste que el aviso te sirvió.", item.copy(myFeedback = FeedbackRating.UP).inboxPreview())
-        assertEquals("Marcaste que el aviso no te sirvió.", item.copy(myFeedback = FeedbackRating.DOWN).inboxPreview())
-        assertEquals("Reportaste al emisor.", item.copy(reported = true).inboxPreview())
-    }
-
-    @Test
-    fun `haber reportado gana sobre haber valorado`() {
-        assertEquals(
-            "Reportaste al emisor.",
-            item.copy(reported = true, myFeedback = FeedbackRating.UP).inboxPreview(),
-        )
-    }
-
-    @Test
-    fun `lo que hizo el usuario gana tambien sobre la falta de evidencia`() {
-        assertEquals(
-            "Marcaste que el aviso te sirvió.",
-            item.copy(evidence = emptyList(), myFeedback = FeedbackRating.UP).inboxPreview(),
-        )
     }
 
     // -- Pestaña Enviados --------------------------------------------------------------------
