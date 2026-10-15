@@ -4,6 +4,8 @@ import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.AlertItemDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.FeedbackRequestDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.InboxPageDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.ReportRequestDto
+import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.SentAlertDto
+import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.SentPageDto
 import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
 import ar.felaufernandezbottaro.vinculovial.data.remote.isTransientUpstreamFailure
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
@@ -14,11 +16,16 @@ import ar.felaufernandezbottaro.vinculovial.domain.inbox.EvidenceResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackRating
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetInboxResult
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetSentResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.InboxError
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.InboxPage
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.InboxRepository
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportReason
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportResult
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.SeenResult
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.SentAlert
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.SentAlertStatus
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.SentPage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -64,6 +71,27 @@ class InboxRepositoryImpl @Inject constructor(
             GetInboxResult.Failed(InboxError.Unexpected)
         }
     }
+
+    override suspend fun getSent(cursor: String?): GetSentResult =
+        call(
+            onFailure = { GetSentResult.Failed(it) },
+        ) { token ->
+            val response = api.getSent(BEARER_PREFIX + token, cursor)
+            val body = response.body()
+            if (response.isSuccessful && body != null) {
+                GetSentResult.Success(body.toDomain())
+            } else {
+                GetSentResult.Failed(response.code().toInboxError())
+            }
+        }
+
+    override suspend fun markSeen(alertId: String): SeenResult =
+        call(
+            onFailure = { SeenResult.Failed(it) },
+        ) { token ->
+            val response = api.markSeen(BEARER_PREFIX + token, alertId)
+            if (response.isSuccessful) SeenResult.Marked else SeenResult.Failed(response.code().toInboxError())
+        }
 
     override suspend fun getEvidence(alertId: String, role: String, index: Int): EvidenceResult =
         call(
@@ -128,6 +156,24 @@ class InboxRepositoryImpl @Inject constructor(
     private fun InboxPageDto.toDomain(): InboxPage =
         InboxPage(items = items.map { it.toDomain() }, nextCursor = nextCursor)
 
+    /**
+     * Un `status` que la app no conoce se descarta en vez de adivinar: mostrarlo como "En
+     * validación" o "Validada" sería afirmar algo que no se sabe.
+     */
+    private fun SentPageDto.toDomain(): SentPage =
+        SentPage(items = items.mapNotNull { it.toDomainOrNull() }, nextCursor = nextCursor)
+
+    private fun SentAlertDto.toDomainOrNull(): SentAlert? {
+        val parsedStatus = SentAlertStatus.entries.firstOrNull { it.name == status } ?: return null
+        return SentAlert(
+            id = id,
+            alertType = alertType,
+            createdAt = Instant.parse(createdAt),
+            status = parsedStatus,
+            seenAt = seenAt?.toInstantOrNull(),
+        )
+    }
+
     private fun AlertItemDto.toDomain(): AlertItem = AlertItem(
         id = id,
         alertType = alertType,
@@ -137,6 +183,7 @@ class InboxRepositoryImpl @Inject constructor(
         evidenceExpiresAt = evidenceExpiresAt?.toInstantOrNull(),
         myFeedback = myFeedback?.let { value -> FeedbackRating.entries.firstOrNull { it.name == value } },
         reported = reported,
+        seen = seen,
     )
 
     /** Un `evidence_expires_at` ilegible no tumba la lista: es informativo. */

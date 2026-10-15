@@ -137,9 +137,9 @@ fun ReportChatScreen(
 }
 
 @Composable
-private fun SenderChatRow(item: SenderChatItem) {
+internal fun SenderChatRow(item: SenderChatItem) {
     when (item) {
-        is SenderChatItem.Vivi -> ViviBubble(text = item.text, isWarning = item.isWarning)
+        is SenderChatItem.Vivi -> ViviBubble(text = item.text, isWarning = item.isWarning, time = item.time)
         is SenderChatItem.User -> UserBubble(text = item.text)
         is SenderChatItem.Attachment -> AttachmentBubble(item)
         SenderChatItem.Typing -> TypingBubble()

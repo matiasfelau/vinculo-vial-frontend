@@ -4,12 +4,12 @@ import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertItem
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.EvidenceRef
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.EvidenceResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FakeInboxRepository
-import ar.felaufernandezbottaro.vinculovial.domain.inbox.FakeReadAlertsStore
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackRating
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetEvidenceUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetInboxResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetInboxUseCase
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.MarkAlertSeenUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.InboxError
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.InboxPage
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportReason
@@ -38,7 +38,6 @@ class InboxDetailViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private val repository = FakeInboxRepository()
-    private val readStore = FakeReadAlertsStore()
 
     private val general = EvidenceRef("GENERAL", 0)
     private val plate = EvidenceRef("PLATE", 0)
@@ -57,7 +56,7 @@ class InboxDetailViewModelTest {
             getEvidence = GetEvidenceUseCase(repository),
             setFeedback = SetFeedbackUseCase(repository),
             reportSender = ReportSenderUseCase(repository),
-            readAlertsStore = readStore,
+            markAlertSeen = MarkAlertSeenUseCase(repository),
         )
     }
 
@@ -73,7 +72,7 @@ class InboxDetailViewModelTest {
 
         viewModel.openAlert("alerta-1")
 
-        assertEquals(item, viewModel.openDetail.item)
+        assertEquals(item.copy(seen = true), viewModel.openDetail.item)
         assertEquals(
             listOf(Triple("alerta-1", "GENERAL", 0), Triple("alerta-1", "PLATE", 0)),
             repository.evidenceCalls,
@@ -360,7 +359,7 @@ class InboxDetailViewModelTest {
             getEvidence = GetEvidenceUseCase(repository),
             setFeedback = SetFeedbackUseCase(repository),
             reportSender = ReportSenderUseCase(repository),
-            readAlertsStore = readStore,
+            markAlertSeen = MarkAlertSeenUseCase(repository),
         )
         viewModel.openAlert("alerta-1")
 

@@ -3,6 +3,7 @@ package ar.felaufernandezbottaro.vinculovial.presentation.vivi
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertItem
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.EvidenceRef
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackRating
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.SentAlertState
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -97,12 +98,26 @@ class ViviMessagesTest {
     // -- Pestaña Enviados --------------------------------------------------------------------
 
     @Test
-    fun `Enviados es una pantalla en construccion sin datos`() {
-        assertEquals("En construcción", ViviMessages.SENT_UNDER_CONSTRUCTION_TITLE)
-        assertEquals(
-            "Pronto vas a ver acá tus alertas enviadas, si fueron validadas y cuándo las leyeron.",
-            ViviMessages.SENT_UNDER_CONSTRUCTION_BODY,
-        )
+    fun `el estado vacio de Enviados invita a avisar sin prometer nada mas`() {
+        assertEquals("Todavía no enviaste alertas", ViviMessages.SENT_EMPTY_TITLE)
+        assertEquals("Cuando avises sobre un vehículo, vas a ver acá cómo va tu alerta.", ViviMessages.SENT_EMPTY_BODY)
+    }
+
+    @Test
+    fun `cada estado de una alerta enviada tiene su pill`() {
+        assertEquals("En validación", SentAlertState.IN_VALIDATION.label())
+        assertEquals("Validada", SentAlertState.VALIDATED.label())
+        assertEquals("Leída", SentAlertState.SEEN.label())
+        assertEquals("Rechazada", SentAlertState.REJECTED.label())
+        assertEquals("Sin respuesta", SentAlertState.NO_RESPONSE.label())
+    }
+
+    @Test
+    fun `los textos de ViVIAna en el chat del emisor son los del contrato`() {
+        assertEquals("Validé tu alerta y ya le avisé al dueño.", ViviMessages.SENDER_VALIDATED)
+        assertEquals("El dueño leyó tu mensaje.", ViviMessages.SENDER_SEEN)
+        assertEquals("No pudimos validar tu alerta.", ViviMessages.SENDER_REJECTED)
+        assertEquals("Tu alerta no tuvo respuesta.", ViviMessages.SENDER_NO_RESPONSE)
     }
 
     // -- Chat del emisor ---------------------------------------------------------------------

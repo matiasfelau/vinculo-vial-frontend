@@ -18,6 +18,7 @@ data class AlertItemDto(
     @Json(name = "evidence_expires_at") val evidenceExpiresAt: String? = null,
     @Json(name = "my_feedback") val myFeedback: String? = null,
     val reported: Boolean = false,
+    val seen: Boolean = false,
 )
 
 /** `{ "role": "GENERAL", "index": 0 }`: una foto redactada que se puede bajar. */
@@ -31,6 +32,26 @@ data class EvidenceRefDto(
 @JsonClass(generateAdapter = true)
 data class InboxPageDto(
     val items: List<AlertItemDto>,
+    @Json(name = "next_cursor") val nextCursor: String?,
+)
+
+/**
+ * Fila de `GET /api/v1/alerts/sent`. Sólo los cinco campos del contrato: cualquier otro que mande
+ * el servidor se ignora, así que nada del veredicto ni de los dueños puede llegar a la UI.
+ */
+@JsonClass(generateAdapter = true)
+data class SentAlertDto(
+    val id: String,
+    @Json(name = "alert_type") val alertType: String,
+    @Json(name = "created_at") val createdAt: String,
+    val status: String,
+    @Json(name = "seen_at") val seenAt: String? = null,
+)
+
+/** Página de `GET /api/v1/alerts/sent`: `{items, next_cursor}`. */
+@JsonClass(generateAdapter = true)
+data class SentPageDto(
+    val items: List<SentAlertDto>,
     @Json(name = "next_cursor") val nextCursor: String?,
 )
 

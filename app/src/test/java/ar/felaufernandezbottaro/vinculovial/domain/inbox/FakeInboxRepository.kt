@@ -64,4 +64,32 @@ class FakeInboxRepository(
         reportGate?.await()
         return reportResult
     }
+
+    // -- Enviados ----------------------------------------------------------------------------
+
+    /** Lo que devuelve [getSent] por cursor; por defecto siempre [sentResult]. */
+    var sentResult: GetSentResult = GetSentResult.Success(SentPage(items = emptyList(), nextCursor = null))
+    var sentResultFor: (String?) -> GetSentResult = { sentResult }
+    var sentGate: CompletableDeferred<Unit>? = null
+
+    val sentCursors = mutableListOf<String?>()
+
+    override suspend fun getSent(cursor: String?): GetSentResult {
+        sentCursors += cursor
+        sentGate?.await()
+        return sentResultFor(cursor)
+    }
+
+    // -- Vistas ------------------------------------------------------------------------------
+
+    var seenResult: SeenResult = SeenResult.Marked
+    var seenGate: CompletableDeferred<Unit>? = null
+
+    val seenCalls = mutableListOf<String>()
+
+    override suspend fun markSeen(alertId: String): SeenResult {
+        seenCalls += alertId
+        seenGate?.await()
+        return seenResult
+    }
 }

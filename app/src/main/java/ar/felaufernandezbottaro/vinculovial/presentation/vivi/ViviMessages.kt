@@ -2,6 +2,7 @@ package ar.felaufernandezbottaro.vinculovial.presentation.vivi
 
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertItem
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackRating
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.SentAlertState
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.toLongDate
 import java.time.Instant
@@ -39,9 +40,14 @@ object ViviMessages {
 
     // -- Buzón: pestaña Enviados --------------------------------------------------------------
 
-    const val SENT_UNDER_CONSTRUCTION_TITLE = "En construcción"
-    const val SENT_UNDER_CONSTRUCTION_BODY =
-        "Pronto vas a ver acá tus alertas enviadas, si fueron validadas y cuándo las leyeron."
+    const val SENT_EMPTY_TITLE = "Todavía no enviaste alertas"
+    const val SENT_EMPTY_BODY = "Cuando avises sobre un vehículo, vas a ver acá cómo va tu alerta."
+
+    const val SENT_STATE_IN_VALIDATION = "En validación"
+    const val SENT_STATE_VALIDATED = "Validada"
+    const val SENT_STATE_SEEN = "Leída"
+    const val SENT_STATE_REJECTED = "Rechazada"
+    const val SENT_STATE_NO_RESPONSE = "Sin respuesta"
 
     // -- Chat del emisor ---------------------------------------------------------------------
 
@@ -51,6 +57,13 @@ object ViviMessages {
     const val SENDER_FIXED_NOTE = "Los mensajes son fijos para que el dueño no pueda identificarte."
     const val SENDER_SENT_RECEIPT =
         "Recibí todo. El sistema va a validar la información y, si la aprueba, le aviso al dueño."
+
+    /** Lo que ViVIAna agrega en el chat del emisor, según el estado de la alerta enviada. */
+    const val SENDER_VALIDATED = "Validé tu alerta y ya le avisé al dueño."
+    const val SENDER_SEEN = "El dueño leyó tu mensaje."
+    const val SENDER_REJECTED = "No pudimos validar tu alerta."
+    const val SENDER_NO_RESPONSE = "Tu alerta no tuvo respuesta."
+
     const val SENDER_POSSIBLY_SENT = "No pudimos confirmar el envío. Puede que tu alerta se haya enviado."
 
     /** La intro de la captura guiada: qué fotos se piden según el tipo. */
@@ -68,6 +81,15 @@ object ViviMessages {
     /** "3 fotos cifradas adjuntas": el único texto del adjunto del emisor, sin detalle por foto. */
     fun senderAttachmentSummary(photoCount: Int): String =
         if (photoCount == 1) "1 foto cifrada adjunta" else "$photoCount fotos cifradas adjuntas"
+}
+
+/** La etiqueta de la pill de una alerta enviada. */
+fun SentAlertState.label(): String = when (this) {
+    SentAlertState.IN_VALIDATION -> ViviMessages.SENT_STATE_IN_VALIDATION
+    SentAlertState.VALIDATED -> ViviMessages.SENT_STATE_VALIDATED
+    SentAlertState.SEEN -> ViviMessages.SENT_STATE_SEEN
+    SentAlertState.REJECTED -> ViviMessages.SENT_STATE_REJECTED
+    SentAlertState.NO_RESPONSE -> ViviMessages.SENT_STATE_NO_RESPONSE
 }
 
 /**

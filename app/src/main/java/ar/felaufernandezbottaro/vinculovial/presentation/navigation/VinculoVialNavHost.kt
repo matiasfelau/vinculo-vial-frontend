@@ -6,6 +6,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -21,10 +22,16 @@ import ar.felaufernandezbottaro.vinculovial.presentation.camera.CameraPermission
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.DocumentScanScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.LivenessCaptureScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxDetailScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxEvent
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxTab
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.push.NotificationPermissionRequester
+import ar.felaufernandezbottaro.vinculovial.presentation.push.PushTarget
 import ar.felaufernandezbottaro.vinculovial.presentation.push.planPushNavigation
+import ar.felaufernandezbottaro.vinculovial.presentation.sent.SentChatScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.sent.SentEvent
+import ar.felaufernandezbottaro.vinculovial.presentation.sent.SentViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsViewModel
@@ -72,13 +79,14 @@ object Route {
 
     const val INBOX = "inbox"
     const val INBOX_DETAIL = "inbox/detail"
+    const val SENT_CHAT = "inbox/sent-chat"
 }
 
 @Composable
 fun VinculoVialNavHost(
     navController: NavHostController = rememberNavController(),
-    pendingAlertType: String? = null,
-    onPendingAlertTypeConsumed: () -> Unit = {},
+    pendingPush: PushTarget? = null,
+    onPendingPushConsumed: () -> Unit = {},
 ) {
     // RTR fallido (401/403 al refrescar) borra la sesión local en segundo plano, sin que la
     // pantalla que disparó la request original se entere -- SessionManager ni sabe qué
@@ -107,15 +115,15 @@ fun VinculoVialNavHost(
     // sola) en vez de navegar directo -- ver planPushNavigation. Sin sesión todavía, el efecto
     // de arriba ya se encarga de mandar a Login; esta misma clave (hasSession) hace que el
     // plan se reevalúe apenas haya sesión, así que un login iniciado desde la notificación
-    // igual termina en la Bandeja de Entrada.
-    LaunchedEffect(hasSession, pendingAlertType) {
-        val plan = planPushNavigation(hasSession, pendingAlertType)
+    // igual termina en el buzón. El destino no se consume acá sino en el buzón, que es quien
+    // abre el chat concreto una vez cargada la lista.
+    LaunchedEffect(hasSession, pendingPush) {
+        val plan = planPushNavigation(hasSession, pendingPush)
         if (plan.isNotEmpty()) {
             navController.navigate(plan.first()) {
                 popUpTo(0) { inclusive = true }
             }
             plan.drop(1).forEach { route -> navController.navigate(route) }
-            onPendingAlertTypeConsumed()
         }
     }
 
@@ -186,12 +194,54 @@ fun VinculoVialNavHost(
 
         composable(Route.INBOX) { entry ->
             val viewModel = hiltViewModel<InboxViewModel>(entry)
+            val sentViewModel = hiltViewModel<SentViewModel>(entry)
             val state by viewModel.uiState.collectAsStateWithLifecycle()
-            val readIds by viewModel.readAlertIds.collectAsStateWithLifecycle()
+            val sentState by sentViewModel.uiState.collectAsStateWithLifecycle()
+
+            // Un push de novedades al emisor abre directamente en "Enviados": al volver del chat
+            // se queda ahí, no en "Recibidos".
+            var selectedTab by rememberSaveable {
+                mutableStateOf(if (pendingPush is PushTarget.SentUpdated) InboxTab.SENT else InboxTab.RECEIVED)
+            }
+
+            // El destino del push se consume acá, con el buzón ya en pantalla: cada ViewModel abre
+            // el chat apenas tiene la alerta cargada y avisa por `events`.
+            LaunchedEffect(pendingPush) {
+                when (val target = pendingPush) {
+                    is PushTarget.NewAlert -> target.alertId?.let(viewModel::openAlertFromPush)
+                    is PushTarget.SentUpdated -> {
+                        selectedTab = InboxTab.SENT
+                        val alertId = target.alertId
+                        if (alertId != null) sentViewModel.openChatFromPush(alertId) else sentViewModel.refresh()
+                    }
+                    null -> Unit
+                }
+                if (pendingPush != null) onPendingPushConsumed()
+            }
+            LaunchedEffect(viewModel) {
+                viewModel.events.collect { event ->
+                    when (event) {
+                        InboxEvent.OpenDetail -> navController.navigate(Route.INBOX_DETAIL)
+                    }
+                }
+            }
+            LaunchedEffect(sentViewModel) {
+                sentViewModel.events.collect { event ->
+                    when (event) {
+                        SentEvent.OpenChat -> navController.navigate(Route.SENT_CHAT)
+                    }
+                }
+            }
 
             InboxScreen(
                 uiState = state,
-                readIds = readIds,
+                sentState = sentState,
+                selectedTab = selectedTab,
+                onSelectTab = { tab ->
+                    selectedTab = tab
+                    // Entrar a Enviados trae el estado actual: cambia solo del lado del servidor.
+                    if (tab == InboxTab.SENT) sentViewModel.refresh()
+                },
                 onRetry = viewModel::loadFirstPage,
                 onLoadNextPage = viewModel::loadNextPage,
                 onRetryNextPage = viewModel::retryNextPage,
@@ -199,7 +249,34 @@ fun VinculoVialNavHost(
                     viewModel.openAlert(alertId)
                     navController.navigate(Route.INBOX_DETAIL)
                 },
+                onSentRetry = sentViewModel::refresh,
+                onSentLoadNextPage = sentViewModel::loadNextPage,
+                onSentRetryNextPage = sentViewModel::retryNextPage,
+                onOpenSent = { alertId ->
+                    sentViewModel.openChat(alertId)
+                    navController.navigate(Route.SENT_CHAT)
+                },
             )
+        }
+
+        composable(Route.SENT_CHAT) { entry ->
+            // El mismo `SentViewModel` que la lista: el chat se arma con la alerta seleccionada.
+            val parentEntry = remember(entry) { navController.getBackStackEntry(Route.INBOX) }
+            val viewModel = hiltViewModel<SentViewModel>(parentEntry)
+            val chat by viewModel.chat.collectAsStateWithLifecycle()
+
+            DisposableEffect(Unit) { onDispose { viewModel.closeChat() } }
+
+            // Sin chat abierto (p. ej. tras recrearse el proceso) no hay nada que mostrar; mismo
+            // criterio que el chat del dueño: sólo se sale si el destino está en primer plano.
+            val current = chat
+            if (current == null) {
+                LaunchedEffect(Unit) {
+                    if (entry.lifecycle.currentState == Lifecycle.State.RESUMED) navController.popBackStack()
+                }
+            } else {
+                SentChatScreen(alert = current, onBack = { navController.popBackStack() })
+            }
         }
 
         composable(Route.INBOX_DETAIL) { entry ->
