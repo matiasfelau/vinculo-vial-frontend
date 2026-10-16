@@ -19,10 +19,10 @@ fun ensureAlertsChannelCreated(context: Context) {
 
     val channel = NotificationChannel(
         ALERTS_CHANNEL_ID,
-        "Alertas de tus vehículos",
+        "Alertas y novedades",
         NotificationManager.IMPORTANCE_HIGH,
     ).apply {
-        description = "Avisos cuando alguien reporta un incidente sobre un vehículo vinculado a tu cuenta."
+        description = "Avisos de incidentes sobre tus vehículos vinculados y novedades de las alertas que enviaste."
     }
 
     ContextCompat.getSystemService(context, NotificationManager::class.java)

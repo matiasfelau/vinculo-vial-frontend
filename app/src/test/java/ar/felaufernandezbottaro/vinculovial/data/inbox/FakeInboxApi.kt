@@ -3,6 +3,7 @@ package ar.felaufernandezbottaro.vinculovial.data.inbox
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.FeedbackRequestDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.InboxPageDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.ReportRequestDto
+import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.SentPageDto
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -68,5 +69,31 @@ class FakeInboxApi : InboxApi {
         lastReport = alertId to body
         exceptionToThrow?.let { throw it }
         return reportResponse
+    }
+
+    // -- Enviados y vistas ------------------------------------------------------------------
+
+    var sentResponse: Response<SentPageDto> = Response.success(SentPageDto(items = emptyList(), nextCursor = null))
+    var seenResponse: Response<Unit> = Response.success(204, Unit)
+
+    var lastSentCursor: String? = null
+        private set
+    var lastSeenAlertId: String? = null
+        private set
+
+    override suspend fun getSent(authorization: String, cursor: String?): Response<SentPageDto> {
+        callCount++
+        lastAuthorization = authorization
+        lastSentCursor = cursor
+        exceptionToThrow?.let { throw it }
+        return sentResponse
+    }
+
+    override suspend fun markSeen(authorization: String, alertId: String): Response<Unit> {
+        callCount++
+        lastAuthorization = authorization
+        lastSeenAlertId = alertId
+        exceptionToThrow?.let { throw it }
+        return seenResponse
     }
 }

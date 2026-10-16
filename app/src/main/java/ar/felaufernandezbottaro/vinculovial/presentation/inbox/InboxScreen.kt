@@ -16,11 +16,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Construction
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -32,10 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +52,8 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMintDark
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMuted
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrange
+import ar.felaufernandezbottaro.vinculovial.presentation.sent.SentTab
+import ar.felaufernandezbottaro.vinculovial.presentation.sent.SentUiState
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrangeDark
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.LockedFootnote
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.UnreadDot
@@ -70,25 +70,29 @@ enum class InboxTab(val title: String) {
     SENT("Enviados"),
 }
 
-/** Cuántas de las alertas cargadas todavía no se abrieron en este dispositivo. */
-fun unreadCount(items: List<AlertItem>, readIds: Set<String>): Int = items.count { it.id !in readIds }
+/** Cuántas de las alertas cargadas todavía no abrió este destinatario (`seen = false` en el inbox). */
+fun unreadCount(items: List<AlertItem>): Int = items.count { !it.seen }
 
 /**
  * El buzón como lista de conversaciones con ViVIAna. "Recibidos" son las alertas sobre los
- * vehículos del usuario, una fila por alerta; tocar una abre su chat. "Enviados" todavía es una
- * pantalla en construcción, sin datos.
+ * vehículos del usuario, una fila por alerta; tocar una abre su chat. "Enviados" son las alertas
+ * que envió el usuario, con el estado de cada una; tocar una abre su chat de emisor.
  */
 @Composable
 fun InboxScreen(
     uiState: InboxUiState,
-    readIds: Set<String>,
+    sentState: SentUiState,
+    selectedTab: InboxTab,
+    onSelectTab: (InboxTab) -> Unit,
     onRetry: () -> Unit,
     onLoadNextPage: () -> Unit,
     onRetryNextPage: () -> Unit,
     onOpenAlert: (String) -> Unit,
+    onSentRetry: () -> Unit,
+    onSentLoadNextPage: () -> Unit,
+    onSentRetryNextPage: () -> Unit,
+    onOpenSent: (String) -> Unit,
 ) {
-    var selectedTab by rememberSaveable { mutableStateOf(InboxTab.RECEIVED) }
-
     val loadedItems = when (uiState) {
         is InboxUiState.Content -> uiState.items
         is InboxUiState.ContentWithPageError -> uiState.items
@@ -102,19 +106,24 @@ fun InboxScreen(
     ) {
         InboxHeader(
             selectedTab = selectedTab,
-            unread = unreadCount(loadedItems, readIds),
-            onSelectTab = { selectedTab = it },
+            unread = unreadCount(loadedItems),
+            onSelectTab = onSelectTab,
         )
 
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
-                InboxTab.SENT -> InboxSentUnderConstruction()
+                InboxTab.SENT -> SentTab(
+                    state = sentState,
+                    onRetry = onSentRetry,
+                    onLoadNextPage = onSentLoadNextPage,
+                    onRetryNextPage = onSentRetryNextPage,
+                    onOpenSent = onOpenSent,
+                )
                 InboxTab.RECEIVED -> when (uiState) {
                     InboxUiState.Loading -> InboxLoading()
                     InboxUiState.Empty -> InboxEmptyState()
                     is InboxUiState.Content -> InboxContentList(
                         items = uiState.items,
-                        readIds = readIds,
                         isLoadingMore = uiState.isLoadingMore,
                         onLoadNextPage = onLoadNextPage,
                         onOpenAlert = onOpenAlert,
@@ -122,7 +131,6 @@ fun InboxScreen(
                     is InboxUiState.Error -> InboxFullScreenError(message = uiState.error.message(), onRetry = onRetry)
                     is InboxUiState.ContentWithPageError -> InboxContentList(
                         items = uiState.items,
-                        readIds = readIds,
                         pageErrorMessage = uiState.error.message(),
                         onRetryPage = onRetryNextPage,
                         onLoadNextPage = null,
@@ -223,46 +231,9 @@ private fun InboxTabCell(
 }
 
 @Composable
-private fun InboxLoading() {
+internal fun InboxLoading() {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularProgressIndicator(color = VvNavy)
-    }
-}
-
-/** "Enviados" todavía no existe: sin datos locales ni pedidos, sólo el aviso. */
-@Composable
-private fun InboxSentUnderConstruction() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Surface(
-            shape = CircleShape,
-            color = VvMint,
-            border = BorderStroke(2.dp, VvNavy),
-            modifier = Modifier.size(96.dp),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.Construction, contentDescription = null, tint = VvNavy, modifier = Modifier.size(44.dp))
-            }
-        }
-        Text(
-            text = ViviMessages.SENT_UNDER_CONSTRUCTION_TITLE,
-            style = MaterialTheme.typography.titleMedium,
-            color = VvNavy,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 20.dp),
-        )
-        Text(
-            text = ViviMessages.SENT_UNDER_CONSTRUCTION_BODY,
-            style = MaterialTheme.typography.bodyMedium,
-            color = VvMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp),
-        )
     }
 }
 
@@ -309,7 +280,7 @@ private fun InboxEmptyState() {
 }
 
 @Composable
-private fun InboxFullScreenError(message: String, onRetry: () -> Unit) {
+internal fun InboxFullScreenError(message: String, onRetry: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -331,10 +302,59 @@ private fun InboxFullScreenError(message: String, onRetry: () -> Unit) {
 /** Cuántos ítems antes del final dispara la carga de la página siguiente. */
 private const val LOAD_MORE_THRESHOLD = 3
 
+/** Dispara [onLoadNextPage] cuando el scroll llega cerca del final de [listState]. */
+@Composable
+internal fun LoadMoreEffect(listState: LazyListState, onLoadNextPage: () -> Unit) {
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            lastVisible.index >= layoutInfo.totalItemsCount - 1 - LOAD_MORE_THRESHOLD
+        }
+    }
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore) onLoadNextPage()
+    }
+}
+
+/** El pie de una lista paginada: el indicador de la página en vuelo o el error de la página con "Reintentar". */
+internal fun LazyListScope.pagingFooter(
+    isLoadingMore: Boolean,
+    pageErrorMessage: String?,
+    onRetryPage: (() -> Unit)?,
+) {
+    if (isLoadingMore) {
+        item {
+            Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = VvNavy, modifier = Modifier.size(24.dp))
+            }
+        }
+    }
+
+    if (pageErrorMessage != null && onRetryPage != null) {
+        item {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+            ) {
+                Text(
+                    text = pageErrorMessage,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = VvOrange,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                VvPrimaryButton(text = "Reintentar", onClick = onRetryPage)
+            }
+        }
+    }
+}
+
 @Composable
 private fun InboxContentList(
     items: List<AlertItem>,
-    readIds: Set<String>,
     isLoadingMore: Boolean = false,
     pageErrorMessage: String? = null,
     onRetryPage: (() -> Unit)? = null,
@@ -345,51 +365,14 @@ private fun InboxContentList(
     // Un solo "ahora" por composición: todas las filas comparan contra el mismo instante.
     val now = remember(items) { Instant.now() }
 
-    if (onLoadNextPage != null) {
-        val shouldLoadMore by remember {
-            derivedStateOf {
-                val layoutInfo = listState.layoutInfo
-                val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-                lastVisible.index >= layoutInfo.totalItemsCount - 1 - LOAD_MORE_THRESHOLD
-            }
-        }
-        LaunchedEffect(shouldLoadMore) {
-            if (shouldLoadMore) onLoadNextPage()
-        }
-    }
+    if (onLoadNextPage != null) LoadMoreEffect(listState, onLoadNextPage)
 
     LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
         items(items, key = { it.id }) { item ->
-            InboxChatRow(item = item, unread = item.id !in readIds, now = now, onClick = { onOpenAlert(item.id) })
+            InboxChatRow(item = item, unread = !item.seen, now = now, onClick = { onOpenAlert(item.id) })
         }
 
-        if (isLoadingMore) {
-            item {
-                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = VvNavy, modifier = Modifier.size(24.dp))
-                }
-            }
-        }
-
-        if (pageErrorMessage != null && onRetryPage != null) {
-            item {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                ) {
-                    Text(
-                        text = pageErrorMessage,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = VvOrange,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                    VvPrimaryButton(text = "Reintentar", onClick = onRetryPage)
-                }
-            }
-        }
+        pagingFooter(isLoadingMore, pageErrorMessage, onRetryPage)
     }
 }
 

@@ -35,14 +35,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ar.felaufernandezbottaro.vinculovial.R
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.SentAlertState
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvAmber
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvAmberDark
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvAmberSurface
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvGreen
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvGreenDark
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvInk
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMint
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMintDark
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMuted
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrange
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrangeDark
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvTile
 
 /**
  * El avatar de ViVIAna. Siempre sale de `R.drawable.vivi_avatar`, un recurso único: cuando haya
@@ -99,9 +105,12 @@ fun ViviChatHeader(onBack: () -> Unit, backDescription: String, backEnabled: Boo
 private val ViviBubbleShape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
 private val UserBubbleShape = RoundedCornerShape(topStart = 18.dp, topEnd = 4.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
 
-/** Un mensaje de ViVIAna. [isWarning] lo pinta ámbar: un aviso que pide cuidado o un error. */
+/**
+ * Un mensaje de ViVIAna. [isWarning] lo pinta ámbar: un aviso que pide cuidado o un error.
+ * [time] es una marca de hora opcional bajo el texto ("Hoy 10:42").
+ */
 @Composable
-fun ViviBubble(text: String, isWarning: Boolean = false) {
+fun ViviBubble(text: String, isWarning: Boolean = false, time: String? = null) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Surface(
             shape = ViviBubbleShape,
@@ -109,12 +118,15 @@ fun ViviBubble(text: String, isWarning: Boolean = false) {
             border = if (isWarning) BorderStroke(1.dp, VvAmber) else null,
             modifier = Modifier.widthIn(max = 290.dp),
         ) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = VvInk,
+            Column(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            )
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(text = text, style = MaterialTheme.typography.bodyMedium, color = VvInk)
+                if (time != null) {
+                    Text(text = time, style = MaterialTheme.typography.labelMedium, color = VvMuted)
+                }
+            }
         }
     }
 }
@@ -194,6 +206,29 @@ fun ViewPhotosPill(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.labelMedium,
                 color = VvNavy,
             )
+        }
+    }
+}
+
+/** La pill de estado de una fila de Enviados: el color dice cómo va la alerta, el texto lo confirma. */
+@Composable
+fun SentStatePill(state: SentAlertState, modifier: Modifier = Modifier) {
+    val (container, border, content) = when (state) {
+        SentAlertState.IN_VALIDATION -> Triple(VvAmberSurface, VvAmber, VvAmberDark)
+        SentAlertState.VALIDATED -> Triple(VvMint, VvGreen, VvGreenDark)
+        SentAlertState.SEEN -> Triple(Color.White, VvNavy, VvNavy)
+        SentAlertState.REJECTED -> Triple(Color.White, VvOrangeDark, VvOrangeDark)
+        SentAlertState.NO_RESPONSE -> Triple(VvTile, VvMuted, VvMuted)
+    }
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = container,
+        border = BorderStroke(1.dp, border),
+        modifier = modifier.height(24.dp),
+    ) {
+        Row(modifier = Modifier.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(text = state.label(), style = MaterialTheme.typography.labelMedium, color = content)
         }
     }
 }

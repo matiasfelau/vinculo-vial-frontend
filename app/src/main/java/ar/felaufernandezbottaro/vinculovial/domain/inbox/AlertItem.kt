@@ -14,6 +14,8 @@ import java.time.Instant
  * @property evidenceExpiresAt hasta cuándo se conserva la evidencia, si el servidor lo informa.
  * @property myFeedback la valoración que dio el usuario a la validación, si dio alguna.
  * @property reported el usuario ya reportó al emisor de esta alerta.
+ * @property seen este destinatario ya abrió el chat. Lo fija el servidor (`PUT .../seen`): no hay
+ * ningún dato de "leído" guardado en el dispositivo.
  */
 data class AlertItem(
     val id: String,
@@ -24,6 +26,7 @@ data class AlertItem(
     val evidenceExpiresAt: Instant? = null,
     val myFeedback: FeedbackRating? = null,
     val reported: Boolean = false,
+    val seen: Boolean = false,
 )
 
 /**

@@ -11,15 +11,20 @@ import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetEvidenceUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetInboxResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetInboxUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.InboxPage
-import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReadAlertsStore
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.MarkAlertSeenUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportReason
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportSenderUseCase
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.SeenResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.SetFeedbackUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
@@ -28,8 +33,10 @@ import javax.inject.Inject
 /**
  * Carga la primera página del buzón al crearse y pagina hacia adelante por cursor. También
  * maneja el chat de una alerta (evidencia redactada, valoración, reporte al emisor) sobre la
- * misma lista, para que lo que cambia en el chat se vea igual al volver a ella, y recuerda en
- * el dispositivo cuáles alertas ya se abrieron.
+ * misma lista, para que lo que cambia en el chat se vea igual al volver a ella.
+ *
+ * Qué alertas ya se abrieron lo dice el servidor (`seen` del inbox): al abrir un chat se avisa
+ * con `PUT .../seen`, sin bloquear la pantalla. No se guarda ningún id en el dispositivo.
  */
 @HiltViewModel
 class InboxViewModel @Inject constructor(
@@ -37,7 +44,7 @@ class InboxViewModel @Inject constructor(
     private val getEvidence: GetEvidenceUseCase,
     private val setFeedback: SetFeedbackUseCase,
     private val reportSender: ReportSenderUseCase,
-    private val readAlertsStore: ReadAlertsStore,
+    private val markAlertSeen: MarkAlertSeenUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<InboxUiState>(InboxUiState.Loading)
@@ -48,10 +55,15 @@ class InboxViewModel @Inject constructor(
     /** El detalle abierto, o `null` si no hay ninguno. */
     val detail: StateFlow<AlertDetailUiState?> = _detail.asStateFlow()
 
-    private val _readAlertIds = MutableStateFlow(readAlertsStore.readIds())
+    private val _events = Channel<InboxEvent>(Channel.BUFFERED)
 
-    /** Los ids de las alertas que el usuario ya abrió. Sólo existen en este dispositivo: nunca se envían. */
-    val readAlertIds: StateFlow<Set<String>> = _readAlertIds.asStateFlow()
+    /** Efectos únicos que la navegación tiene que ejecutar (abrir el chat de una alerta desde un push). */
+    val events: Flow<InboxEvent> = _events.receiveAsFlow()
+
+    /** Ids con un `PUT .../seen` en vuelo: abrir dos veces seguidas no manda dos pedidos. */
+    private val seenInFlight = mutableSetOf<String>()
+
+    private var firstPageJob: Job? = null
 
     /** Barrera contra pedir la misma página dos veces: sin ella, un scroll rápido dispara
      * varias peticiones con el mismo cursor, duplica ítems y quema el cupo de 20/min. */
@@ -69,8 +81,8 @@ class InboxViewModel @Inject constructor(
         loadFirstPage()
     }
 
-    fun loadFirstPage() {
-        viewModelScope.launch {
+    fun loadFirstPage(): Job {
+        val job = viewModelScope.launch {
             _uiState.update { InboxUiState.Loading }
 
             when (val result = getInbox()) {
@@ -78,6 +90,8 @@ class InboxViewModel @Inject constructor(
                 is GetInboxResult.Failed -> _uiState.update { InboxUiState.Error(result.error) }
             }
         }
+        firstPageJob = job
+        return job
     }
 
     /** Un `200` con `items` vacío es `Empty`, nunca `Error`: no tener incidentes es lo deseable. */
@@ -129,21 +143,51 @@ class InboxViewModel @Inject constructor(
 
     /** Abre el detalle de [alertId] y empieza a bajar sus fotos de evidencia redactadas. */
     fun openAlert(alertId: String) {
-        val item = currentItems()?.firstOrNull { it.id == alertId } ?: return
+        val item = findLoaded(alertId) ?: return
 
-        markRead(item.id)
         wipeEvidence()
         _detail.value = AlertDetailUiState(
             item = item,
             evidence = item.evidence.map { EvidenceSlot(it, EvidenceLoad.Loading) },
         )
         item.evidence.forEach { loadEvidence(item.id, it) }
+        if (!item.seen) markSeen(item.id)
     }
 
-    private fun markRead(alertId: String) {
-        readAlertsStore.markRead(alertId)
-        _readAlertIds.update { it + alertId }
+    /**
+     * Avisa al servidor que se abrió el chat. No bloquea nada: la alerta pasa a "vista" recién
+     * cuando el servidor responde 204. Si falla (sin red, 404, límite), queda como no vista y se
+     * reintenta la próxima vez que se abra.
+     */
+    private fun markSeen(alertId: String) {
+        if (!seenInFlight.add(alertId)) return
+
+        viewModelScope.launch {
+            try {
+                if (markAlertSeen(alertId) is SeenResult.Marked) applyItem(alertId) { it.copy(seen = true) }
+            } finally {
+                seenInFlight.remove(alertId)
+            }
+        }
     }
+
+    /**
+     * Abre el chat de [alertId] a partir de un push de alerta nueva. Espera la primera página (la
+     * que se está cargando) y, si la alerta no está —porque la lista es anterior al aviso—, la
+     * vuelve a pedir una vez. Si tampoco aparece, no abre nada: el usuario queda en la lista.
+     */
+    fun openAlertFromPush(alertId: String) {
+        viewModelScope.launch {
+            firstPageJob?.join()
+            if (findLoaded(alertId) == null) loadFirstPage().join()
+
+            if (findLoaded(alertId) == null) return@launch
+            openAlert(alertId)
+            _events.send(InboxEvent.OpenDetail)
+        }
+    }
+
+    private fun findLoaded(alertId: String): AlertItem? = currentItems()?.firstOrNull { it.id == alertId }
 
     /** Cierra el detalle y sobreescribe con ceros las fotos que había bajado. */
     fun closeAlert() {

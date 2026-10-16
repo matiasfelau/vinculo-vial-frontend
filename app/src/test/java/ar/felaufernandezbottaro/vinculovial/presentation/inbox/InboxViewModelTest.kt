@@ -2,10 +2,10 @@ package ar.felaufernandezbottaro.vinculovial.presentation.inbox
 
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertItem
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FakeInboxRepository
-import ar.felaufernandezbottaro.vinculovial.domain.inbox.FakeReadAlertsStore
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetEvidenceUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetInboxResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetInboxUseCase
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.MarkAlertSeenUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.InboxError
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.InboxPage
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportSenderUseCase
@@ -32,7 +32,7 @@ class InboxViewModelTest {
         getEvidence = GetEvidenceUseCase(repository),
         setFeedback = SetFeedbackUseCase(repository),
         reportSender = ReportSenderUseCase(repository),
-        readAlertsStore = FakeReadAlertsStore(),
+        markAlertSeen = MarkAlertSeenUseCase(repository),
     )
 
     private val item = AlertItem(id = "id-1", alertType = "CRASHED", createdAt = Instant.EPOCH)

@@ -3,6 +3,7 @@ package ar.felaufernandezbottaro.vinculovial.data.inbox
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.FeedbackRequestDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.InboxPageDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.ReportRequestDto
+import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.SentPageDto
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
@@ -25,6 +26,23 @@ interface InboxApi {
         @Header("Authorization") authorization: String,
         @Query("cursor") cursor: String? = null,
     ): Response<InboxPageDto>
+
+    /**
+     * Las alertas que envió el usuario, más nuevas primero. Mismo esquema de cursor que el buzón;
+     * el `limit` tampoco se envía nunca.
+     */
+    @GET("api/v1/alerts/sent")
+    suspend fun getSent(
+        @Header("Authorization") authorization: String,
+        @Query("cursor") cursor: String? = null,
+    ): Response<SentPageDto>
+
+    /** El destinatario abrió el chat. Responde 204, es idempotente, y 404 si no es destinatario o la alerta no está `ACTIVE`. */
+    @PUT("api/v1/alerts/{alertId}/seen")
+    suspend fun markSeen(
+        @Header("Authorization") authorization: String,
+        @Path("alertId") alertId: String,
+    ): Response<Unit>
 
     /**
      * La foto redactada como `image/jpeg`, `Cache-Control: no-store`. Se pide como [ResponseBody]

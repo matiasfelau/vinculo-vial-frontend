@@ -6,8 +6,8 @@ import ar.felaufernandezbottaro.vinculovial.presentation.vivi.senderMessage
 /** Un elemento de la conversación del emisor con ViVIAna. */
 sealed interface SenderChatItem {
 
-    /** Un mensaje de ViVIAna. [isWarning] lo pinta ámbar: un error del envío. */
-    data class Vivi(val text: String, val isWarning: Boolean = false) : SenderChatItem
+    /** Un mensaje de ViVIAna. [isWarning] lo pinta ámbar; [time] es una marca de hora opcional bajo el texto. */
+    data class Vivi(val text: String, val isWarning: Boolean = false, val time: String? = null) : SenderChatItem
 
     /** El mensaje fijo que eligió el emisor. */
     data class User(val text: String) : SenderChatItem

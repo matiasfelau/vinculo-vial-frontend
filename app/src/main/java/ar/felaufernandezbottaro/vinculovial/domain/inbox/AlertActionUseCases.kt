@@ -16,3 +16,11 @@ class ReportSenderUseCase @Inject constructor(private val repository: InboxRepos
     suspend operator fun invoke(alertId: String, reason: ReportReason): ReportResult =
         repository.reportSender(alertId, reason)
 }
+
+class GetSentUseCase @Inject constructor(private val repository: InboxRepository) {
+    suspend operator fun invoke(cursor: String? = null): GetSentResult = repository.getSent(cursor)
+}
+
+class MarkAlertSeenUseCase @Inject constructor(private val repository: InboxRepository) {
+    suspend operator fun invoke(alertId: String): SeenResult = repository.markSeen(alertId)
+}

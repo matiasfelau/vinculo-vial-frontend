@@ -56,6 +56,18 @@
             </intent-filter>
         </activity>
 
+        <!--
+          Los avisos al emisor (`data.type = SENT_UPDATED`) traen un bloque `notification`: con la
+          app en segundo plano los muestra el sistema, y sin estos valores caen en un canal
+          genérico. El id es el mismo que ALERTS_CHANNEL_ID (ver NotificationChannels).
+        -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="alerts" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+
         <service
             android:name=".data.push.VvcMessagingService"
             android:exported="false">

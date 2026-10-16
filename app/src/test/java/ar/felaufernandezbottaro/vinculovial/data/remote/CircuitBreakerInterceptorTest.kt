@@ -189,7 +189,7 @@ class CircuitBreakerInterceptorTest {
         val notEndpoints = methods.filter { m -> m.annotations.none { it.annotationClass.java in retrofitHttpAnnotations } }
         assertTrue("métodos sin anotación HTTP de Retrofit: $notEndpoints", notEndpoints.isEmpty())
 
-        assertEquals(13, methods.size)
-        assertEquals(13, methods.map { endpointKeyOf(it) }.toSet().size)
+        assertEquals(15, methods.size)
+        assertEquals(15, methods.map { endpointKeyOf(it) }.toSet().size)
     }
 }
