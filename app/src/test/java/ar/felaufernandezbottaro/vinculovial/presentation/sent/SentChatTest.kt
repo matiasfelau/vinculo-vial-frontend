@@ -31,7 +31,7 @@ class SentChatTest {
     private fun items(alert: SentAlert) = sentChatItems(alert, now = now, zone = zone)
 
     private val receipt = SenderChatItem.Vivi(
-        "Recibí todo. El sistema va a validar la información y, si la aprueba, le aviso al dueño.",
+        "Recibí todo. El sistema va a validar la información y, si la aprueba, la dejo en el buzón de esa patente.",
     )
 
     @Test
@@ -53,15 +53,24 @@ class SentChatTest {
     }
 
     @Test
-    fun `validada agrega que ViVIAna le aviso al dueño`() {
+    fun `validada agrega que ViVIAna la dejo en el buzon de esa patente`() {
         assertEquals(
             listOf(
                 SenderChatItem.User("Tu auto fue chocado."),
                 receipt,
-                SenderChatItem.Vivi("Validé tu alerta y ya le avisé al dueño."),
+                SenderChatItem.Vivi("Validé tu alerta y la dejé en el buzón de esa patente."),
             ),
             items(alert(SentAlertStatus.ACTIVE)),
         )
+    }
+
+    @Test
+    fun `validada dice lo mismo para todas las alertas, sin importar el tipo`() {
+        val messages = listOf("CRASHED", "PARKED_ON_GARAGE", "PARKED_TOO_CLOSE", "TIPO_NUEVO").map { type ->
+            (items(alert(SentAlertStatus.ACTIVE, alertType = type)).last() as SenderChatItem.Vivi).text
+        }
+
+        assertEquals(setOf("Validé tu alerta y la dejé en el buzón de esa patente."), messages.toSet())
     }
 
     @Test
@@ -72,7 +81,7 @@ class SentChatTest {
             listOf(
                 SenderChatItem.User("Tu auto fue chocado."),
                 receipt,
-                SenderChatItem.Vivi("Validé tu alerta y ya le avisé al dueño."),
+                SenderChatItem.Vivi("Validé tu alerta y la dejé en el buzón de esa patente."),
                 SenderChatItem.Vivi("El dueño leyó tu mensaje.", time = "Hoy 13:41"),
             ),
             result,
@@ -127,7 +136,7 @@ class SentChatTest {
             items(alert(status, seenAt = if (status == SentAlertStatus.ACTIVE) now else null))
         }.filterIsInstance<SenderChatItem.Vivi>().map { it.text.lowercase() }
 
-        listOf("fraude", "reputaci", "motivo", "veredicto", "patente").forEach { forbidden ->
+        listOf("fraude", "reputaci", "motivo", "veredicto", "no está en la red", "no registrada").forEach { forbidden ->
             assertTrue("'$forbidden' no debería aparecer", texts.none { forbidden in it })
         }
     }

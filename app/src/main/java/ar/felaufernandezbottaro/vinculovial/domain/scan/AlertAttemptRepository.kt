@@ -2,12 +2,9 @@ package ar.felaufernandezbottaro.vinculovial.domain.scan
 
 interface AlertAttemptRepository {
 
-    /** Cifra [patente] contra la Public Key de Vehicle y abre un intento de alerta. */
-    suspend fun startAttempt(patente: String): StartAlertAttemptResult
-
     /**
-     * Repite la llamada 1 con el [patEnc] que ya se había generado, sin volver a cifrar la
-     * patente (la app ya no la tiene en claro): abre un intento nuevo cuando el anterior venció.
+     * Abre un intento de alerta, sin body. Sirve igual para el intento inicial y para renovarlo
+     * cuando venció: el `pat_enc` ya no participa, viaja recién con la alerta.
      */
-    suspend fun renewAttempt(patEnc: String): StartAlertAttemptResult
+    suspend fun startAttempt(): StartAlertAttemptResult
 }

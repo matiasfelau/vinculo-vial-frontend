@@ -6,31 +6,28 @@ import org.junit.Test
 
 class StartAlertAttemptUseCaseTest {
 
-    private val patente = "GUQ856"
-
     @Test
-    fun `pasa la patente reconocida al repositorio tal cual`() = runTest {
+    fun `abre un intento en el repositorio, sin patente`() = runTest {
         val repository = FakeAlertAttemptRepository()
         val startAttempt = StartAlertAttemptUseCase(repository)
 
-        startAttempt(patente)
+        startAttempt()
 
-        assertEquals(listOf(patente), repository.received)
+        assertEquals(1, repository.calls)
     }
 
     @Test
     fun `devuelve el resultado del repositorio sin transformarlo`() = runTest {
         listOf(
-            StartAlertAttemptResult.NotInNetwork,
+            FakeAlertAttemptRepository.started(),
             StartAlertAttemptResult.UnderReview,
-            StartAlertAttemptResult.InvalidPlate,
             StartAlertAttemptResult.RateLimited,
             StartAlertAttemptResult.Unavailable,
             StartAlertAttemptResult.Unexpected,
         ).forEach { programmed ->
             val startAttempt = StartAlertAttemptUseCase(FakeAlertAttemptRepository(result = programmed))
 
-            assertEquals(programmed, startAttempt(patente))
+            assertEquals(programmed, startAttempt())
         }
     }
 }

@@ -26,6 +26,26 @@ class PushNavigationPlannerTest {
     }
 
     @Test
+    fun `con sesion y alertas entregadas al buzon reconstruye el mismo stack, que termina en Recibidos`() {
+        assertEquals(
+            listOf(Route.SETTINGS, Route.INBOX),
+            planPushNavigation(hasSession = true, target = PushTarget.InboxUpdated),
+        )
+        assertEquals(emptyList<String>(), planPushNavigation(hasSession = false, target = PushTarget.InboxUpdated))
+    }
+
+    @Test
+    fun `INBOX_UPDATED se interpreta como alertas entregadas, con o sin alert_id`() {
+        assertEquals(PushTarget.InboxUpdated, parsePushTarget("INBOX_UPDATED", null, null))
+        assertEquals(PushTarget.InboxUpdated, parsePushTarget("INBOX_UPDATED", null, "alerta-1"))
+    }
+
+    @Test
+    fun `INBOX_UPDATED gana sobre un alert_type suelto`() {
+        assertEquals(PushTarget.InboxUpdated, parsePushTarget("INBOX_UPDATED", "CRASHED", null))
+    }
+
+    @Test
     fun `con sesion y novedades de una alerta enviada reconstruye el mismo stack`() {
         assertEquals(
             listOf(Route.SETTINGS, Route.INBOX),

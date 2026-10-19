@@ -4,34 +4,25 @@ import java.time.Instant
 
 /**
  * Resultado de `POST /alerts/attempts` visto desde el dominio. `presentation` nunca ve un
- * código HTTP ni una excepción cruda: sólo estos casos.
+ * código HTTP ni una excepción cruda: sólo estos casos. El intento no resuelve dueños: la app
+ * nunca se entera de si el vehículo tiene dueños.
  */
 sealed interface StartAlertAttemptResult {
 
     /**
-     * 201: hay al menos un dueño que no es el emisor. Lleva el `pat_enc` ya generado para esta
-     * patente -- el envío de la alerta lo reusa tal cual, sin volver a cifrar -- y el
-     * [attemptId] que ata las fotos de evidencia. El intento vence en [expiresAt].
+     * 201: el emisor puede alertar. El [attemptId] ata las fotos de evidencia (es el `info` del
+     * HPKE) y se vuelve el `alert_id`. El intento vence en [expiresAt].
      */
     data class Started(
         val attemptId: String,
         val expiresAt: Instant,
-        val patEnc: String,
-    ) : StartAlertAttemptResult {
-        override fun toString(): String = "Started(attemptId=$attemptId, expiresAt=$expiresAt, patEnc=***)"
-    }
-
-    /** 404: el vehículo no está en la red. La UI muestra un mensaje neutro, sin ofrecer alertar igual. */
-    data object NotInNetwork : StartAlertAttemptResult
+    ) : StartAlertAttemptResult
 
     /** Los casos en los que el intento no arrancó y la UI muestra un error. */
     sealed interface Failure : StartAlertAttemptResult
 
     /** 403 `ISSUER_UNDER_REVIEW`: la cuenta del emisor está en revisión y no puede crear alertas. */
     data object UnderReview : Failure
-
-    /** 400: Vehicle rechazó el criptograma o el formato de la patente. */
-    data object InvalidPlate : Failure
 
     /** 429: límite de Kong alcanzado (10 req/min, 30 req/hora por `X-User-Id`). */
     data object RateLimited : Failure

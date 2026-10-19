@@ -51,15 +51,18 @@ object ViviMessages {
 
     // -- Chat del emisor ---------------------------------------------------------------------
 
-    const val SENDER_GREETING = "Hola, soy ViVIAna. Ya identifiqué el vehículo."
-    const val SENDER_PROMPT = "¿Qué le querés avisar a su dueño? Elegí uno de estos mensajes."
+    const val SENDER_GREETING = "Hola, soy ViVIAna. Ya tengo la patente."
+    const val SENDER_PROMPT = "¿Qué querés avisar? Elegí uno de estos mensajes."
     const val SENDER_OPTIONS_HEADER = "Mensajes disponibles"
     const val SENDER_FIXED_NOTE = "Los mensajes son fijos para que el dueño no pueda identificarte."
     const val SENDER_SENT_RECEIPT =
-        "Recibí todo. El sistema va a validar la información y, si la aprueba, le aviso al dueño."
+        "Recibí todo. El sistema va a validar la información y, si la aprueba, la dejo en el buzón de esa patente."
 
-    /** Lo que ViVIAna agrega en el chat del emisor, según el estado de la alerta enviada. */
-    const val SENDER_VALIDATED = "Validé tu alerta y ya le avisé al dueño."
+    /**
+     * Lo que ViVIAna agrega en el chat del emisor con la alerta `ACTIVE`. Es igual para todas: el
+     * emisor nunca se entera de si la patente tiene dueños, y ViVIAna sólo dice lo que es cierto.
+     */
+    const val SENDER_VALIDATED = "Validé tu alerta y la dejé en el buzón de esa patente."
     const val SENDER_SEEN = "El dueño leyó tu mensaje."
     const val SENDER_REJECTED = "No pudimos validar tu alerta."
     const val SENDER_NO_RESPONSE = "Tu alerta no tuvo respuesta."

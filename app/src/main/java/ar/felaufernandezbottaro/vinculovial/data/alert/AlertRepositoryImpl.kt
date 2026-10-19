@@ -31,8 +31,8 @@ import javax.inject.Singleton
  * Arma el multipart de `POST /alerts` y mapea la respuesta. Las fotos se cifran acá, en cada
  * envío, con el `attempt_id` que recibe [sendAlert]: así un reenvío con otro intento sale
  * re-cifrado. No hay `HpkeEncryptor` ni clave pública entre sus dependencias: el
- * [EvidenceEncryptor] es el único que conoce la clave de IA, y la patente no viaja en este
- * request (el servidor ya la tiene del intento).
+ * [EvidenceEncryptor] es el único que conoce la clave de IA, y la patente viaja ya cifrada para
+ * Vehicle (`pat_enc`) en el `metadata`, tal como la entrega quien la cifró.
  */
 @Singleton
 class AlertRepositoryImpl @Inject constructor(
@@ -48,6 +48,7 @@ class AlertRepositoryImpl @Inject constructor(
 
     override suspend fun sendAlert(
         attemptId: String,
+        patEnc: String,
         alertType: AlertType,
         evidence: EvidencePhotoSet,
     ): SendAlertResult = withContext(dispatcher) {
@@ -55,7 +56,7 @@ class AlertRepositoryImpl @Inject constructor(
             ?: return@withContext SendAlertResult.Failed(SendAlertError.Unexpected)
 
         val parts = try {
-            buildParts(attemptId, alertType, evidence)
+            buildParts(attemptId, patEnc, alertType, evidence)
         } catch (e: CryptoConfigurationException) {
             return@withContext SendAlertResult.Failed(SendAlertError.Unexpected)
         } catch (e: CryptoOperationException) {
@@ -81,6 +82,7 @@ class AlertRepositoryImpl @Inject constructor(
      */
     private fun buildParts(
         attemptId: String,
+        patEnc: String,
         alertType: AlertType,
         evidence: EvidencePhotoSet,
     ): List<MultipartBody.Part>? {
@@ -92,7 +94,7 @@ class AlertRepositoryImpl @Inject constructor(
 
         // Como bytes, no como String: `String.toRequestBody` le agrega `; charset=utf-8` al
         // content-type, y el contrato pide exactamente `application/json`.
-        val metadata = metadataAdapter.toJson(SendAlertMetadataDto(attemptId, alertType.wireValue))
+        val metadata = metadataAdapter.toJson(SendAlertMetadataDto(attemptId, alertType.wireValue, patEnc))
             .toByteArray(Charsets.UTF_8)
         val parts = mutableListOf(
             MultipartBody.Part.createFormData(PART_METADATA, null, metadata.toRequestBody(JSON_MEDIA_TYPE)),

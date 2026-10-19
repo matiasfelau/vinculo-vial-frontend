@@ -295,7 +295,7 @@ private fun CancelReportDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("¿Deseás cancelar el reporte?") },
-        text = { Text("La patente ya quedó verificada, pero no se va a enviar ningún reporte.") },
+        text = { Text("Se descartan las fotos y no se va a enviar ningún reporte.") },
         confirmButton = {
             TextButton(onClick = onConfirm) { Text("Sí, cancelar", color = VvOrange) }
         },

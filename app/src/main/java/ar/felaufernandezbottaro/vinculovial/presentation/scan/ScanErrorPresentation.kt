@@ -8,17 +8,14 @@ fun StartAlertAttemptResult.Failure.message(): String = when (this) {
     StartAlertAttemptResult.UnderReview ->
         "Tu cuenta está en revisión. Por ahora no podés enviar alertas."
 
-    StartAlertAttemptResult.InvalidPlate ->
-        "La patente no es válida. Revisala e intentá de nuevo."
-
     StartAlertAttemptResult.RateLimited ->
-        "Alcanzaste el límite de consultas. Esperá unos minutos antes de volver a intentar."
+        "Alcanzaste el límite de reportes. Esperá unos minutos antes de volver a intentar."
 
     StartAlertAttemptResult.Unavailable ->
         "No pudimos comunicarnos con el servidor. Revisá tu conexión e intentá de nuevo en unos minutos."
 
     StartAlertAttemptResult.Unexpected ->
-        "No pudimos verificar la patente. Intentá de nuevo en unos minutos."
+        "No pudimos preparar el reporte. Intentá de nuevo en unos minutos."
 }
 
 fun SendAlertError.message(): String = when (this) {
@@ -41,12 +38,12 @@ fun SendAlertError.message(): String = when (this) {
         "Tu cuenta está en revisión. Por ahora no podés enviar alertas."
 
     SendAlertError.AttemptNotFound ->
-        "Se perdió la verificación de la patente. Volvé a empezar."
+        "Se perdió el reporte en curso. Volvé a empezar."
 
     SendAlertError.PossiblySent -> ViviMessages.SENDER_POSSIBLY_SENT
 
     SendAlertError.AttemptExpired ->
-        "La verificación de la patente venció. Intentá de nuevo."
+        "El reporte venció. Intentá de nuevo."
 
     SendAlertError.RateLimited ->
         "Alcanzaste el límite de reportes. Esperá unos minutos antes de volver a intentar."

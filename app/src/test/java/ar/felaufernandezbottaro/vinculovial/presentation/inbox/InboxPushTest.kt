@@ -116,6 +116,32 @@ class InboxPushTest {
         assertEquals(InboxUiState.Error(InboxError.Network), viewModel.uiState.value)
     }
 
+    // -- INBOX_UPDATED: alertas entregadas al buzón, abre Recibidos sin chat concreto ------------
+
+    @Test
+    fun `un push de alertas entregadas trae la lista de nuevo y muestra las alertas`() = runTest {
+        val viewModel = viewModel("a")
+        repository.result = GetInboxResult.Success(InboxPage(items = listOf(item("entregada"), item("a")), nextCursor = null))
+
+        viewModel.refresh().join()
+
+        assertEquals(2, repository.receivedCursors.size)
+        assertEquals(listOf("entregada", "a"), (viewModel.uiState.value as InboxUiState.Content).items.map { it.id })
+    }
+
+    @Test
+    fun `si la primera pagina ya esta en vuelo el refresh no la pide otra vez`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        repository.gate = gate
+        val viewModel = viewModel("a")
+
+        val job = viewModel.refresh()
+        gate.complete(Unit)
+        job.join()
+
+        assertEquals(1, repository.receivedCursors.size)
+    }
+
     @Test
     fun `abrir desde el push tambien avisa al servidor que se vio`() = runTest {
         val viewModel = viewModel("a")

@@ -57,7 +57,8 @@
         </activity>
 
         <!--
-          Los avisos al emisor (`data.type = SENT_UPDATED`) traen un bloque `notification`: con la
+          Los avisos al emisor (`data.type = SENT_UPDATED`) traen un bloque `notification` (el de `INBOX_UPDATED`
+          también, si lo trae): con la
           app en segundo plano los muestra el sistema, y sin estos valores caen en un canal
           genérico. El id es el mismo que ALERTS_CHANNEL_ID (ver NotificationChannels).
         -->

@@ -63,7 +63,7 @@ import java.util.concurrent.Executors
 
 /**
  * Escaneo en vivo de la patente: cámara + overlay rectangular, sin obturador. Cubre sólo hasta
- * que el intento contra `/alerts/attempts` responde: el catálogo de incidentes y el envío del
+ * que el intento contra `/alerts/attempts` responde (no consulta dueños: el chat se abre siempre): el catálogo de incidentes y el envío del
  * reporte viven en `ReportChatScreen`, una pantalla aparte -- no un menú flotante sobre la
  * cámara -- a la que el `NavHost` navega apenas el status pasa a `AwaitingAlertType`.
  */
@@ -77,7 +77,6 @@ fun ScanPlateScreen(
     onManualEntryOpened: () -> Unit,
     onManualPlateSubmitted: (String) -> Unit,
     onManualEntryDismissed: () -> Unit,
-    onNotInNetworkDismissed: () -> Unit,
     onCheckErrorDismissed: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -203,7 +202,6 @@ fun ScanPlateScreen(
                 color = when {
                     failure != null -> VvOrange
                     uiState.status is ScanStatus.CheckFailed -> VvOrange
-                    uiState.status is ScanStatus.NotInNetwork -> VvOrange
                     else -> Color.White
                 },
                 textAlign = TextAlign.Center,
@@ -232,10 +230,6 @@ fun ScanPlateScreen(
             )
         }
 
-        if (uiState.status is ScanStatus.NotInNetwork) {
-            NotInNetworkDialog(onDismiss = onNotInNetworkDismissed)
-        }
-
         val checkFailed = uiState.status as? ScanStatus.CheckFailed
         if (checkFailed != null) {
             ScanErrorDialog(message = checkFailed.failure.message(), onDismiss = onCheckErrorDismissed)
@@ -249,25 +243,12 @@ private fun statusHeadline(status: ScanStatus): String = when (status) {
     is ScanStatus.Detected -> "¿Es correcta esta patente?"
     ScanStatus.Rejected -> "¿Cómo querés seguir?"
     is ScanStatus.ManualEntry -> "Ingresá la patente"
-    ScanStatus.Checking -> "Verificando la patente…"
-    ScanStatus.NotInNetwork -> "El vehículo no está en la red"
+    ScanStatus.Checking -> "Preparando el reporte…"
     ScanStatus.AwaitingAlertType -> "Elegí qué querés reportar"
     ScanStatus.SendingAlert -> "Enviando el reporte…"
     ScanStatus.AlertSent -> "¡Listo!"
-    is ScanStatus.CheckFailed -> "No pudimos verificar la patente"
+    is ScanStatus.CheckFailed -> "No pudimos preparar el reporte"
     is ScanStatus.AlertFailed -> "No pudimos enviar el reporte"
-}
-
-@Composable
-private fun NotInNetworkDialog(onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("El vehículo no está en la red") },
-        text = { Text("Esta patente no corresponde a ningún vehículo vinculado en Vínculo Vial.") },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Entendido", color = VvNavy) }
-        },
-    )
 }
 
 /**

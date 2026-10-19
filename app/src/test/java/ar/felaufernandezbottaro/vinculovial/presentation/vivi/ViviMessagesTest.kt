@@ -114,7 +114,7 @@ class ViviMessagesTest {
 
     @Test
     fun `los textos de ViVIAna en el chat del emisor son los del contrato`() {
-        assertEquals("Validé tu alerta y ya le avisé al dueño.", ViviMessages.SENDER_VALIDATED)
+        assertEquals("Validé tu alerta y la dejé en el buzón de esa patente.", ViviMessages.SENDER_VALIDATED)
         assertEquals("El dueño leyó tu mensaje.", ViviMessages.SENDER_SEEN)
         assertEquals("No pudimos validar tu alerta.", ViviMessages.SENDER_REJECTED)
         assertEquals("Tu alerta no tuvo respuesta.", ViviMessages.SENDER_NO_RESPONSE)
@@ -156,7 +156,7 @@ class ViviMessagesTest {
     fun `tras el 202 ViVIAna confirma la recepcion sin prometerle nada al emisor`() {
         val receipt = ViviMessages.SENDER_SENT_RECEIPT
 
-        assertEquals("Recibí todo. El sistema va a validar la información y, si la aprueba, le aviso al dueño.", receipt)
+        assertEquals("Recibí todo. El sistema va a validar la información y, si la aprueba, la dejo en el buzón de esa patente.", receipt)
         assertFalse(receipt.contains("te aviso", ignoreCase = true))
         assertFalse(receipt.contains("te escribo", ignoreCase = true))
     }
