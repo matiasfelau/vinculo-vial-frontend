@@ -2,8 +2,10 @@ package ar.felaufernandezbottaro.vinculovial.di
 
 import ar.felaufernandezbottaro.vinculovial.data.alert.AlertAttemptRepositoryImpl
 import ar.felaufernandezbottaro.vinculovial.data.alert.AlertRepositoryImpl
+import ar.felaufernandezbottaro.vinculovial.data.alert.VehiclePlateEncryptor
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertAttemptRepository
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertRepository
+import ar.felaufernandezbottaro.vinculovial.domain.scan.PlateEncryptor
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -21,4 +23,8 @@ abstract class AlertModule {
     @Binds
     @Singleton
     abstract fun bindAlertRepository(impl: AlertRepositoryImpl): AlertRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindPlateEncryptor(impl: VehiclePlateEncryptor): PlateEncryptor
 }

@@ -214,6 +214,10 @@ fun VinculoVialNavHost(
                         val alertId = target.alertId
                         if (alertId != null) sentViewModel.openChatFromPush(alertId) else sentViewModel.refresh()
                     }
+                    PushTarget.InboxUpdated -> {
+                        selectedTab = InboxTab.RECEIVED
+                        viewModel.refresh()
+                    }
                     null -> Unit
                 }
                 if (pendingPush != null) onPendingPushConsumed()
@@ -366,7 +370,6 @@ fun VinculoVialNavHost(
                         onManualEntryOpened = viewModel::onManualEntryOpened,
                         onManualPlateSubmitted = viewModel::onManualPlateSubmitted,
                         onManualEntryDismissed = viewModel::onManualEntryDismissed,
-                        onNotInNetworkDismissed = viewModel::onNotInNetworkDismissed,
                         onCheckErrorDismissed = viewModel::onCheckErrorDismissed,
                         onCancel = { navController.popBackStack() },
                     )

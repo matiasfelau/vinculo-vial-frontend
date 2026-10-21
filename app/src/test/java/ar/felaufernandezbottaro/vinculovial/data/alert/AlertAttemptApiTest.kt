@@ -1,6 +1,5 @@
 package ar.felaufernandezbottaro.vinculovial.data.alert
 
-import ar.felaufernandezbottaro.vinculovial.data.alert.dto.AlertAttemptRequestDto
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationTokenGenerator
 import ar.felaufernandezbottaro.vinculovial.data.crypto.MockAttestationProvider
@@ -10,7 +9,6 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
-import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -20,8 +18,8 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 
 /**
  * Test de contrato contra el Gateway simulado para `/alerts/attempts`: sólo la forma de la
- * request y de la respuesta 201. El mapeo de códigos de respuesta a resultado de dominio vive
- * en `AlertAttemptRepositoryImpl`, no acá.
+ * request (sin body) y de la respuesta 201. El mapeo de códigos de respuesta a resultado de
+ * dominio vive en `AlertAttemptRepositoryImpl`, no acá.
  */
 class AlertAttemptApiTest {
 
@@ -62,7 +60,7 @@ class AlertAttemptApiTest {
     fun `publica en el endpoint del contrato con el bearer token`() = runTest {
         server.enqueue(createdResponse())
 
-        api.startAttempt("Bearer access-abc", AlertAttemptRequestDto("cryptograma"))
+        api.startAttempt("Bearer access-abc")
 
         val request = server.takeRequest()
         assertEquals("POST", request.method)
@@ -71,21 +69,21 @@ class AlertAttemptApiTest {
     }
 
     @Test
-    fun `el cuerpo lleva un unico pat_enc`() = runTest {
+    fun `el body queda vacio`() = runTest {
         server.enqueue(createdResponse())
 
-        api.startAttempt("Bearer access-abc", AlertAttemptRequestDto("cryptograma-de-la-patente"))
+        api.startAttempt("Bearer access-abc")
 
-        val body = JSONObject(server.takeRequest().body.readUtf8())
-        assertEquals(1, body.length())
-        assertEquals("cryptograma-de-la-patente", body.getString("pat_enc"))
+        val request = server.takeRequest()
+        assertEquals(0L, request.bodySize)
+        assertEquals("", request.body.readUtf8())
     }
 
     @Test
     fun `201 trae attempt_id y expires_at`() = runTest {
         server.enqueue(createdResponse())
 
-        val response = api.startAttempt("Bearer access-abc", AlertAttemptRequestDto("cryptograma"))
+        val response = api.startAttempt("Bearer access-abc")
 
         assertEquals(201, response.code())
         assertEquals("3f2b8c1e-0000-4000-8000-000000000001", response.body()?.attemptId)

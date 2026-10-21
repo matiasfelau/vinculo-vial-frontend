@@ -39,13 +39,10 @@ sealed interface ScanStatus {
      */
     data class ManualEntry(val error: String? = null) : ScanStatus
 
-    /** Cifrando y abriendo el intento en `/alerts/attempts`. */
+    /** Cifrando la patente y abriendo el intento en `/alerts/attempts`. */
     data object Checking : ScanStatus
 
-    /** 404: el vehículo no está en la red. No se ofrece alertar igual. */
-    data object NotInNetwork : ScanStatus
-
-    /** 201: se abre el catálogo cerrado de incidentes. */
+    /** 201: se abre el chat con el catálogo cerrado de incidentes. */
     data object AwaitingAlertType : ScanStatus
 
     data object SendingAlert : ScanStatus

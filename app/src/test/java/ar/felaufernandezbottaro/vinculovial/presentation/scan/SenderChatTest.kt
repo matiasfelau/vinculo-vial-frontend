@@ -26,8 +26,8 @@ class SenderChatTest {
 
         assertEquals(
             listOf(
-                SenderChatItem.Vivi("Hola, soy ViVIAna. Ya identifiqué el vehículo."),
-                SenderChatItem.Vivi("¿Qué le querés avisar a su dueño? Elegí uno de estos mensajes."),
+                SenderChatItem.Vivi("Hola, soy ViVIAna. Ya tengo la patente."),
+                SenderChatItem.Vivi("¿Qué querés avisar? Elegí uno de estos mensajes."),
             ),
             items,
         )
@@ -117,7 +117,7 @@ class SenderChatTest {
 
         assertEquals(true, (items[items.size - 2] as SenderChatItem.Attachment).sent)
         assertEquals(
-            SenderChatItem.Vivi("Recibí todo. El sistema va a validar la información y, si la aprueba, le aviso al dueño."),
+            SenderChatItem.Vivi("Recibí todo. El sistema va a validar la información y, si la aprueba, la dejo en el buzón de esa patente."),
             items.last(),
         )
     }

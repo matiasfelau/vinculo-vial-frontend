@@ -11,10 +11,19 @@ sealed interface PushTarget {
 
     /** `data.type = SENT_UPDATED`: cambió el estado de una alerta que envió el usuario. Abre el chat del emisor. */
     data class SentUpdated(val alertId: String?) : PushTarget
+
+    /**
+     * `data.type = INBOX_UPDATED`: se entregaron alertas pendientes al buzón del usuario (alertas
+     * sobre un vehículo que vinculó después). Abre Recibidos, sin chat concreto.
+     */
+    data object InboxUpdated : PushTarget
 }
 
 /** Valor de `data.type` de los avisos al emisor. */
 const val PUSH_TYPE_SENT_UPDATED = "SENT_UPDATED"
+
+/** Valor de `data.type` del aviso de alertas sin leer entregadas al dueño. */
+const val PUSH_TYPE_INBOX_UPDATED = "INBOX_UPDATED"
 
 /**
  * Interpreta los extras de la notificación. `alert_type` y `alert_id` no se validan ni se
@@ -26,6 +35,7 @@ fun parsePushTarget(type: String?, alertType: String?, alertId: String?): PushTa
 
     return when {
         type == PUSH_TYPE_SENT_UPDATED -> PushTarget.SentUpdated(id)
+        type == PUSH_TYPE_INBOX_UPDATED -> PushTarget.InboxUpdated
         alertType != null -> PushTarget.NewAlert(alertType, id)
         else -> null
     }

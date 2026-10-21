@@ -66,6 +66,7 @@ class AlertRepositoryImplTest {
     )
 
     private val attemptId = "3f2b8c1e-0000-4000-8000-000000000001"
+    private val patEnc = "cGF0LWVuYy1kZS1wcnVlYmE="
 
     @Before
     fun setUp() {
@@ -110,7 +111,7 @@ class AlertRepositoryImplTest {
     @Test
     fun `CRASHED lleva metadata, general, plate y de 1 a 3 detail`() = runTest {
         listOf(1, 2, 3).forEach { details ->
-            repository().sendAlert(attemptId, AlertType.CRASHED, crashedEvidence(details))
+            repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence(details))
 
             assertEquals(
                 listOf("metadata", "general", "plate") + List(details) { "detail" },
@@ -121,26 +122,27 @@ class AlertRepositoryImplTest {
 
     @Test
     fun `PARKED_ON_GARAGE lleva metadata, general, plate y context`() = runTest {
-        repository().sendAlert(attemptId, AlertType.PARKED_ON_GARAGE, garageEvidence())
+        repository().sendAlert(attemptId, patEnc, AlertType.PARKED_ON_GARAGE, garageEvidence())
 
         assertEquals(listOf("metadata", "general", "plate", "context"), api.lastParts.map { it.partName() })
     }
 
     @Test
-    fun `metadata es application json con solo attempt_id y alert_type`() = runTest {
-        repository().sendAlert(attemptId, AlertType.PARKED_ON_GARAGE, garageEvidence())
+    fun `metadata es application json con attempt_id, alert_type y el pat_enc recibido`() = runTest {
+        repository().sendAlert(attemptId, patEnc, AlertType.PARKED_ON_GARAGE, garageEvidence())
 
         val metadata = api.lastParts.first()
         assertEquals("application/json", metadata.partContentType())
         val json = JSONObject(String(metadata.partBytes(), Charsets.UTF_8))
-        assertEquals(2, json.length())
+        assertEquals(3, json.length())
         assertEquals(attemptId, json.getString("attempt_id"))
         assertEquals("PARKED_ON_GARAGE", json.getString("alert_type"))
+        assertEquals(patEnc, json.getString("pat_enc"))
     }
 
     @Test
     fun `las fotos van como application octet-stream`() = runTest {
-        repository().sendAlert(attemptId, AlertType.CRASHED, crashedEvidence(2))
+        repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence(2))
 
         assertEquals(
             List(4) { "application/octet-stream" },
@@ -150,7 +152,7 @@ class AlertRepositoryImplTest {
 
     @Test
     fun `manda el access token como bearer`() = runTest {
-        repository().sendAlert(attemptId, AlertType.CRASHED, crashedEvidence())
+        repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence())
 
         assertEquals("Bearer access-abc", api.lastAuthorization)
     }
@@ -159,7 +161,7 @@ class AlertRepositoryImplTest {
 
     @Test
     fun `cada foto se cifra para IA con el attempt_id como info y descifra a la foto original`() = runTest {
-        repository().sendAlert(attemptId, AlertType.CRASHED, crashedEvidence(2))
+        repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence(2))
 
         val photos = api.lastParts.drop(1)
         val expected = listOf(
@@ -175,7 +177,7 @@ class AlertRepositoryImplTest {
 
     @Test
     fun `las fotos no se pueden abrir con otra clave ni con otro attempt_id`() = runTest {
-        repository().sendAlert(attemptId, AlertType.PARKED_ON_GARAGE, garageEvidence())
+        repository().sendAlert(attemptId, patEnc, AlertType.PARKED_ON_GARAGE, garageEvidence())
 
         val photo = api.lastParts[1].partBytes()
         assertThrows(GeneralSecurityException::class.java) { decrypt(otherKeyset, photo, attemptId) }
@@ -187,9 +189,9 @@ class AlertRepositoryImplTest {
         val evidence = crashedEvidence()
         val repository = repository()
 
-        repository.sendAlert("intento-viejo", AlertType.CRASHED, evidence)
+        repository.sendAlert("intento-viejo", patEnc, AlertType.CRASHED, evidence)
         val first = api.lastParts.drop(1).map { it.partBytes() }
-        repository.sendAlert("intento-nuevo", AlertType.CRASHED, evidence)
+        repository.sendAlert("intento-nuevo", patEnc, AlertType.CRASHED, evidence)
         val second = api.lastParts.drop(1).map { it.partBytes() }
 
         first.zip(second).forEach { (old, new) ->
@@ -203,7 +205,7 @@ class AlertRepositoryImplTest {
     fun `no libera las fotos en claro porque hacen falta para reenviar`() = runTest {
         val evidence = crashedEvidence()
 
-        repository().sendAlert(attemptId, AlertType.CRASHED, evidence)
+        repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, evidence)
 
         assertArrayEquals(jpeg(EvidenceRole.GENERAL, 0), evidence.read(EvidenceRole.GENERAL, 0) { it.copyOf() })
     }
@@ -214,7 +216,7 @@ class AlertRepositoryImplTest {
     fun `si falta una foto del tipo no llama a la red`() = runTest {
         val missingPlate = evidence(EvidenceRole.GENERAL to 1, EvidenceRole.DETAIL to 1)
 
-        val result = repository().sendAlert(attemptId, AlertType.CRASHED, missingPlate)
+        val result = repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, missingPlate)
 
         assertEquals(SendAlertResult.Failed(SendAlertError.Unexpected), result)
         assertEquals(0, api.callCount)
@@ -222,7 +224,7 @@ class AlertRepositoryImplTest {
 
     @Test
     fun `si sobran fotos de daño no llama a la red`() = runTest {
-        val result = repository().sendAlert(attemptId, AlertType.CRASHED, crashedEvidence(details = 4))
+        val result = repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence(details = 4))
 
         assertEquals(SendAlertResult.Failed(SendAlertError.Unexpected), result)
         assertEquals(0, api.callCount)
@@ -230,7 +232,7 @@ class AlertRepositoryImplTest {
 
     @Test
     fun `un tipo deshabilitado no llama a la red`() = runTest {
-        val result = repository().sendAlert(attemptId, AlertType.PARKED_TOO_CLOSE, garageEvidence())
+        val result = repository().sendAlert(attemptId, patEnc, AlertType.PARKED_TOO_CLOSE, garageEvidence())
 
         assertEquals(SendAlertResult.Failed(SendAlertError.Unexpected), result)
         assertEquals(0, api.callCount)
@@ -238,7 +240,7 @@ class AlertRepositoryImplTest {
 
     @Test
     fun `sin clave de IA configurada es Unexpected y no llama a la red`() = runTest {
-        val result = repository(iaPublicKey = "").sendAlert(attemptId, AlertType.CRASHED, crashedEvidence())
+        val result = repository(iaPublicKey = "").sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence())
 
         assertEquals(SendAlertResult.Failed(SendAlertError.Unexpected), result)
         assertEquals(0, api.callCount)
@@ -248,7 +250,7 @@ class AlertRepositoryImplTest {
     fun `sin sesion guardada no llama a la red`() = runTest {
         tokenStore.clear()
 
-        val result = repository().sendAlert(attemptId, AlertType.CRASHED, crashedEvidence())
+        val result = repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence())
 
         assertEquals(SendAlertResult.Failed(SendAlertError.Unexpected), result)
         assertEquals(0, api.callCount)
@@ -368,7 +370,7 @@ class AlertRepositoryImplTest {
     }
 
     private suspend fun send(): SendAlertResult =
-        repository().sendAlert(attemptId, AlertType.CRASHED, crashedEvidence())
+        repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence())
 
     private fun errorResponse(code: Int, body: String) =
         Response.error<Unit>(code, body.toResponseBody("application/json".toMediaType()))

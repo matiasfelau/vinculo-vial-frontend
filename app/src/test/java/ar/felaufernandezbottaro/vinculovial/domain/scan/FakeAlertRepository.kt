@@ -4,7 +4,12 @@ import ar.felaufernandezbottaro.vinculovial.domain.evidence.EvidencePhotoSet
 import kotlinx.coroutines.CompletableDeferred
 
 /** Un envío recibido por [FakeAlertRepository]. */
-data class SentAlert(val attemptId: String, val alertType: AlertType, val evidence: EvidencePhotoSet)
+data class SentAlert(
+    val attemptId: String,
+    val patEnc: String,
+    val alertType: AlertType,
+    val evidence: EvidencePhotoSet,
+)
 
 /**
  * Repositorio falso: registra los envíos y devuelve, en orden, los resultados programados en
@@ -22,10 +27,11 @@ class FakeAlertRepository(
 
     override suspend fun sendAlert(
         attemptId: String,
+        patEnc: String,
         alertType: AlertType,
         evidence: EvidencePhotoSet,
     ): SendAlertResult {
-        received += SentAlert(attemptId, alertType, evidence)
+        received += SentAlert(attemptId, patEnc, alertType, evidence)
         gate?.await()
         return queue.removeFirstOrNull() ?: result
     }

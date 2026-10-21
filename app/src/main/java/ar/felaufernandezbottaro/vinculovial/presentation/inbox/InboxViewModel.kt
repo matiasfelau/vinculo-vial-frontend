@@ -94,6 +94,12 @@ class InboxViewModel @Inject constructor(
         return job
     }
 
+    /**
+     * Trae la primera página de nuevo, salvo que ya haya una en vuelo (el `init` de un buzón recién
+     * abierto): un push de alertas entregadas no duplica el pedido.
+     */
+    fun refresh(): Job = firstPageJob?.takeIf { it.isActive } ?: loadFirstPage()
+
     /** Un `200` con `items` vacío es `Empty`, nunca `Error`: no tener incidentes es lo deseable. */
     private fun onFirstPageLoaded(page: InboxPage) {
         nextCursor = page.nextCursor

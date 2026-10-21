@@ -10,6 +10,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.evidence.EvidenceRole
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
 import ar.felaufernandezbottaro.vinculovial.domain.scan.FakeAlertAttemptRepository
 import ar.felaufernandezbottaro.vinculovial.domain.scan.FakeAlertRepository
+import ar.felaufernandezbottaro.vinculovial.domain.scan.FakePlateEncryptor
 import ar.felaufernandezbottaro.vinculovial.domain.scan.FakePlateRecognitionStrategy
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertResult
@@ -41,6 +42,7 @@ class ScanViewModelEvidenceTest {
 
     private val attemptRepository = FakeAlertAttemptRepository()
     private val alertRepository = FakeAlertRepository()
+    private val plateEncryptor = FakePlateEncryptor()
     private val rasterFactory = StubEvidenceRasterFactory()
     private val clock = Clock.fixed(Instant.parse("2029-12-31T00:00:00Z"), ZoneOffset.UTC)
 
@@ -48,6 +50,7 @@ class ScanViewModelEvidenceTest {
         frameCropper = FrameCropper(),
         recognitionStrategy = FakePlateRecognitionStrategy(),
         regexFilter = PlateRegexFilter(),
+        plateEncryptor = plateEncryptor,
         startAlertAttempt = StartAlertAttemptUseCase(attemptRepository),
         sendAlert = SendAlertUseCase(alertRepository, attemptRepository, clock),
         evidenceProcessor = EvidenceImageProcessor(rasterFactory, UnconfinedTestDispatcher()),
@@ -457,6 +460,10 @@ class ScanViewModelEvidenceTest {
         alertRepository.queue += SendAlertResult.Failed(SendAlertError.Unavailable)
         val viewModel = withAttempt().capturing(AlertType.CRASHED)
         viewModel.completeEvidence()
+        attemptRepository.result = FakeAlertAttemptRepository.started(
+            attemptId = "attempt-renovado",
+            expiresAt = Instant.parse("2030-01-01T00:20:00Z"),
+        )
 
         viewModel.onReportRequested()
         assertEquals(ScanStatus.AlertFailed(SendAlertError.Unavailable), viewModel.uiState.value.status)
@@ -466,7 +473,45 @@ class ScanViewModelEvidenceTest {
 
         assertEquals("attempt-renovado", alertRepository.received.last().attemptId)
         assertEquals(ScanStatus.AlertSent, viewModel.uiState.value.status)
-        assertEquals(1, attemptRepository.renewed.size)
+        // El intento inicial y una sola renovación.
+        assertEquals(2, attemptRepository.calls)
+    }
+
+    @Test
+    fun `el pat_enc viaja en cada envio y se cifra una sola vez, al confirmar la patente`() = runTest {
+        plateEncryptor.result = "pat-enc-cifrado"
+        alertRepository.queue += expired
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onReportRequested()
+
+        assertEquals(listOf("GUQ856"), plateEncryptor.received)
+        assertEquals(listOf("pat-enc-cifrado", "pat-enc-cifrado"), alertRepository.received.map { it.patEnc })
+    }
+
+    @Test
+    fun `si la patente no se puede cifrar no se abre el intento y se avisa`() = runTest {
+        plateEncryptor.result = null
+        val viewModel = viewModel()
+        viewModel.onPlateFound("GUQ856")
+
+        viewModel.onPlateConfirmed()
+
+        assertEquals(ScanStatus.CheckFailed(StartAlertAttemptResult.Unexpected), viewModel.uiState.value.status)
+        assertEquals(0, attemptRepository.calls)
+    }
+
+    @Test
+    fun `tras un envio exitoso no se puede reenviar con el mismo pat_enc`() = runTest {
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
+        assertEquals(ScanStatus.AlertSent, viewModel.uiState.value.status)
+
+        viewModel.onAlertRetry()
+
+        assertEquals(1, alertRepository.received.size)
     }
 
     @Test
@@ -567,15 +612,15 @@ class ScanViewModelEvidenceTest {
     }
 
     @Test
-    fun `si renovar un intento vencido dice que el vehiculo ya no esta en la red se reinicia el flujo`() = runTest {
+    fun `si al renovar un intento vencido la cuenta quedo en revision se descartan las fotos`() = runTest {
         alertRepository.queue += expired
-        attemptRepository.renewResult = StartAlertAttemptResult.NotInNetwork
         val viewModel = withAttempt().capturing(AlertType.CRASHED)
         viewModel.completeEvidence()
+        attemptRepository.result = StartAlertAttemptResult.UnderReview
 
         viewModel.onReportRequested()
 
-        assertEquals(ScanStatus.AlertFailed(SendAlertError.AttemptNotFound), viewModel.uiState.value.status)
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.UnderReview), viewModel.uiState.value.status)
         assertTrue(rasterFactory.allWiped())
     }
 

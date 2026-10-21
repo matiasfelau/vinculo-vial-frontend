@@ -12,6 +12,7 @@ import ar.felaufernandezbottaro.vinculovial.data.scan.FrameCropper
 import ar.felaufernandezbottaro.vinculovial.data.scan.PlateRegexFilter
 import ar.felaufernandezbottaro.vinculovial.domain.evidence.EvidencePlan
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
+import ar.felaufernandezbottaro.vinculovial.domain.scan.PlateEncryptor
 import ar.felaufernandezbottaro.vinculovial.domain.scan.PlateRecognitionStrategy
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertResult
@@ -41,6 +42,7 @@ class ScanViewModel @Inject constructor(
     private val frameCropper: FrameCropper,
     private val recognitionStrategy: PlateRecognitionStrategy,
     private val regexFilter: PlateRegexFilter,
+    private val plateEncryptor: PlateEncryptor,
     private val startAlertAttempt: StartAlertAttemptUseCase,
     private val sendAlert: SendAlertUseCase,
     private val evidenceProcessor: EvidenceImageProcessor,
@@ -70,6 +72,12 @@ class ScanViewModel @Inject constructor(
 
     /** El intento que ya abrió el servidor, a la espera de que el usuario elija un tipo de incidente. */
     private var pendingAttempt: StartAlertAttemptResult.Started? = null
+
+    /**
+     * La patente cifrada para Vehicle: lo único que queda de ella en la app. Viaja en el
+     * `metadata` del envío. Se descarta al enviar con éxito y al perder el intento.
+     */
+    private var pendingPlateEnc: String? = null
 
     /**
      * Las fotos de evidencia ya procesadas (JPEG en claro, sin EXIF). Se liberan al enviar con
@@ -163,13 +171,20 @@ class ScanViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(status = ScanStatus.Checking) }
 
-            when (val result = startAlertAttempt(patente)) {
+            // La patente en claro termina acá: de ahora en más sólo existe el `pat_enc`.
+            val patEnc = plateEncryptor.encrypt(patente)
+            if (patEnc == null) {
+                _uiState.update { it.copy(status = ScanStatus.CheckFailed(StartAlertAttemptResult.Unexpected)) }
+                checkInFlight.set(false)
+                return@launch
+            }
+
+            when (val result = startAlertAttempt()) {
                 is StartAlertAttemptResult.Started -> {
                     pendingAttempt = result
+                    pendingPlateEnc = patEnc
                     _uiState.update { it.copy(status = ScanStatus.AwaitingAlertType) }
                 }
-                StartAlertAttemptResult.NotInNetwork ->
-                    _uiState.update { it.copy(status = ScanStatus.NotInNetwork) }
                 is StartAlertAttemptResult.Failure ->
                     _uiState.update { it.copy(status = ScanStatus.CheckFailed(result)) }
             }
@@ -353,6 +368,7 @@ class ScanViewModel @Inject constructor(
     fun onFlowRestarted() {
         evidenceBuffers.clear()
         pendingAttempt = null
+        pendingPlateEnc = null
         sendMayHaveReachedServer = false
         _uiState.value = ScanUiState()
     }
@@ -360,18 +376,20 @@ class ScanViewModel @Inject constructor(
     private fun submitAlert() {
         val alertType = _uiState.value.selectedAlertType ?: return
         val attempt = pendingAttempt ?: return
+        val patEnc = pendingPlateEnc ?: return
         if (!sendInFlight.compareAndSet(false, true)) return
 
         viewModelScope.launch {
             try {
                 _uiState.update { it.copy(status = ScanStatus.SendingAlert) }
 
-                val outcome = sendAlert(attempt, alertType, evidenceBuffers)
+                val outcome = sendAlert(attempt, patEnc, alertType, evidenceBuffers)
                 pendingAttempt = outcome.attempt
 
                 when (val result = outcome.result) {
                     SendAlertResult.Sent -> {
                         sendMayHaveReachedServer = false
+                        pendingPlateEnc = null
                         evidenceBuffers.clear()
                         _uiState.update { it.copy(status = ScanStatus.AlertSent) }
                     }
@@ -389,6 +407,7 @@ class ScanViewModel @Inject constructor(
                             SendAlertError.AttemptNotFound, SendAlertError.PossiblySent -> {
                                 evidenceBuffers.clear()
                                 pendingAttempt = null
+                                pendingPlateEnc = null
                             }
                             SendAlertError.UnderReview -> evidenceBuffers.clear()
                             else -> Unit
@@ -402,12 +421,10 @@ class ScanViewModel @Inject constructor(
         }
     }
 
-    /** Cierra el mensaje neutro de "no está en la red" y retoma el escaneo. */
-    fun onNotInNetworkDismissed() = resumeScanning()
-
-    /** Cierra el error del check (previo a la navegación al chat) y retoma el escaneo. */
+    /** Cierra el error del intento (previo a la navegación al chat) y retoma el escaneo. */
     fun onCheckErrorDismissed() {
         pendingAttempt = null
+        pendingPlateEnc = null
         resumeScanning()
     }
 

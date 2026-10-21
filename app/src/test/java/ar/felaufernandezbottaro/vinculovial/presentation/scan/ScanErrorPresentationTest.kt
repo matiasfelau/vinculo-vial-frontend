@@ -1,6 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.scan
 
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
+import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -74,5 +75,20 @@ class ScanErrorPresentationTest {
             ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult.UnderReview.message(),
             SendAlertError.UnderReview.message(),
         )
+    }
+
+    /** Un error de Vehicle (503 o 400) llega como error de envío genérico: nunca nombra la patente. */
+    @Test
+    fun `ningun mensaje de error del envio ni del intento menciona la patente ni la red de vehiculos`() {
+        val texts = allErrors.map { it.message() } + listOf(
+            StartAlertAttemptResult.UnderReview,
+            StartAlertAttemptResult.RateLimited,
+            StartAlertAttemptResult.Unavailable,
+            StartAlertAttemptResult.Unexpected,
+        ).map { it.message() }
+
+        listOf("patente", "no está en la red", "no registrada", "vehículo no").forEach { forbidden ->
+            assertTrue("'$forbidden' no debería aparecer", texts.none { forbidden in it.lowercase() })
+        }
     }
 }

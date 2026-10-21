@@ -62,6 +62,7 @@ class AlertWireContractTest {
     private lateinit var attemptRepository: AlertAttemptRepositoryImpl
 
     private val attemptId = "3f2b8c1e-0000-4000-8000-000000000001"
+    private val patEnc = "cGF0LWVuYy1kZS1wcnVlYmE="
     private val jpegSize = 64
 
     @Before
@@ -87,20 +88,16 @@ class AlertWireContractTest {
         val publicKey = Base64.getEncoder().encodeToString(
             (keyset.publicKeysetHandle.primary.key as HpkePublicKey).publicKeyBytes.toByteArray(),
         )
-        // Misma clave para IA y para Vehicle: acá sólo importa la forma de lo que sale por el cable.
-        val encryptor = HpkeEncryptor()
-
+        // Acá sólo importa la forma de lo que sale por el cable.
         alertRepository = AlertRepositoryImpl(
             api = retrofit.create(AlertApi::class.java),
-            evidenceEncryptor = EvidenceEncryptor(encryptor, publicKey),
+            evidenceEncryptor = EvidenceEncryptor(HpkeEncryptor(), publicKey),
             tokenStore = tokenStore,
             dispatcher = UnconfinedTestDispatcher(),
             moshi = moshi,
         )
         attemptRepository = AlertAttemptRepositoryImpl(
             api = retrofit.create(AlertAttemptApi::class.java),
-            encryptor = encryptor,
-            vehiclePublicKey = publicKey,
             tokenStore = tokenStore,
             dispatcher = UnconfinedTestDispatcher(),
             moshi = moshi,
@@ -128,7 +125,7 @@ class AlertWireContractTest {
     fun `CRASHED con 3 fotos de daño sale con las partes metadata, general, plate y detail x3`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
 
-        alertRepository.sendAlert(attemptId, AlertType.CRASHED, crashed(details = 3))
+        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(details = 3))
 
         val parts = server.takeRequest().parseMultipartWire()
         assertEquals(listOf("metadata", "general", "plate", "detail", "detail", "detail"), parts.map { it.name })
@@ -138,7 +135,7 @@ class AlertWireContractTest {
     fun `PARKED_ON_GARAGE sale con las partes metadata, general, plate y context`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
 
-        alertRepository.sendAlert(attemptId, AlertType.PARKED_ON_GARAGE, garage())
+        alertRepository.sendAlert(attemptId, patEnc,AlertType.PARKED_ON_GARAGE, garage())
 
         val parts = server.takeRequest().parseMultipartWire()
         assertEquals(listOf("metadata", "general", "plate", "context"), parts.map { it.name })
@@ -147,11 +144,11 @@ class AlertWireContractTest {
     @Test
     fun `el nombre de cada parte de foto es el rol en minuscula`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
-        alertRepository.sendAlert(attemptId, AlertType.CRASHED, crashed(details = 2))
+        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(details = 2))
         val crashedPhotos = server.takeRequest().parseMultipartWire().drop(1).map { it.name }
 
         server.enqueue(MockResponse().setResponseCode(202))
-        alertRepository.sendAlert(attemptId, AlertType.PARKED_ON_GARAGE, garage())
+        alertRepository.sendAlert(attemptId, patEnc,AlertType.PARKED_ON_GARAGE, garage())
         val garagePhotos = server.takeRequest().parseMultipartWire().drop(1).map { it.name }
 
         val roleNames = setOf("general", "plate", "detail", "context")
@@ -164,7 +161,7 @@ class AlertWireContractTest {
     fun `toda parte de foto sale con Content-Type application octet-stream exacto`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
 
-        alertRepository.sendAlert(attemptId, AlertType.CRASHED, crashed(details = 3))
+        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(details = 3))
 
         val photos = server.takeRequest().parseMultipartWire().drop(1)
         assertEquals(5, photos.size)
@@ -175,19 +172,76 @@ class AlertWireContractTest {
     fun `la parte metadata sale con Content-Type application json exacto`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
 
-        alertRepository.sendAlert(attemptId, AlertType.CRASHED, crashed(details = 1))
+        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(details = 1))
 
         val metadata = server.takeRequest().parseMultipartWire().first()
         assertEquals("metadata", metadata.name)
         assertEquals("application/json", metadata.contentType)
-        assertEquals("""{"attempt_id":"$attemptId","alert_type":"CRASHED"}""", String(metadata.content, Charsets.UTF_8))
+        assertEquals(
+            """{"attempt_id":"$attemptId","alert_type":"CRASHED","pat_enc":"$patEnc"}""",
+            String(metadata.content, Charsets.UTF_8),
+        )
+    }
+
+    @Test
+    fun `el pat_enc viaja solo en el metadata, nunca como parte aparte`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(202))
+
+        alertRepository.sendAlert(attemptId, patEnc, AlertType.PARKED_ON_GARAGE, garage())
+
+        val parts = server.takeRequest().parseMultipartWire()
+        assertEquals(1, parts.count { String(it.content, Charsets.ISO_8859_1).contains(patEnc) })
+        assertEquals("metadata", parts.single { String(it.content, Charsets.ISO_8859_1).contains(patEnc) }.name)
+    }
+
+    // -- Errores de Vehicle durante el envio: genericos, sin mencionar la patente -------------
+
+    @Test
+    fun `un 503 de Vehicle durante el envio es Unavailable`() = runTest {
+        server.enqueue(jsonUnavailable(503))
+
+        val result = alertRepository.sendAlert(attemptId, patEnc, AlertType.CRASHED, crashed(1))
+
+        assertEquals(SendAlertResult.Failed(SendAlertError.Unavailable), result)
+    }
+
+    @Test
+    fun `un 400 INVALID_PLATE_CRYPTOGRAM durante el envio es un error generico de datos`() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(400)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"error":"patente invalida","code":"INVALID_PLATE_CRYPTOGRAM"}"""),
+        )
+
+        val result = alertRepository.sendAlert(attemptId, patEnc, AlertType.CRASHED, crashed(1))
+
+        assertEquals(SendAlertResult.Failed(SendAlertError.InvalidData), result)
+    }
+
+    // -- 410: el reintento del intento vuelve a pedir uno, sin body ---------------------------
+
+    @Test
+    fun `renovar el intento es la misma llamada sin body y devuelve el attempt_id nuevo`() = runTest {
+        server.enqueue(
+            MockResponse().setResponseCode(201)
+                .setBody("""{"attempt_id":"nuevo-attempt","expires_at":"2030-01-01T00:10:00Z"}"""),
+        )
+
+        val result = attemptRepository.startAttempt()
+
+        val request = server.takeRequest()
+        assertEquals("/api/v1/alerts/attempts", request.path)
+        assertEquals(0L, request.bodySize)
+        assertTrue(result is StartAlertAttemptResult.Started)
+        assertEquals("nuevo-attempt", (result as StartAlertAttemptResult.Started).attemptId)
     }
 
     @Test
     fun `las fotos viajan cifradas, con el tamaño del JPEG mas el overhead de HPKE`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
 
-        alertRepository.sendAlert(attemptId, AlertType.PARKED_ON_GARAGE, garage())
+        alertRepository.sendAlert(attemptId, patEnc,AlertType.PARKED_ON_GARAGE, garage())
 
         val photos = server.takeRequest().parseMultipartWire().drop(1)
         assertTrue(photos.all { it.content.size == jpegSize + HPKE_OVERHEAD_BYTES })
@@ -198,7 +252,7 @@ class AlertWireContractTest {
     fun `el request es multipart form-data con el bearer`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
 
-        alertRepository.sendAlert(attemptId, AlertType.CRASHED, crashed(details = 1))
+        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(details = 1))
 
         val request = server.takeRequest()
         assertEquals("POST", request.method)
@@ -223,13 +277,13 @@ class AlertWireContractTest {
     @Test
     fun `un 504 nativo de Kong al enviar es Unavailable, igual que un 502 y un 503`() = runTest {
         server.enqueue(kongGatewayTimeout())
-        val gatewayTimeout = alertRepository.sendAlert(attemptId, AlertType.CRASHED, crashed(1))
+        val gatewayTimeout = alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(1))
 
         server.enqueue(jsonUnavailable(503))
-        val unavailable = alertRepository.sendAlert(attemptId, AlertType.CRASHED, crashed(1))
+        val unavailable = alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(1))
 
         server.enqueue(jsonUnavailable(502))
-        val badGateway = alertRepository.sendAlert(attemptId, AlertType.CRASHED, crashed(1))
+        val badGateway = alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(1))
 
         assertEquals(SendAlertResult.Failed(SendAlertError.Unavailable), gatewayTimeout)
         assertEquals(unavailable, gatewayTimeout)
@@ -239,23 +293,16 @@ class AlertWireContractTest {
     @Test
     fun `un 504 nativo de Kong al abrir el intento es Unavailable, igual que un 502 y un 503`() = runTest {
         server.enqueue(kongGatewayTimeout())
-        val gatewayTimeout = attemptRepository.startAttempt("GUQ856")
+        val gatewayTimeout = attemptRepository.startAttempt()
 
         server.enqueue(jsonUnavailable(503))
-        val unavailable = attemptRepository.startAttempt("GUQ856")
+        val unavailable = attemptRepository.startAttempt()
 
         server.enqueue(jsonUnavailable(502))
-        val badGateway = attemptRepository.startAttempt("GUQ856")
+        val badGateway = attemptRepository.startAttempt()
 
         assertEquals(StartAlertAttemptResult.Unavailable, gatewayTimeout)
         assertEquals(unavailable, gatewayTimeout)
         assertEquals(badGateway, gatewayTimeout)
-    }
-
-    @Test
-    fun `un 504 al renovar el intento es Unavailable`() = runTest {
-        server.enqueue(kongGatewayTimeout())
-
-        assertEquals(StartAlertAttemptResult.Unavailable, attemptRepository.renewAttempt("pat-enc-guardado"))
     }
 }
