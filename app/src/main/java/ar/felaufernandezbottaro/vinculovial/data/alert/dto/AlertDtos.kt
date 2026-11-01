@@ -3,19 +3,29 @@ package ar.felaufernandezbottaro.vinculovial.data.alert.dto
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
-/** Payload de `POST /api/v1/vehicles/check`: el mismo `pat_enc` que después reusa `/alerts`. */
+/** 201 de `POST /api/v1/alerts/attempts`: `expires_at` es RFC 3339. */
 @JsonClass(generateAdapter = true)
-data class VehicleCheckRequestDto(
-    @Json(name = "pat_enc") val patEnc: String,
-) {
-    override fun toString(): String = "VehicleCheckRequestDto(***)"
-}
+data class AlertAttemptResponseDto(
+    @Json(name = "attempt_id") val attemptId: String,
+    @Json(name = "expires_at") val expiresAt: String,
+)
 
-/** Payload de `POST /api/v1/alerts`: reusa el `pat_enc` del check, nunca lo vuelve a cifrar. */
+/** Cuerpo de error del contrato de US-08: `{ "error": "<mensaje>", "code": "<CODE>" }`. */
 @JsonClass(generateAdapter = true)
-data class SendAlertRequestDto(
+data class ApiErrorDto(
+    @Json(name = "error") val error: String? = null,
+    @Json(name = "code") val code: String? = null,
+)
+
+/**
+ * Parte `metadata` de `POST /api/v1/alerts`: el intento, el tipo y la patente cifrada para Vehicle
+ * (`pat_enc`, obligatorio: sin él el backend responde 400).
+ */
+@JsonClass(generateAdapter = true)
+data class SendAlertMetadataDto(
+    @Json(name = "attempt_id") val attemptId: String,
     @Json(name = "alert_type") val alertType: String,
     @Json(name = "pat_enc") val patEnc: String,
 ) {
-    override fun toString(): String = "SendAlertRequestDto(alertType=$alertType, patEnc=***)"
+    override fun toString(): String = "SendAlertMetadataDto(attemptId=$attemptId, alertType=$alertType, patEnc=***)"
 }

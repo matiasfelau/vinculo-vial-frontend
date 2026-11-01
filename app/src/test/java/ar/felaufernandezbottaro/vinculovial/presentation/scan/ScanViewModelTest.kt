@@ -1,23 +1,29 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.scan
 
+import ar.felaufernandezbottaro.vinculovial.data.evidence.EvidenceImageProcessor
 import ar.felaufernandezbottaro.vinculovial.data.scan.FrameCropper
 import ar.felaufernandezbottaro.vinculovial.data.scan.PlateRegexFilter
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
-import ar.felaufernandezbottaro.vinculovial.domain.scan.CheckVehicleError
-import ar.felaufernandezbottaro.vinculovial.domain.scan.CheckVehicleResult
-import ar.felaufernandezbottaro.vinculovial.domain.scan.CheckVehicleUseCase
+import ar.felaufernandezbottaro.vinculovial.domain.scan.FakeAlertAttemptRepository
 import ar.felaufernandezbottaro.vinculovial.domain.scan.FakeAlertRepository
+import ar.felaufernandezbottaro.vinculovial.domain.scan.FakePlateEncryptor
 import ar.felaufernandezbottaro.vinculovial.domain.scan.FakePlateRecognitionStrategy
-import ar.felaufernandezbottaro.vinculovial.domain.scan.FakeVehicleCheckRepository
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertResult
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertUseCase
+import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
+import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptUseCase
 import ar.felaufernandezbottaro.vinculovial.util.MainDispatcherRule
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 
 /**
  * No ejercita `processFrame`: recorta/lee un `ImageProxy`/`Bitmap` real, que no existe en un
@@ -30,16 +36,33 @@ class ScanViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
-    private val checkRepository = FakeVehicleCheckRepository()
+    private val checkRepository = FakeAlertAttemptRepository()
     private val alertRepository = FakeAlertRepository()
+    private val plateEncryptor = FakePlateEncryptor()
 
+    private val rasterFactory = StubEvidenceRasterFactory()
+    private val clock = Clock.fixed(Instant.parse("2029-12-31T00:00:00Z"), ZoneOffset.UTC)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun viewModel() = ScanViewModel(
         frameCropper = FrameCropper(),
         recognitionStrategy = FakePlateRecognitionStrategy(),
         regexFilter = PlateRegexFilter(),
-        checkVehicle = CheckVehicleUseCase(checkRepository),
-        sendAlert = SendAlertUseCase(alertRepository),
+        plateEncryptor = plateEncryptor,
+        startAlertAttempt = StartAlertAttemptUseCase(checkRepository),
+        sendAlert = SendAlertUseCase(alertRepository, checkRepository, clock),
+        evidenceProcessor = EvidenceImageProcessor(rasterFactory, UnconfinedTestDispatcher()),
+        galleryEvidenceSource = FakeGalleryEvidenceSource(),
     )
+
+    /** Saca y confirma una foto por cada paso de la captura guiada, hasta completarla. */
+    private fun ScanViewModel.completeEvidence() {
+        if (uiState.value.evidence.phase == EvidencePhase.READY) onCaptureStarted()
+        while (uiState.value.evidence.phase != EvidencePhase.COMPLETE) {
+            onPhotoCaptured(ByteArray(8) { 1 }, 0)
+            onStepConfirmed()
+        }
+    }
 
     private val patente = "GUQ856"
 
@@ -52,7 +75,7 @@ class ScanViewModelTest {
 
         viewModel.onPlateConfirmed()
 
-        assertEquals(listOf(patente), checkRepository.received)
+        assertEquals(listOf(patente), plateEncryptor.received)
     }
 
     @Test
@@ -61,7 +84,7 @@ class ScanViewModelTest {
 
         viewModel.onPlateConfirmed()
 
-        assertEquals(emptyList<String>(), checkRepository.received)
+        assertEquals(emptyList<String>(), plateEncryptor.received)
         assertEquals(ScanStatus.Scanning, viewModel.uiState.value.status)
     }
 
@@ -72,7 +95,7 @@ class ScanViewModelTest {
 
         viewModel.onPlateRejected()
 
-        assertEquals(emptyList<String>(), checkRepository.received)
+        assertEquals(emptyList<String>(), plateEncryptor.received)
         assertEquals(ScanStatus.Rejected, viewModel.uiState.value.status)
     }
 
@@ -106,7 +129,7 @@ class ScanViewModelTest {
 
         viewModel.onManualPlateSubmitted("guq 856")
 
-        assertEquals(listOf("GUQ856"), checkRepository.received)
+        assertEquals(listOf("GUQ856"), plateEncryptor.received)
     }
 
     @Test
@@ -115,7 +138,7 @@ class ScanViewModelTest {
 
         viewModel.onManualPlateSubmitted("no es una patente")
 
-        assertEquals(emptyList<String>(), checkRepository.received)
+        assertEquals(emptyList<String>(), plateEncryptor.received)
         val status = viewModel.uiState.value.status
         assertTrue(status is ScanStatus.ManualEntry)
         assertTrue((status as ScanStatus.ManualEntry).error != null)
@@ -128,7 +151,7 @@ class ScanViewModelTest {
 
         viewModel.onManualPlateSubmitted(patente)
 
-        assertEquals(listOf(patente), checkRepository.received)
+        assertEquals(listOf(patente), plateEncryptor.received)
     }
 
     @Test
@@ -141,12 +164,12 @@ class ScanViewModelTest {
         viewModel.onManualEntryDismissed()
 
         assertEquals(ScanStatus.Scanning, viewModel.uiState.value.status)
-        assertEquals(emptyList<String>(), checkRepository.received)
+        assertEquals(emptyList<String>(), plateEncryptor.received)
     }
 
     /**
      * El requerimiento central del fallback: el origen del dato (cámara vs. teclado) es
-     * transparente para `CheckVehicleUseCase` -- la patente tipeada se cifra con HPKE
+     * transparente para `StartAlertAttemptUseCase` -- la patente tipeada se cifra con HPKE
      * localmente exactamente igual que la escaneada, porque ambos caminos terminan en el
      * mismo caso de uso, sin distinguir cómo se obtuvo el `String`.
      */
@@ -159,15 +182,14 @@ class ScanViewModelTest {
         val porTeclado = viewModel()
         porTeclado.onManualPlateSubmitted(patente)
 
-        assertEquals(checkRepository.received, checkRepository.received)
-        assertEquals(listOf(patente, patente), checkRepository.received)
+        assertEquals(listOf(patente, patente), plateEncryptor.received)
     }
 
     // -- Resto del flujo de dos pasos, ya alcanzable sólo vía confirmación/ingreso manual --
 
     @Test
     fun `un 200 tras confirmar deja el estado en AwaitingAlertType`() = runTest {
-        checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc")
+        checkRepository.result = FakeAlertAttemptRepository.started()
         val viewModel = viewModel()
         viewModel.onPlateFound(patente)
 
@@ -177,93 +199,142 @@ class ScanViewModelTest {
     }
 
     @Test
-    fun `un 404 tras confirmar deja el estado en NotInNetwork`() = runTest {
-        checkRepository.result = CheckVehicleResult.NotInNetwork
+    fun `confirmar abre el chat directo, el intento no consulta dueños ni lleva la patente`() = runTest {
         val viewModel = viewModel()
         viewModel.onPlateFound(patente)
 
         viewModel.onPlateConfirmed()
 
-        assertEquals(ScanStatus.NotInNetwork, viewModel.uiState.value.status)
+        assertEquals(ScanStatus.AwaitingAlertType, viewModel.uiState.value.status)
+        assertEquals(1, checkRepository.calls)
     }
 
     @Test
-    fun `un error de check tras confirmar deja el estado en CheckFailed con el motivo`() = runTest {
-        checkRepository.result = CheckVehicleResult.Failed(CheckVehicleError.RateLimited)
-        val viewModel = viewModel()
-        viewModel.onPlateFound(patente)
-
-        viewModel.onPlateConfirmed()
-
-        assertEquals(ScanStatus.CheckFailed(CheckVehicleError.RateLimited), viewModel.uiState.value.status)
-    }
-
-    @Test
-    fun `elegir un tipo de incidente reusa el pat_enc que devolvio el check`() = runTest {
-        checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc-del-check")
+    fun `la patente se cifra antes de abrir el intento y el pat_enc es lo unico que queda`() = runTest {
+        plateEncryptor.result = "pat-enc-cifrado"
         val viewModel = viewModel()
         viewModel.onPlateFound(patente)
         viewModel.onPlateConfirmed()
 
         viewModel.onAlertTypeSelected(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
 
-        assertEquals(listOf(AlertType.CRASHED to "pat-enc-del-check"), alertRepository.received)
+        assertEquals(listOf(patente), plateEncryptor.received)
+        assertEquals(listOf("pat-enc-cifrado"), alertRepository.received.map { it.patEnc })
+    }
+
+    @Test
+    fun `un error de check tras confirmar deja el estado en CheckFailed con el motivo`() = runTest {
+        checkRepository.result = StartAlertAttemptResult.RateLimited
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+
+        viewModel.onPlateConfirmed()
+
+        assertEquals(ScanStatus.CheckFailed(StartAlertAttemptResult.RateLimited), viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `una cuenta en revision tras confirmar deja el estado en CheckFailed con UnderReview`() = runTest {
+        checkRepository.result = StartAlertAttemptResult.UnderReview
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+
+        viewModel.onPlateConfirmed()
+
+        assertEquals(ScanStatus.CheckFailed(StartAlertAttemptResult.UnderReview), viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `un 404 del intento ya no es no esta en la red, es un error inesperado`() = runTest {
+        checkRepository.result = StartAlertAttemptResult.Unexpected
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+
+        viewModel.onPlateConfirmed()
+
+        assertEquals(ScanStatus.CheckFailed(StartAlertAttemptResult.Unexpected), viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `reportar con la evidencia completa envia el intento y el tipo elegido`() = runTest {
+        checkRepository.result = FakeAlertAttemptRepository.started()
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+        viewModel.onPlateConfirmed()
+
+        viewModel.onAlertTypeSelected(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
+
+        assertEquals(
+            listOf("attempt-de-prueba" to AlertType.CRASHED),
+            alertRepository.received.map { it.attemptId to it.alertType },
+        )
     }
 
     @Test
     fun `un 202 deja el estado en AlertSent`() = runTest {
-        checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc")
+        checkRepository.result = FakeAlertAttemptRepository.started()
         alertRepository.result = SendAlertResult.Sent
         val viewModel = viewModel()
         viewModel.onPlateFound(patente)
         viewModel.onPlateConfirmed()
 
         viewModel.onAlertTypeSelected(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
 
         assertEquals(ScanStatus.AlertSent, viewModel.uiState.value.status)
     }
 
     @Test
     fun `un error de alert deja el estado en AlertFailed con el motivo`() = runTest {
-        checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc")
+        checkRepository.result = FakeAlertAttemptRepository.started()
         alertRepository.result = SendAlertResult.Failed(SendAlertError.InvalidData)
         val viewModel = viewModel()
         viewModel.onPlateFound(patente)
         viewModel.onPlateConfirmed()
 
         viewModel.onAlertTypeSelected(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
 
         assertEquals(ScanStatus.AlertFailed(SendAlertError.InvalidData), viewModel.uiState.value.status)
     }
 
     @Test
     fun `elegir un tipo de incidente lo guarda en el estado para la burbuja del usuario`() = runTest {
-        checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc")
+        checkRepository.result = FakeAlertAttemptRepository.started()
         val viewModel = viewModel()
         viewModel.onPlateFound(patente)
         viewModel.onPlateConfirmed()
 
-        viewModel.onAlertTypeSelected(AlertType.PARKED_TOO_CLOSE)
+        viewModel.onAlertTypeSelected(AlertType.PARKED_ON_GARAGE)
 
-        assertEquals(AlertType.PARKED_TOO_CLOSE, viewModel.uiState.value.selectedAlertType)
+        assertEquals(AlertType.PARKED_ON_GARAGE, viewModel.uiState.value.selectedAlertType)
     }
 
     @Test
-    fun `reintentar tras un error de alert reusa el mismo tipo y el mismo pat_enc, sin generar uno nuevo`() = runTest {
-        checkRepository.result = CheckVehicleResult.Found(patEnc = "pat-enc-del-check")
+    fun `reintentar tras un error de alert reusa el mismo tipo y el mismo intento, sin pedir uno nuevo`() = runTest {
+        checkRepository.result = FakeAlertAttemptRepository.started()
         alertRepository.result = SendAlertResult.Failed(SendAlertError.Unexpected)
         val viewModel = viewModel()
         viewModel.onPlateFound(patente)
         viewModel.onPlateConfirmed()
         viewModel.onAlertTypeSelected(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        viewModel.onReportRequested()
 
         alertRepository.result = SendAlertResult.Sent
         viewModel.onAlertRetry()
 
         assertEquals(
-            listOf(AlertType.CRASHED to "pat-enc-del-check", AlertType.CRASHED to "pat-enc-del-check"),
-            alertRepository.received,
+            listOf("attempt-de-prueba" to AlertType.CRASHED, "attempt-de-prueba" to AlertType.CRASHED),
+            alertRepository.received.map { it.attemptId to it.alertType },
         )
+        assertEquals(listOf("GUQ856"), plateEncryptor.received)
         assertEquals(ScanStatus.AlertSent, viewModel.uiState.value.status)
     }
 
@@ -277,20 +348,8 @@ class ScanViewModelTest {
     }
 
     @Test
-    fun `cerrar el mensaje de no esta en la red vuelve a Scanning`() = runTest {
-        checkRepository.result = CheckVehicleResult.NotInNetwork
-        val viewModel = viewModel()
-        viewModel.onPlateFound(patente)
-        viewModel.onPlateConfirmed()
-
-        viewModel.onNotInNetworkDismissed()
-
-        assertEquals(ScanStatus.Scanning, viewModel.uiState.value.status)
-    }
-
-    @Test
     fun `cerrar un error de check vuelve a Scanning`() = runTest {
-        checkRepository.result = CheckVehicleResult.Failed(CheckVehicleError.Network)
+        checkRepository.result = StartAlertAttemptResult.Unavailable
         val viewModel = viewModel()
         viewModel.onPlateFound(patente)
         viewModel.onPlateConfirmed()

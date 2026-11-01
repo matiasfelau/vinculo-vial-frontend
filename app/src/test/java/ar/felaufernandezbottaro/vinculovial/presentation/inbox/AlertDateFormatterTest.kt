@@ -90,4 +90,69 @@ class AlertDateFormatterTest {
 
         assertEquals("Hace 20 min", createdAt.toFriendlyAlertDate(now, zoneTokyo))
     }
+
+    // -- Hora de la fila del buzón, como en un chat ------------------------------------------
+
+    @Test
+    fun `la fila de hoy muestra la hora`() {
+        val now = Instant.parse("2026-10-09T18:00:00Z")
+        val createdAt = Instant.parse("2026-10-09T13:42:00Z")
+
+        assertEquals("10:42", createdAt.toInboxListTime(now, zoneAr))
+    }
+
+    @Test
+    fun `la fila de ayer dice Ayer`() {
+        val now = Instant.parse("2026-10-09T18:00:00Z")
+        val createdAt = Instant.parse("2026-10-08T13:42:00Z")
+
+        assertEquals("Ayer", createdAt.toInboxListTime(now, zoneAr))
+    }
+
+    @Test
+    fun `una fila mas vieja muestra la fecha corta sin punto`() {
+        val now = Instant.parse("2026-10-09T18:00:00Z")
+        val createdAt = Instant.parse("2026-10-03T13:42:00Z")
+
+        assertEquals("3 oct", createdAt.toInboxListTime(now, zoneAr))
+    }
+
+    @Test
+    fun `el cambio de dia calendario cuenta como ayer aunque hayan pasado pocos minutos`() {
+        val now = Instant.parse("2026-10-09T03:10:00Z")
+        val createdAt = Instant.parse("2026-10-09T02:50:00Z")
+
+        assertEquals("Ayer", createdAt.toInboxListTime(now, zoneAr))
+    }
+
+    // -- Sello de dia de la conversacion ------------------------------------------------------
+
+    @Test
+    fun `el sello de hoy es Hoy y la hora`() {
+        val now = Instant.parse("2026-10-09T18:00:00Z")
+
+        assertEquals("Hoy 10:42", Instant.parse("2026-10-09T13:42:00Z").toChatDayStamp(now, zoneAr))
+    }
+
+    @Test
+    fun `el sello de ayer es Ayer y la hora`() {
+        val now = Instant.parse("2026-10-09T18:00:00Z")
+
+        assertEquals("Ayer 10:42", Instant.parse("2026-10-08T13:42:00Z").toChatDayStamp(now, zoneAr))
+    }
+
+    @Test
+    fun `el sello de un dia anterior es la fecha corta y la hora`() {
+        val now = Instant.parse("2026-10-09T18:00:00Z")
+
+        assertEquals("3 oct 10:42", Instant.parse("2026-10-03T13:42:00Z").toChatDayStamp(now, zoneAr))
+    }
+
+    // -- Fecha larga --------------------------------------------------------------------------
+
+    @Test
+    fun `la fecha larga es dia de mes en espanol`() {
+        assertEquals("9 de noviembre", Instant.parse("2026-11-09T13:00:00Z").toLongDate(zoneAr))
+        assertEquals("1 de enero", Instant.parse("2027-01-01T13:00:00Z").toLongDate(zoneAr))
+    }
 }

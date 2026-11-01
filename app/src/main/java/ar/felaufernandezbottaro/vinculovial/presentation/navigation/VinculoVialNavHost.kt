@@ -1,13 +1,16 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -18,10 +21,17 @@ import androidx.navigation.compose.rememberNavController
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.CameraPermissionGate
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.DocumentScanScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.LivenessCaptureScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxDetailScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxEvent
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxTab
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.push.NotificationPermissionRequester
+import ar.felaufernandezbottaro.vinculovial.presentation.push.PushTarget
 import ar.felaufernandezbottaro.vinculovial.presentation.push.planPushNavigation
+import ar.felaufernandezbottaro.vinculovial.presentation.sent.SentChatScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.sent.SentEvent
+import ar.felaufernandezbottaro.vinculovial.presentation.sent.SentViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsViewModel
@@ -35,6 +45,8 @@ import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpFormScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpStatus
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpSuccessScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpViewModel
+import ar.felaufernandezbottaro.vinculovial.presentation.scan.EvidenceCaptureScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.scan.EvidencePhase
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.ReportChatScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanPlateScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanStatus
@@ -63,15 +75,18 @@ object Route {
     const val SCAN_GRAPH = "scan"
     const val SCAN_PLATE = "scan/plate"
     const val REPORT_CHAT = "scan/report-chat"
+    const val EVIDENCE_CAPTURE = "scan/evidence-capture"
 
     const val INBOX = "inbox"
+    const val INBOX_DETAIL = "inbox/detail"
+    const val SENT_CHAT = "inbox/sent-chat"
 }
 
 @Composable
 fun VinculoVialNavHost(
     navController: NavHostController = rememberNavController(),
-    pendingAlertType: String? = null,
-    onPendingAlertTypeConsumed: () -> Unit = {},
+    pendingPush: PushTarget? = null,
+    onPendingPushConsumed: () -> Unit = {},
 ) {
     // RTR fallido (401/403 al refrescar) borra la sesión local en segundo plano, sin que la
     // pantalla que disparó la request original se entere -- SessionManager ni sabe qué
@@ -100,15 +115,15 @@ fun VinculoVialNavHost(
     // sola) en vez de navegar directo -- ver planPushNavigation. Sin sesión todavía, el efecto
     // de arriba ya se encarga de mandar a Login; esta misma clave (hasSession) hace que el
     // plan se reevalúe apenas haya sesión, así que un login iniciado desde la notificación
-    // igual termina en la Bandeja de Entrada.
-    LaunchedEffect(hasSession, pendingAlertType) {
-        val plan = planPushNavigation(hasSession, pendingAlertType)
+    // igual termina en el buzón. El destino no se consume acá sino en el buzón, que es quien
+    // abre el chat concreto una vez cargada la lista.
+    LaunchedEffect(hasSession, pendingPush) {
+        val plan = planPushNavigation(hasSession, pendingPush)
         if (plan.isNotEmpty()) {
             navController.navigate(plan.first()) {
                 popUpTo(0) { inclusive = true }
             }
             plan.drop(1).forEach { route -> navController.navigate(route) }
-            onPendingAlertTypeConsumed()
         }
     }
 
@@ -179,15 +194,122 @@ fun VinculoVialNavHost(
 
         composable(Route.INBOX) { entry ->
             val viewModel = hiltViewModel<InboxViewModel>(entry)
+            val sentViewModel = hiltViewModel<SentViewModel>(entry)
             val state by viewModel.uiState.collectAsStateWithLifecycle()
+            val sentState by sentViewModel.uiState.collectAsStateWithLifecycle()
+
+            // Un push de novedades al emisor abre directamente en "Enviados": al volver del chat
+            // se queda ahí, no en "Recibidos".
+            var selectedTab by rememberSaveable {
+                mutableStateOf(if (pendingPush is PushTarget.SentUpdated) InboxTab.SENT else InboxTab.RECEIVED)
+            }
+
+            // El destino del push se consume acá, con el buzón ya en pantalla: cada ViewModel abre
+            // el chat apenas tiene la alerta cargada y avisa por `events`.
+            LaunchedEffect(pendingPush) {
+                when (val target = pendingPush) {
+                    is PushTarget.NewAlert -> target.alertId?.let(viewModel::openAlertFromPush)
+                    is PushTarget.SentUpdated -> {
+                        selectedTab = InboxTab.SENT
+                        val alertId = target.alertId
+                        if (alertId != null) sentViewModel.openChatFromPush(alertId) else sentViewModel.refresh()
+                    }
+                    PushTarget.InboxUpdated -> {
+                        selectedTab = InboxTab.RECEIVED
+                        viewModel.refresh()
+                    }
+                    null -> Unit
+                }
+                if (pendingPush != null) onPendingPushConsumed()
+            }
+            LaunchedEffect(viewModel) {
+                viewModel.events.collect { event ->
+                    when (event) {
+                        InboxEvent.OpenDetail -> navController.navigate(Route.INBOX_DETAIL)
+                    }
+                }
+            }
+            LaunchedEffect(sentViewModel) {
+                sentViewModel.events.collect { event ->
+                    when (event) {
+                        SentEvent.OpenChat -> navController.navigate(Route.SENT_CHAT)
+                    }
+                }
+            }
 
             InboxScreen(
                 uiState = state,
-                onBack = { navController.popBackStack() },
+                sentState = sentState,
+                selectedTab = selectedTab,
+                onSelectTab = { tab ->
+                    selectedTab = tab
+                    // Entrar a Enviados trae el estado actual: cambia solo del lado del servidor.
+                    if (tab == InboxTab.SENT) sentViewModel.refresh()
+                },
                 onRetry = viewModel::loadFirstPage,
                 onLoadNextPage = viewModel::loadNextPage,
                 onRetryNextPage = viewModel::retryNextPage,
+                onOpenAlert = { alertId ->
+                    viewModel.openAlert(alertId)
+                    navController.navigate(Route.INBOX_DETAIL)
+                },
+                onSentRetry = sentViewModel::refresh,
+                onSentLoadNextPage = sentViewModel::loadNextPage,
+                onSentRetryNextPage = sentViewModel::retryNextPage,
+                onOpenSent = { alertId ->
+                    sentViewModel.openChat(alertId)
+                    navController.navigate(Route.SENT_CHAT)
+                },
             )
+        }
+
+        composable(Route.SENT_CHAT) { entry ->
+            // El mismo `SentViewModel` que la lista: el chat se arma con la alerta seleccionada.
+            val parentEntry = remember(entry) { navController.getBackStackEntry(Route.INBOX) }
+            val viewModel = hiltViewModel<SentViewModel>(parentEntry)
+            val chat by viewModel.chat.collectAsStateWithLifecycle()
+
+            DisposableEffect(Unit) { onDispose { viewModel.closeChat() } }
+
+            // Sin chat abierto (p. ej. tras recrearse el proceso) no hay nada que mostrar; mismo
+            // criterio que el chat del dueño: sólo se sale si el destino está en primer plano.
+            val current = chat
+            if (current == null) {
+                LaunchedEffect(Unit) {
+                    if (entry.lifecycle.currentState == Lifecycle.State.RESUMED) navController.popBackStack()
+                }
+            } else {
+                SentChatScreen(alert = current, onBack = { navController.popBackStack() })
+            }
+        }
+
+        composable(Route.INBOX_DETAIL) { entry ->
+            // El mismo `InboxViewModel` que la lista: lo que cambia acá (valoración, reporte) se ve al volver.
+            val parentEntry = remember(entry) { navController.getBackStackEntry(Route.INBOX) }
+            val viewModel = hiltViewModel<InboxViewModel>(parentEntry)
+            val detail by viewModel.detail.collectAsStateWithLifecycle()
+
+            // Al salir del detalle (por el botón, el gesto de volver o cualquier otra vía) se cierra:
+            // las fotos que bajó se sobreescriben con ceros.
+            DisposableEffect(Unit) { onDispose { viewModel.closeAlert() } }
+
+            // Sin detalle abierto (p. ej. tras recrearse el proceso) no hay nada que mostrar. Sólo
+            // se sale si el destino está en primer plano: durante la animación de salida el detalle
+            // ya está cerrado y un segundo `popBackStack` se llevaría también al buzón.
+            val current = detail
+            if (current == null) {
+                LaunchedEffect(Unit) {
+                    if (entry.lifecycle.currentState == Lifecycle.State.RESUMED) navController.popBackStack()
+                }
+            } else {
+                InboxDetailScreen(
+                    detail = current,
+                    onBack = { navController.popBackStack() },
+                    onRetryEvidence = viewModel::retryEvidence,
+                    onRate = viewModel::onRate,
+                    onReportSender = viewModel::onReportSender,
+                )
+            }
         }
 
         composable(Route.LINK_VEHICLE) { entry ->
@@ -219,7 +341,7 @@ fun VinculoVialNavHost(
                 val viewModel = entry.sharedScanViewModel(navController)
                 val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-                // El check contra /vehicles/check terminó: el catálogo de incidentes y el
+                // El intento contra /alerts/attempts terminó: el catálogo de incidentes y el
                 // envío del reporte viven en ReportChatScreen, no en un menú flotante sobre
                 // la cámara. Se saca ScanPlateScreen del back stack al navegar: no tiene
                 // sentido volver a la cámara en vivo una vez identificado el vehículo.
@@ -248,7 +370,6 @@ fun VinculoVialNavHost(
                         onManualEntryOpened = viewModel::onManualEntryOpened,
                         onManualPlateSubmitted = viewModel::onManualPlateSubmitted,
                         onManualEntryDismissed = viewModel::onManualEntryDismissed,
-                        onNotInNetworkDismissed = viewModel::onNotInNetworkDismissed,
                         onCheckErrorDismissed = viewModel::onCheckErrorDismissed,
                         onCancel = { navController.popBackStack() },
                     )
@@ -262,10 +383,61 @@ fun VinculoVialNavHost(
                 ReportChatScreen(
                     uiState = state,
                     onAlertTypeSelected = viewModel::onAlertTypeSelected,
+                    onStartCapture = {
+                        viewModel.onCaptureStarted()
+                        navController.navigate(Route.EVIDENCE_CAPTURE)
+                    },
+                    onReportRequested = viewModel::onReportRequested,
                     onRetry = viewModel::onAlertRetry,
+                    onRestart = {
+                        viewModel.onFlowRestarted()
+                        navController.navigate(Route.SCAN_PLATE) {
+                            popUpTo(Route.REPORT_CHAT) { inclusive = true }
+                        }
+                    },
                     onFinished = { navController.popBackStack(Route.SETTINGS, inclusive = false) },
-                    onCancel = { navController.popBackStack(Route.SETTINGS, inclusive = false) },
+                    onCancel = {
+                        viewModel.onReportCancelled()
+                        navController.popBackStack(Route.SETTINGS, inclusive = false)
+                    },
                 )
+            }
+
+            composable(Route.EVIDENCE_CAPTURE) { entry ->
+                val viewModel = entry.sharedScanViewModel(navController)
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+                // Todas las fotos están: se vuelve al chat, que ofrece enviar el reporte.
+                LaunchedEffect(state.evidence.phase) {
+                    if (state.evidence.phase == EvidencePhase.COMPLETE) navController.popBackStack()
+                }
+
+                // Salir de la cámara sin terminar vuelve al chat con el mensaje elegido y "Tomar fotos".
+                val discard = {
+                    viewModel.onCaptureCancelled()
+                    navController.popBackStack()
+                }
+
+                CameraPermissionGate(
+                    onDenied = { discard() },
+                    deniedRationale = "Sin cámara no podemos sacar las fotos de la evidencia. Las fotos " +
+                        "se cifran en tu dispositivo antes de enviarse.",
+                    permanentlyDeniedRationale = "Activá el permiso de cámara desde los ajustes del " +
+                        "sistema para sacar las fotos de la evidencia. Las fotos se cifran en tu " +
+                        "dispositivo antes de enviarse.",
+                ) {
+                    EvidenceCaptureScreen(
+                        state = state.evidence,
+                        galleryEvidenceSource = viewModel.galleryEvidenceSource,
+                        decodeReviewPhoto = viewModel::decodeReviewPhoto,
+                        onPhotoCaptured = viewModel::onPhotoCaptured,
+                        onPhotoCaptureFailed = viewModel::onPhotoCaptureFailed,
+                        onPhotoRetake = viewModel::onPhotoRetake,
+                        onAddAnotherPhoto = viewModel::onAddAnotherPhoto,
+                        onStepConfirmed = viewModel::onStepConfirmed,
+                        onCancel = { discard() },
+                    )
+                }
             }
         }
 

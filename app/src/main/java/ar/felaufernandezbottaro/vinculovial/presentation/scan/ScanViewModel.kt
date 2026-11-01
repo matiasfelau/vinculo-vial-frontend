@@ -1,16 +1,25 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.scan
 
+import android.graphics.Bitmap
 import androidx.camera.core.ImageProxy
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import ar.felaufernandezbottaro.vinculovial.data.edge.SecureBitmap
+import ar.felaufernandezbottaro.vinculovial.data.evidence.EvidenceBuffers
+import ar.felaufernandezbottaro.vinculovial.data.evidence.EvidenceImageProcessor
+import ar.felaufernandezbottaro.vinculovial.data.evidence.EvidenceProcessingResult
 import ar.felaufernandezbottaro.vinculovial.data.scan.FrameCropper
 import ar.felaufernandezbottaro.vinculovial.data.scan.PlateRegexFilter
+import ar.felaufernandezbottaro.vinculovial.domain.evidence.EvidencePlan
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
-import ar.felaufernandezbottaro.vinculovial.domain.scan.CheckVehicleResult
-import ar.felaufernandezbottaro.vinculovial.domain.scan.CheckVehicleUseCase
+import ar.felaufernandezbottaro.vinculovial.domain.scan.PlateEncryptor
 import ar.felaufernandezbottaro.vinculovial.domain.scan.PlateRecognitionStrategy
+import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertResult
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertUseCase
+import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
+import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptUseCase
+import ar.felaufernandezbottaro.vinculovial.presentation.evidence.GalleryEvidenceSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +32,7 @@ import javax.inject.Inject
 
 /**
  * Orquesta el pipeline de escaneo (recorte + OCR + filtro de formato) y el flujo de dos pasos
- * de US-05 (check + alert). Sólo `PlateRecognitionStrategy` es una interfaz de `domain`: el
+ * de US-05/US-08 (intento + alert). Sólo `PlateRecognitionStrategy` es una interfaz de `domain`: el
  * recorte y el filtro de formato son transformaciones de `data` sin estado de negocio propio,
  * así que se consumen directo acá -- mismo criterio que las funciones de `CameraInternals` en
  * `presentation.camera`.
@@ -33,8 +42,12 @@ class ScanViewModel @Inject constructor(
     private val frameCropper: FrameCropper,
     private val recognitionStrategy: PlateRecognitionStrategy,
     private val regexFilter: PlateRegexFilter,
-    private val checkVehicle: CheckVehicleUseCase,
+    private val plateEncryptor: PlateEncryptor,
+    private val startAlertAttempt: StartAlertAttemptUseCase,
     private val sendAlert: SendAlertUseCase,
+    private val evidenceProcessor: EvidenceImageProcessor,
+    /** Sólo `debug` ofrece galería: en release es la no-op. */
+    val galleryEvidenceSource: GalleryEvidenceSource,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ScanUiState())
@@ -46,8 +59,31 @@ class ScanViewModel @Inject constructor(
     /** Barrera sincrónica contra disparar el mismo check dos veces. */
     private val checkInFlight = AtomicBoolean(false)
 
-    /** El `pat_enc` que ya devolvió el check, a la espera de que el usuario elija un tipo de incidente. */
-    private var pendingPatEnc: String? = null
+    /** Barrera sincrónica contra subir las fotos dos veces con un doble toque. */
+    private val sendInFlight = AtomicBoolean(false)
+
+    /**
+     * Una falla de red cortó un envío: pudo haber llegado al servidor y haber consumido el
+     * intento. Si después un reintento recibe 404 `ATTEMPT_NOT_FOUND`, no se sabe si la alerta
+     * ya se creó (ver [SendAlertError.PossiblySent]). Se mantiene hasta que el envío sale bien o
+     * se descarta el reporte, aunque un reintento intermedio falle por otra causa.
+     */
+    private var sendMayHaveReachedServer = false
+
+    /** El intento que ya abrió el servidor, a la espera de que el usuario elija un tipo de incidente. */
+    private var pendingAttempt: StartAlertAttemptResult.Started? = null
+
+    /**
+     * La patente cifrada para Vehicle: lo único que queda de ella en la app. Viaja en el
+     * `metadata` del envío. Se descarta al enviar con éxito y al perder el intento.
+     */
+    private var pendingPlateEnc: String? = null
+
+    /**
+     * Las fotos de evidencia ya procesadas (JPEG en claro, sin EXIF). Se liberan al enviar con
+     * éxito, al cancelar y en [onCleared].
+     */
+    private val evidenceBuffers = EvidenceBuffers()
 
     /**
      * Recorta, corre OCR y filtra un frame del análisis en vivo. Se llama desde el hilo del
@@ -135,15 +171,22 @@ class ScanViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(status = ScanStatus.Checking) }
 
-            when (val result = checkVehicle(patente)) {
-                is CheckVehicleResult.Found -> {
-                    pendingPatEnc = result.patEnc
+            // La patente en claro termina acá: de ahora en más sólo existe el `pat_enc`.
+            val patEnc = plateEncryptor.encrypt(patente)
+            if (patEnc == null) {
+                _uiState.update { it.copy(status = ScanStatus.CheckFailed(StartAlertAttemptResult.Unexpected)) }
+                checkInFlight.set(false)
+                return@launch
+            }
+
+            when (val result = startAlertAttempt()) {
+                is StartAlertAttemptResult.Started -> {
+                    pendingAttempt = result
+                    pendingPlateEnc = patEnc
                     _uiState.update { it.copy(status = ScanStatus.AwaitingAlertType) }
                 }
-                CheckVehicleResult.NotInNetwork ->
-                    _uiState.update { it.copy(status = ScanStatus.NotInNetwork) }
-                is CheckVehicleResult.Failed ->
-                    _uiState.update { it.copy(status = ScanStatus.CheckFailed(result.error)) }
+                is StartAlertAttemptResult.Failure ->
+                    _uiState.update { it.copy(status = ScanStatus.CheckFailed(result)) }
             }
 
             checkInFlight.set(false)
@@ -152,41 +195,236 @@ class ScanViewModel @Inject constructor(
 
     /**
      * Elegida en el `ReportChatScreen`: se guarda en [ScanUiState.selectedAlertType] para
-     * renderizarla como el mensaje del usuario en el hilo, y se manda con el mismo `pat_enc`
-     * que ya devolvió el check -- nunca uno nuevo.
+     * renderizarla como el mensaje del usuario en el hilo. **No abre la cámara**: ViVIAna explica
+     * qué fotos hacen falta y el usuario lo lee; la captura arranca recién con [onCaptureStarted].
+     * Un tipo que la app no ofrece se ignora.
      */
     fun onAlertTypeSelected(alertType: AlertType) {
-        val patEnc = pendingPatEnc ?: return
-        _uiState.update { it.copy(selectedAlertType = alertType) }
-        submitAlert(alertType, patEnc)
+        if (pendingAttempt == null || !alertType.isOffered) return
+
+        evidenceBuffers.clear()
+        _uiState.update {
+            it.copy(
+                selectedAlertType = alertType,
+                evidence = EvidenceCaptureState(
+                    steps = EvidencePlan.stepsFor(alertType),
+                    phase = EvidencePhase.READY,
+                ),
+            )
+        }
     }
 
-    /** Reintenta con el mismo tipo ya elegido -- no vuelve a mostrar el catálogo. */
-    fun onAlertRetry() {
-        val alertType = _uiState.value.selectedAlertType ?: return
-        val patEnc = pendingPatEnc ?: return
-        submitAlert(alertType, patEnc)
+    /** "Tomar fotos": abre la captura guiada desde el primer paso. Sólo desde [EvidencePhase.READY]. */
+    fun onCaptureStarted() {
+        val evidence = _uiState.value.evidence
+        if (evidence.phase != EvidencePhase.READY) return
+
+        evidenceBuffers.clear()
+        _uiState.update {
+            it.copy(
+                evidence = evidence.copy(
+                    stepIndex = 0,
+                    photoIndex = 0,
+                    phase = EvidencePhase.CAPTURING,
+                    error = null,
+                ),
+            )
+        }
     }
 
-    private fun submitAlert(alertType: AlertType, patEnc: String) {
+    /**
+     * Se sale de la cámara sin terminar: se descartan las fotos sacadas y se vuelve al chat con
+     * el mensaje elegido y el botón "Tomar fotos", sin perder la elección. No hace nada fuera de
+     * la captura (por ejemplo, con las fotos ya completas o mientras una foto se procesa).
+     */
+    fun onCaptureCancelled() {
+        val evidence = _uiState.value.evidence
+        if (evidence.phase != EvidencePhase.CAPTURING && evidence.phase != EvidencePhase.REVIEWING) return
+
+        evidenceBuffers.clear()
+        _uiState.update { it.copy(evidence = EvidenceCaptureState(steps = evidence.steps, phase = EvidencePhase.READY)) }
+    }
+
+    /**
+     * Una foto del paso actual, de la cámara o (sólo en `debug`) de la galería: las dos entran
+     * por acá y pasan por el mismo pipeline. [jpeg] se sobreescribe con ceros al terminar.
+     */
+    fun onPhotoCaptured(jpeg: ByteArray, rotationDegrees: Int) {
+        val evidence = _uiState.value.evidence
+        val step = evidence.currentStep
+        if (evidence.phase != EvidencePhase.CAPTURING || step == null) {
+            jpeg.fill(0)
+            return
+        }
+
+        _uiState.update { it.copy(evidence = it.evidence.copy(phase = EvidencePhase.PROCESSING, error = null)) }
+
         viewModelScope.launch {
-            _uiState.update { it.copy(status = ScanStatus.SendingAlert) }
-
-            _uiState.update {
-                when (val result = sendAlert(alertType, patEnc)) {
-                    SendAlertResult.Sent -> it.copy(status = ScanStatus.AlertSent)
-                    is SendAlertResult.Failed -> it.copy(status = ScanStatus.AlertFailed(result.error))
+            when (val result = evidenceProcessor.process(jpeg, rotationDegrees)) {
+                is EvidenceProcessingResult.Processed -> {
+                    evidenceBuffers.put(step.role, evidence.photoIndex, result.photo)
+                    _uiState.update {
+                        it.copy(
+                            evidence = it.evidence.copy(
+                                phase = EvidencePhase.REVIEWING,
+                                reviewVersion = it.evidence.reviewVersion + 1,
+                            ),
+                        )
+                    }
                 }
+                EvidenceProcessingResult.Unreadable -> failCapture(EvidenceError.UNREADABLE)
+                EvidenceProcessingResult.TooLarge -> failCapture(EvidenceError.TOO_LARGE)
             }
         }
     }
 
-    /** Cierra el mensaje neutro de "no está en la red" y retoma el escaneo. */
-    fun onNotInNetworkDismissed() = resumeScanning()
+    /** La cámara no entregó la foto: se queda en el mismo paso para reintentar. */
+    fun onPhotoCaptureFailed() = failCapture(EvidenceError.CAPTURE_FAILED)
 
-    /** Cierra el error del check (previo a la navegación al chat) y retoma el escaneo. */
+    private fun failCapture(error: EvidenceError) {
+        _uiState.update { it.copy(evidence = it.evidence.copy(phase = EvidencePhase.CAPTURING, error = error)) }
+    }
+
+    /** Descarta la foto en revisión y vuelve a la cámara en el mismo casillero. */
+    fun onPhotoRetake() {
+        val evidence = _uiState.value.evidence
+        val step = evidence.currentStep ?: return
+        if (evidence.phase != EvidencePhase.REVIEWING) return
+
+        evidenceBuffers.remove(step.role, evidence.photoIndex)
+        _uiState.update { it.copy(evidence = it.evidence.copy(phase = EvidencePhase.CAPTURING, error = null)) }
+    }
+
+    /** Abre un casillero nuevo en el mismo paso, si el paso pide más de una foto (hoy ninguno). */
+    fun onAddAnotherPhoto() {
+        val evidence = _uiState.value.evidence
+        if (evidence.phase != EvidencePhase.REVIEWING || !evidence.canAddAnother) return
+
+        _uiState.update {
+            it.copy(
+                evidence = it.evidence.copy(
+                    photoIndex = it.evidence.photoIndex + 1,
+                    phase = EvidencePhase.CAPTURING,
+                    error = null,
+                ),
+            )
+        }
+    }
+
+    /** Da por buena la foto en revisión y pasa al paso siguiente, o termina si era el último. */
+    fun onStepConfirmed() {
+        val evidence = _uiState.value.evidence
+        if (evidence.phase != EvidencePhase.REVIEWING) return
+
+        _uiState.update {
+            it.copy(
+                evidence = if (evidence.isLastStep) {
+                    evidence.copy(phase = EvidencePhase.COMPLETE)
+                } else {
+                    evidence.copy(
+                        stepIndex = evidence.stepIndex + 1,
+                        photoIndex = 0,
+                        phase = EvidencePhase.CAPTURING,
+                        error = null,
+                    )
+                },
+            )
+        }
+    }
+
+    /** Descarta la elección y las fotos: vuelve a mostrar los mensajes para elegir. */
+    fun onEvidenceDiscarded() {
+        evidenceBuffers.clear()
+        sendMayHaveReachedServer = false
+        _uiState.update { it.copy(selectedAlertType = null, evidence = EvidenceCaptureState()) }
+    }
+
+    /** Cancela el reporte entero: libera las fotos. */
+    fun onReportCancelled() = onEvidenceDiscarded()
+
+    /**
+     * Decodifica la foto en revisión para mostrarla en memoria. El llamador debe liberar el
+     * `Bitmap` con `SecureBitmap.wipe`. `null` si no hay foto en ese casillero.
+     */
+    fun decodeReviewPhoto(maxSidePx: Int = REVIEW_PREVIEW_PX): Bitmap? {
+        val evidence = _uiState.value.evidence
+        val step = evidence.currentStep ?: return null
+        return evidenceBuffers.read(step.role, evidence.photoIndex) { SecureBitmap.decode(it, maxSidePx) }
+    }
+
+    /** Con la evidencia completa, manda el reporte: las fotos se cifran para IA con el `attempt_id` vigente. */
+    fun onReportRequested() {
+        if (_uiState.value.evidence.phase != EvidencePhase.COMPLETE) return
+        submitAlert()
+    }
+
+    /**
+     * Reintento manual (429, 502/503/504, red, error inesperado): reenvía con las mismas fotos, que se
+     * conservan hasta el envío exitoso o la cancelación. Si el intento venció, se renueva solo.
+     */
+    fun onAlertRetry() = submitAlert()
+
+    /** 404 `ATTEMPT_NOT_FOUND`: el intento se perdió. Se descarta todo y se vuelve a escanear la patente. */
+    fun onFlowRestarted() {
+        evidenceBuffers.clear()
+        pendingAttempt = null
+        pendingPlateEnc = null
+        sendMayHaveReachedServer = false
+        _uiState.value = ScanUiState()
+    }
+
+    private fun submitAlert() {
+        val alertType = _uiState.value.selectedAlertType ?: return
+        val attempt = pendingAttempt ?: return
+        val patEnc = pendingPlateEnc ?: return
+        if (!sendInFlight.compareAndSet(false, true)) return
+
+        viewModelScope.launch {
+            try {
+                _uiState.update { it.copy(status = ScanStatus.SendingAlert) }
+
+                val outcome = sendAlert(attempt, patEnc, alertType, evidenceBuffers)
+                pendingAttempt = outcome.attempt
+
+                when (val result = outcome.result) {
+                    SendAlertResult.Sent -> {
+                        sendMayHaveReachedServer = false
+                        pendingPlateEnc = null
+                        evidenceBuffers.clear()
+                        _uiState.update { it.copy(status = ScanStatus.AlertSent) }
+                    }
+                    is SendAlertResult.Failed -> {
+                        val error = if (result.error == SendAlertError.AttemptNotFound && sendMayHaveReachedServer) {
+                            SendAlertError.PossiblySent
+                        } else {
+                            result.error
+                        }
+                        if (result.error == SendAlertError.Network) sendMayHaveReachedServer = true
+
+                        // Sin intento vigente o sin permiso de enviar no hay reenvío posible:
+                        // las fotos ya no sirven.
+                        when (error) {
+                            SendAlertError.AttemptNotFound, SendAlertError.PossiblySent -> {
+                                evidenceBuffers.clear()
+                                pendingAttempt = null
+                                pendingPlateEnc = null
+                            }
+                            SendAlertError.UnderReview -> evidenceBuffers.clear()
+                            else -> Unit
+                        }
+                        _uiState.update { it.copy(status = ScanStatus.AlertFailed(error)) }
+                    }
+                }
+            } finally {
+                sendInFlight.set(false)
+            }
+        }
+    }
+
+    /** Cierra el error del intento (previo a la navegación al chat) y retoma el escaneo. */
     fun onCheckErrorDismissed() {
-        pendingPatEnc = null
+        pendingAttempt = null
+        pendingPlateEnc = null
         resumeScanning()
     }
 
@@ -194,7 +432,13 @@ class ScanViewModel @Inject constructor(
         _uiState.update { it.copy(status = ScanStatus.Scanning) }
     }
 
+    override fun onCleared() {
+        evidenceBuffers.clear()
+        super.onCleared()
+    }
+
     private companion object {
+        const val REVIEW_PREVIEW_PX = 1_200
         const val MANUAL_ENTRY_ERROR = "Formato de patente inválido. Probá con AAA000 o AA000AA."
     }
 }

@@ -1,7 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.data.remote
 
 import ar.felaufernandezbottaro.vinculovial.data.alert.AlertApi
-import ar.felaufernandezbottaro.vinculovial.data.alert.VehicleCheckApi
+import ar.felaufernandezbottaro.vinculovial.data.alert.AlertAttemptApi
 import ar.felaufernandezbottaro.vinculovial.data.inbox.InboxApi
 import ar.felaufernandezbottaro.vinculovial.data.notifications.NotificationsApi
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.RefreshApi
@@ -158,7 +158,7 @@ class CircuitBreakerInterceptorTest {
         AuthApiService::class.java,
         RefreshApi::class.java,
         VehicleApi::class.java,
-        VehicleCheckApi::class.java,
+        AlertAttemptApi::class.java,
         AlertApi::class.java,
         InboxApi::class.java,
         NotificationsApi::class.java,
@@ -189,7 +189,7 @@ class CircuitBreakerInterceptorTest {
         val notEndpoints = methods.filter { m -> m.annotations.none { it.annotationClass.java in retrofitHttpAnnotations } }
         assertTrue("métodos sin anotación HTTP de Retrofit: $notEndpoints", notEndpoints.isEmpty())
 
-        assertEquals(10, methods.size)
-        assertEquals(10, methods.map { endpointKeyOf(it) }.toSet().size)
+        assertEquals(15, methods.size)
+        assertEquals(15, methods.map { endpointKeyOf(it) }.toSet().size)
     }
 }

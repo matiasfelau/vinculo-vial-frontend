@@ -14,3 +14,14 @@ package ar.felaufernandezbottaro.vinculovial.data.push
  * "abre pero no navega" que describe el reporte que motivó este fix.
  */
 const val EXTRA_ALERT_TYPE = "alert_type"
+
+/**
+ * `data.type` del push. Igual que [EXTRA_ALERT_TYPE], la misma clave literal en el payload FCM y
+ * en el extra del intent: los avisos al emisor llevan además un bloque `notification`, así que
+ * cuando la app está en segundo plano es el sistema quien resuelve el tap y reenvía el `data`
+ * original con sus claves originales.
+ */
+const val EXTRA_PUSH_TYPE = "type"
+
+/** `data.alert_id` del push: la alerta a abrir. Opcional en los avisos a dueños. */
+const val EXTRA_ALERT_ID = "alert_id"

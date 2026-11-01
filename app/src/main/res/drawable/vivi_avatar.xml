@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Avatar de ViVIAna: PLACEHOLDER circular hasta tener el logo definitivo.
+
+  Es el único recurso del avatar: todas las pantallas lo toman de acá (ver ViviAvatar). Para
+  poner el logo real alcanza con reemplazar este archivo (o su contenido) por el recurso final,
+  sin tocar ninguna pantalla.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="44dp"
+    android:height="44dp"
+    android:viewportWidth="44"
+    android:viewportHeight="44">
+    <path
+        android:fillColor="#DCF3E9"
+        android:pathData="M22,22m-21.25,0a21.25,21.25 0,1 1,42.5 0a21.25,21.25 0,1 1,-42.5 0"
+        android:strokeColor="#1E3A8A"
+        android:strokeWidth="1.5" />
+    <path
+        android:pathData="M14,15L22,30L30,15"
+        android:strokeColor="#1E3A8A"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="3" />
+</vector>

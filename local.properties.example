@@ -21,6 +21,13 @@ IDENTITY_HPKE_PUBLIC_KEY=vqY0RUzHxXbMXIDaHErJhtrf6Yo/wcnUAq52OE5Ti3c=
 # pre-generado acá porque ese par vive coordinado con ese repo.
 VEHICLE_HPKE_PUBLIC_KEY=
 
+# Public Key X25519 (raw, base64) de vinculo-vial-ia (US-08): cifra las fotos de evidencia de
+# las alertas, con el attempt_id como info HPKE. Es la pública del par IA_HPKE_PRIVATE_KEY del
+# repo de IA. La de desarrollo es la pública del par que genera Vehicle (la misma que usa
+# Vehicle en su .env); no hay un valor pre-generado acá. Nunca se reutiliza la de Identity ni
+# la de Vehicle.
+IA_HPKE_PUBLIC_KEY=
+
 # Modo de attestation: `play_integrity` (default) o `mock`.
 # IMPORTANTE: el Gateway tiene que validar de la misma forma que la app.
 #   play_integrity  -> el token lo emite Google y el Gateway lo decodifica llamando a la

@@ -1,5 +1,12 @@
 package ar.felaufernandezbottaro.vinculovial.data.inbox
 
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportResult
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportReason
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackResult
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackRating
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.EvidenceResult
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.EvidenceRef
+import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.EvidenceRefDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.AlertItemDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.InboxPageDto
 import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
@@ -163,4 +170,193 @@ class InboxRepositoryImplTest {
 
     private fun errorResponse(code: Int) =
         Response.error<InboxPageDto>(code, "".toResponseBody("application/json".toMediaType()))
+
+    // -- Campos de US-08 --------------------------------------------------------------------
+
+    @Test
+    fun `mapea los campos de US-08 del dto al dominio`() = runTest {
+        api.response = Response.success(
+            InboxPageDto(
+                items = listOf(
+                    AlertItemDto(
+                        id = "uuid-1",
+                        alertType = "CRASHED",
+                        createdAt = "2026-08-18T10:00:00Z",
+                        requiresReview = true,
+                        evidence = listOf(EvidenceRefDto("GENERAL", 0), EvidenceRefDto("DETAIL", 1)),
+                        evidenceExpiresAt = "2026-09-17T07:00:00-03:00",
+                        myFeedback = "DOWN",
+                        reported = true,
+                    ),
+                ),
+                nextCursor = null,
+            ),
+        )
+
+        val item = (repository().getInbox() as GetInboxResult.Success).page.items.single()
+
+        assertEquals(true, item.requiresReview)
+        assertEquals(listOf(EvidenceRef("GENERAL", 0), EvidenceRef("DETAIL", 1)), item.evidence)
+        assertEquals(Instant.parse("2026-09-17T10:00:00Z"), item.evidenceExpiresAt)
+        assertEquals(FeedbackRating.DOWN, item.myFeedback)
+        assertEquals(true, item.reported)
+    }
+
+    @Test
+    fun `sin los campos de US-08 el item queda sin revision, sin evidencia, sin valoracion y sin reportar`() = runTest {
+        api.response = Response.success(
+            InboxPageDto(items = listOf(AlertItemDto("u", "CRASHED", "2026-08-18T10:00:00Z")), nextCursor = null),
+        )
+
+        val item = (repository().getInbox() as GetInboxResult.Success).page.items.single()
+
+        assertEquals(false, item.requiresReview)
+        assertEquals(emptyList<EvidenceRef>(), item.evidence)
+        assertNull(item.evidenceExpiresAt)
+        assertNull(item.myFeedback)
+        assertEquals(false, item.reported)
+    }
+
+    @Test
+    fun `una valoracion desconocida o un vencimiento ilegible no tumban la lista`() = runTest {
+        api.response = Response.success(
+            InboxPageDto(
+                items = listOf(
+                    AlertItemDto("u", "CRASHED", "2026-08-18T10:00:00Z", myFeedback = "MAYBE", evidenceExpiresAt = "manana"),
+                ),
+                nextCursor = null,
+            ),
+        )
+
+        val item = (repository().getInbox() as GetInboxResult.Success).page.items.single()
+
+        assertNull(item.myFeedback)
+        assertNull(item.evidenceExpiresAt)
+    }
+
+    // -- Evidencia --------------------------------------------------------------------------
+
+    @Test
+    fun `la evidencia llega como bytes y se pide con alerta, rol e indice`() = runTest {
+        api.evidenceResponse = Response.success(byteArrayOf(9, 8, 7).toResponseBody("image/jpeg".toMediaType()))
+
+        val result = repository().getEvidence("alerta-1", "PLATE", 0)
+
+        assertEquals(listOf<Byte>(9, 8, 7), (result as EvidenceResult.Loaded).bytes.toList())
+        assertEquals(Triple("alerta-1", "PLATE", 0), api.lastEvidenceCall)
+        assertEquals("Bearer access-abc", api.lastAuthorization)
+    }
+
+    @Test
+    fun `410 en la evidencia es Expired, el placeholder de retencion vencida`() = runTest {
+        api.evidenceResponse = errorResponseOf(410)
+
+        assertEquals(EvidenceResult.Expired, repository().getEvidence("alerta-1", "PLATE", 0))
+    }
+
+    @Test
+    fun `errores de la evidencia se traducen`() = runTest {
+        val cases = mapOf(
+            404 to InboxError.NotFound,
+            429 to InboxError.RateLimited,
+            502 to InboxError.Unavailable,
+            503 to InboxError.Unavailable,
+            504 to InboxError.Unavailable,
+            500 to InboxError.Unexpected,
+            401 to InboxError.Unexpected,
+        )
+        cases.forEach { (status, expected) ->
+            api.evidenceResponse = errorResponseOf(status)
+
+            assertEquals("status $status", EvidenceResult.Failed(expected), repository().getEvidence("a", "PLATE", 0))
+        }
+    }
+
+    @Test
+    fun `una evidencia 200 sin cuerpo es un error inesperado`() = runTest {
+        api.evidenceResponse = Response.success<okhttp3.ResponseBody>(null)
+
+        assertEquals(EvidenceResult.Failed(InboxError.Unexpected), repository().getEvidence("a", "PLATE", 0))
+    }
+
+    @Test
+    fun `fallas de red en la evidencia`() = runTest {
+        api.exceptionToThrow = CircuitBreakerOpenException("alerts")
+        assertEquals(EvidenceResult.Failed(InboxError.Unavailable), repository().getEvidence("a", "PLATE", 0))
+
+        api.exceptionToThrow = IOException("sin conexion")
+        assertEquals(EvidenceResult.Failed(InboxError.Network), repository().getEvidence("a", "PLATE", 0))
+    }
+
+    // -- Valoración -------------------------------------------------------------------------
+
+    @Test
+    fun `la valoracion manda UP o DOWN y 204 es Saved`() = runTest {
+        FeedbackRating.entries.forEach { rating ->
+            assertEquals(FeedbackResult.Saved, repository().setFeedback("alerta-1", rating))
+            assertEquals("alerta-1" to rating.name, api.lastFeedback?.let { it.first to it.second.rating })
+        }
+    }
+
+    @Test
+    fun `errores de la valoracion se traducen`() = runTest {
+        mapOf(
+            404 to InboxError.NotFound,
+            429 to InboxError.RateLimited,
+            502 to InboxError.Unavailable,
+            503 to InboxError.Unavailable,
+            504 to InboxError.Unavailable,
+            500 to InboxError.Unexpected,
+        ).forEach { (status, expected) ->
+                api.feedbackResponse = errorResponseOf(status)
+
+                assertEquals("status $status", FeedbackResult.Failed(expected), repository().setFeedback("a", FeedbackRating.UP))
+            }
+    }
+
+    // -- Reporte ----------------------------------------------------------------------------
+
+    @Test
+    fun `el reporte manda el motivo y 202 es Reported`() = runTest {
+        ReportReason.entries.forEach { reason ->
+            assertEquals(ReportResult.Reported, repository().reportSender("alerta-1", reason))
+            assertEquals("alerta-1" to reason.name, api.lastReport?.let { it.first to it.second.reason })
+        }
+    }
+
+    @Test
+    fun `409 en el reporte es AlreadyReported`() = runTest {
+        api.reportResponse = errorResponseOf(409)
+
+        assertEquals(ReportResult.AlreadyReported, repository().reportSender("a", ReportReason.SPAM))
+    }
+
+    @Test
+    fun `errores del reporte se traducen`() = runTest {
+        mapOf(
+            404 to InboxError.NotFound,
+            429 to InboxError.RateLimited,
+            502 to InboxError.Unavailable,
+            503 to InboxError.Unavailable,
+            504 to InboxError.Unavailable,
+            500 to InboxError.Unexpected,
+        ).forEach { (status, expected) ->
+                api.reportResponse = errorResponseOf(status)
+
+                assertEquals("status $status", ReportResult.Failed(expected), repository().reportSender("a", ReportReason.SPAM))
+            }
+    }
+
+    @Test
+    fun `sin sesion guardada ninguna operacion llama a la red`() = runTest {
+        tokenStore.clear()
+
+        assertEquals(EvidenceResult.Failed(InboxError.Unexpected), repository().getEvidence("a", "PLATE", 0))
+        assertEquals(FeedbackResult.Failed(InboxError.Unexpected), repository().setFeedback("a", FeedbackRating.UP))
+        assertEquals(ReportResult.Failed(InboxError.Unexpected), repository().reportSender("a", ReportReason.SPAM))
+        assertEquals(0, api.callCount)
+    }
+
+    private fun <T : Any> errorResponseOf(code: Int): Response<T> =
+        Response.error(code, "".toResponseBody("application/json".toMediaType()))
 }

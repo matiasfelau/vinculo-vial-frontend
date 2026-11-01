@@ -22,6 +22,9 @@ sealed interface InboxError {
     /** Sin conexión, timeout o servidor inalcanzable. */
     data object Network : InboxError
 
+    /** 404 `NOT_FOUND`: la alerta no existe, ya no está activa o el usuario no es destinatario (no se distingue). */
+    data object NotFound : InboxError
+
     /** Cualquier otra cosa, incluido 500 y un 401 que `TokenAuthenticator` no pudo resolver. */
     data object Unexpected : InboxError
 }

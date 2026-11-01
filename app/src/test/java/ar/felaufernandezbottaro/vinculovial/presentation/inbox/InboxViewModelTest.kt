@@ -2,10 +2,14 @@ package ar.felaufernandezbottaro.vinculovial.presentation.inbox
 
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertItem
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FakeInboxRepository
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetEvidenceUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetInboxResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.GetInboxUseCase
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.MarkAlertSeenUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.InboxError
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.InboxPage
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.ReportSenderUseCase
+import ar.felaufernandezbottaro.vinculovial.domain.inbox.SetFeedbackUseCase
 import ar.felaufernandezbottaro.vinculovial.util.MainDispatcherRule
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runTest
@@ -23,7 +27,13 @@ class InboxViewModelTest {
 
     private val repository = FakeInboxRepository()
 
-    private fun viewModel() = InboxViewModel(GetInboxUseCase(repository))
+    private fun viewModel() = InboxViewModel(
+        getInbox = GetInboxUseCase(repository),
+        getEvidence = GetEvidenceUseCase(repository),
+        setFeedback = SetFeedbackUseCase(repository),
+        reportSender = ReportSenderUseCase(repository),
+        markAlertSeen = MarkAlertSeenUseCase(repository),
+    )
 
     private val item = AlertItem(id = "id-1", alertType = "CRASHED", createdAt = Instant.EPOCH)
 

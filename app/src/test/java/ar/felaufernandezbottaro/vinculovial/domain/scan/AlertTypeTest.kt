@@ -24,4 +24,24 @@ class AlertTypeTest {
             assertEquals(false, alertType.label == alertType.wireValue)
         }
     }
+
+    @Test
+    fun `el selector solo ofrece los tipos con validacion de IA`() {
+        assertEquals(listOf(AlertType.PARKED_ON_GARAGE, AlertType.CRASHED), AlertType.offered)
+    }
+
+    @Test
+    fun `PARKED_TOO_CLOSE no se ofrece pero sigue en el enum para el historial`() {
+        assertEquals(false, AlertType.PARKED_TOO_CLOSE.isOffered)
+        assertEquals(false, AlertType.PARKED_TOO_CLOSE in AlertType.offered)
+        assertEquals("PARKED_TOO_CLOSE", AlertType.PARKED_TOO_CLOSE.wireValue)
+    }
+
+    @Test
+    fun `el label de PARKED_ON_GARAGE habla de rampa de garage o de accesibilidad`() {
+        assertEquals(
+            "Estacionado frente a una rampa (garage o de accesibilidad)",
+            AlertType.PARKED_ON_GARAGE.label,
+        )
+    }
 }

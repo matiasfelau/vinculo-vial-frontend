@@ -1,26 +1,30 @@
 package ar.felaufernandezbottaro.vinculovial.data.alert
 
-import ar.felaufernandezbottaro.vinculovial.data.alert.dto.SendAlertRequestDto
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.crypto.AttestationTokenGenerator
 import ar.felaufernandezbottaro.vinculovial.data.crypto.MockAttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.test.runTest
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
-import org.json.JSONObject
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 
 /**
- * Test de contrato contra el Gateway simulado para `/alerts`: sólo la forma de la request. El
- * mapeo de códigos de respuesta a resultado de dominio vive en `AlertRepositoryImpl`, no acá.
+ * Test de contrato contra el Gateway simulado para `POST /alerts`: la forma del multipart en el
+ * cable (partes, `Content-Type` de cada una y bytes binarios intactos). Qué partes lleva cada
+ * tipo y el mapeo de respuestas viven en `AlertRepositoryImpl`, no acá.
  */
 class AlertApiTest {
 
@@ -57,47 +61,80 @@ class AlertApiTest {
         server.shutdown()
     }
 
+    /** Todos los valores de byte, para que ninguna transformación de texto pase desapercibida. */
+    private val binary = ByteArray(256) { it.toByte() }
+
+    private val parts = listOf(
+        MultipartBody.Part.createFormData(
+            "metadata",
+            null,
+            """{"attempt_id":"a-1","alert_type":"CRASHED"}""".toByteArray().toRequestBody("application/json".toMediaType()),
+        ),
+        MultipartBody.Part.createFormData(
+            "general",
+            "general-0.bin",
+            binary.toRequestBody("application/octet-stream".toMediaType()),
+        ),
+        MultipartBody.Part.createFormData(
+            "detail",
+            "detail-0.bin",
+            binary.toRequestBody("application/octet-stream".toMediaType()),
+        ),
+    )
+
     @Test
-    fun `publica en el endpoint del contrato con el bearer token`() = runTest {
+    fun `publica en el endpoint del contrato con el bearer token y como multipart`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
 
-        api.sendAlert("Bearer access-abc", SendAlertRequestDto(alertType = "Chocado", patEnc = "cryptograma"))
+        api.sendAlert("Bearer access-abc", parts)
 
         val request = server.takeRequest()
         assertEquals("POST", request.method)
         assertEquals("/api/v1/alerts", request.path)
         assertEquals("Bearer access-abc", request.getHeader("Authorization"))
+        assertTrue(request.getHeader("Content-Type").orEmpty().startsWith("multipart/form-data; boundary="))
     }
 
     @Test
-    fun `el cuerpo lleva alert_type y pat_enc`() = runTest {
+    fun `las partes salen en orden con el content-type del contrato`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
 
-        api.sendAlert(
-            "Bearer access-abc",
-            SendAlertRequestDto(alertType = "Chocado", patEnc = "cryptograma-de-la-patente"),
-        )
+        api.sendAlert("Bearer access-abc", parts)
 
-        val body = JSONObject(server.takeRequest().body.readUtf8())
-        assertEquals(2, body.length())
-        assertEquals("Chocado", body.getString("alert_type"))
-        assertEquals("cryptograma-de-la-patente", body.getString("pat_enc"))
+        val wire = server.takeRequest().parseMultipartWire()
+        assertEquals(listOf("metadata", "general", "detail"), wire.map { it.name })
+        assertEquals(
+            listOf("application/json", "application/octet-stream", "application/octet-stream"),
+            wire.map { it.contentType },
+        )
+    }
+
+    @Test
+    fun `los bytes binarios viajan intactos y el JSON de metadata tambien`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(202))
+
+        api.sendAlert("Bearer access-abc", parts)
+
+        val wire = server.takeRequest().parseMultipartWire()
+        assertEquals("""{"attempt_id":"a-1","alert_type":"CRASHED"}""", String(wire[0].content, Charsets.UTF_8))
+        assertArrayEquals(binary, wire[1].content)
+        assertArrayEquals(binary, wire[2].content)
     }
 
     @Test
     fun `202 no trae cuerpo que parsear`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(202))
+        server.enqueue(MockResponse().setResponseCode(202).setBody("""{"alert_id":"a-1","status":"PENDING_VALIDATION"}"""))
 
-        val response = api.sendAlert("Bearer access-abc", SendAlertRequestDto("Chocado", "cryptograma"))
+        val response = api.sendAlert("Bearer access-abc", parts)
 
         assertEquals(202, response.code())
     }
 
     @Test
-    fun `400 no trae cuerpo que parsear`() = runTest {
-        server.enqueue(MockResponse().setResponseCode(400))
+    fun `400 con code no se parsea acá`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":"x","code":"INVALID_EVIDENCE"}"""))
 
-        val response = api.sendAlert("Bearer access-abc", SendAlertRequestDto("Chocado", "cryptograma"))
+        val response = api.sendAlert("Bearer access-abc", parts)
 
         assertEquals(400, response.code())
     }

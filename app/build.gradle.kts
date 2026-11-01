@@ -48,8 +48,8 @@ android {
         applicationId = "ar.felaufernandezbottaro.vinculovial"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.7.0"
+        versionCode = 8
+        versionName = "0.10.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -66,6 +66,14 @@ android {
             "String",
             "VEHICLE_HPKE_PUBLIC_KEY",
             "\"${config("VEHICLE_HPKE_PUBLIC_KEY", "")}\"",
+        )
+        // US-08: cifra las fotos de evidencia (y nada más) contra `vinculo-vial-ia`. Es la
+        // pública del par IA_HPKE_PRIVATE_KEY del repo de IA, la misma que usa Vehicle para
+        // `pat_enc_ia`.
+        buildConfigField(
+            "String",
+            "IA_HPKE_PUBLIC_KEY",
+            "\"${config("IA_HPKE_PUBLIC_KEY", "")}\"",
         )
         buildConfigField("String", "APP_ATTESTATION_PSK", "\"${config("APP_ATTESTATION_PSK", "")}\"")
         buildConfigField("long", "ATTESTATION_TOKEN_TTL_SECONDS", config("ATTESTATION_TOKEN_TTL_SECONDS", "60") + "L")
@@ -148,6 +156,21 @@ android {
             "META-INF/LICENSE*",
             "META-INF/NOTICE*",
         )
+    }
+}
+
+/**
+ * US-08: el manifiesto mergeado de release no puede traer permisos de lectura de medios (la
+ * galería sólo existe en `debug`). `ReleaseNoGalleryTest` lo verifica leyendo el manifiesto que
+ * AGP genera para release; esta ruta se le pasa como propiedad del sistema.
+ */
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        val mergedManifest = variant.artifacts.get(com.android.build.api.artifact.SingleArtifact.MERGED_MANIFEST)
+        tasks.withType<Test>().matching { it.name == "testReleaseUnitTest" }.configureEach {
+            inputs.file(mergedManifest)
+            doFirst { systemProperty("mergedManifestPath", mergedManifest.get().asFile.absolutePath) }
+        }
     }
 }
 
