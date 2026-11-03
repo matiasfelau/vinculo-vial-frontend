@@ -1,11 +1,15 @@
 package ar.felaufernandezbottaro.vinculovial.data.session
 
+import ar.felaufernandezbottaro.vinculovial.data.remote.auth.RefreshApi
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.dto.RefreshResponseDto
+import ar.felaufernandezbottaro.vinculovial.data.remote.auth.dto.RefreshTokenRequestDto
 import com.google.crypto.tink.Aead
 import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.KeysetHandle
 import com.google.crypto.tink.RegistryConfiguration
 import com.google.crypto.tink.aead.AeadConfig
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -14,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -202,5 +207,84 @@ class SessionManagerTest {
         manager().logout()
 
         assertEquals(0, refreshApi.logoutCallCount)
+    }
+
+    @Test
+    fun `clearSessionForAccountDeletion borra los tokens sin llamar a la red`() = runTest {
+        tokenStore.save(tokenViejo)
+
+        manager().clearSessionForAccountDeletion { }
+
+        assertEquals(null, tokenStore.read())
+        assertEquals(0, refreshApi.callCount)
+        assertEquals(0, refreshApi.logoutCallCount)
+    }
+
+    @Test
+    fun `clearSessionForAccountDeletion corre afterClear con los tokens ya borrados`() = runTest {
+        tokenStore.save(tokenViejo)
+        var sessionWhenAfterClearRan: SessionTokens? = tokenViejo
+
+        manager().clearSessionForAccountDeletion { sessionWhenAfterClearRan = tokenStore.read() }
+
+        assertEquals(null, sessionWhenAfterClearRan)
+    }
+
+    @Test
+    fun `clearSessionForAccountDeletion avisa por sessionState que ya no hay sesion`() = runTest {
+        tokenStore.save(tokenViejo)
+
+        manager().clearSessionForAccountDeletion { }
+
+        assertEquals(false, tokenStore.sessionState.value)
+    }
+
+    @Test
+    fun `si afterClear falla los tokens igual quedaron borrados`() = runTest {
+        tokenStore.save(tokenViejo)
+
+        val failure = try {
+            manager().clearSessionForAccountDeletion { throw IllegalStateException("Keystore roto") }
+            null
+        } catch (e: IllegalStateException) {
+            e
+        }
+
+        assertEquals("Keystore roto", failure?.message)
+        assertEquals(null, tokenStore.read())
+    }
+
+    /**
+     * La razón de tomar el Mutex: sin él, un refresh en vuelo podía guardar un par recién rotado
+     * *después* del borrado y resucitar la sesión de una cuenta que ya no existe.
+     */
+    @Test
+    fun `clearSessionForAccountDeletion espera a un refresh en vuelo y la sesion no resucita`() = runTest {
+        tokenStore.save(tokenViejo)
+        val gate = CompletableDeferred<Unit>()
+        val gatedApi = object : RefreshApi {
+            override suspend fun refresh(body: RefreshTokenRequestDto): Response<RefreshResponseDto> {
+                gate.await()
+                return Response.success(RefreshResponseDto(accessToken = "access-nuevo", refreshToken = "refresh-nuevo"))
+            }
+
+            override suspend fun logout(body: RefreshTokenRequestDto): Response<Unit> = Response.success(Unit)
+        }
+        val manager = SessionManager(gatedApi, tokenStore, UnconfinedTestDispatcher())
+
+        // UNDISPATCHED: cada una corre ya hasta su primera suspensión. Sin esto, el dispatcher
+        // de runTest las encola y el orden lo decidiría el scheduler, no el Mutex.
+        val refresh = async(start = CoroutineStart.UNDISPATCHED) {
+            manager.refreshSession(failedAccessToken = tokenViejo.accessToken)
+        }
+        val deletion = async(start = CoroutineStart.UNDISPATCHED) { manager.clearSessionForAccountDeletion { } }
+
+        assertFalse("el borrado tiene que esperar al refresh", deletion.isCompleted)
+
+        gate.complete(Unit)
+        refresh.await()
+        deletion.await()
+
+        assertEquals(null, tokenStore.read())
     }
 }

@@ -18,6 +18,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
+import ar.felaufernandezbottaro.vinculovial.domain.account.DeleteAccountError
+import ar.felaufernandezbottaro.vinculovial.presentation.account.DeleteAccountScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.account.DeleteAccountStatus
+import ar.felaufernandezbottaro.vinculovial.presentation.account.DeleteAccountViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.CameraPermissionGate
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.DocumentScanScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.LivenessCaptureScreen
@@ -61,6 +65,7 @@ object Route {
     const val WELCOME = "welcome"
     const val SIGN_IN = "signin"
     const val SETTINGS = "settings"
+    const val DELETE_ACCOUNT = "settings/delete-account"
     const val SIGN_UP_GRAPH = "signup"
     const val SIGN_UP_FORM = "signup/form"
     const val SIGN_UP_CONSENT = "signup/consent"
@@ -104,7 +109,8 @@ fun VinculoVialNavHost(
     // disparar: se consume apenas se compone.
     var justSignedIn by remember { mutableStateOf(false) }
     LaunchedEffect(hasSession, currentEntry) {
-        if (!hasSession && !isPublicRoute(currentEntry?.destination?.route)) {
+        val route = currentEntry?.destination?.route
+        if (!hasSession && !isPublicRoute(route) && !managesOwnSessionLoss(route)) {
             navController.navigate(Route.SIGN_IN) {
                 popUpTo(0) { inclusive = true }
             }
@@ -185,11 +191,42 @@ fun VinculoVialNavHost(
                 onLinkVehicle = { navController.navigate(Route.LINK_VEHICLE) },
                 onScanPlate = { navController.navigate(Route.SCAN_GRAPH) },
                 onOpenInbox = { navController.navigate(Route.INBOX) },
+                onDeleteAccount = { navController.navigate(Route.DELETE_ACCOUNT) },
             )
 
             if (justSignedIn) {
                 NotificationPermissionRequester(onFinished = { justSignedIn = false })
             }
+        }
+
+        composable(Route.DELETE_ACCOUNT) { entry ->
+            val viewModel = hiltViewModel<DeleteAccountViewModel>(entry)
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+            // Esta pantalla es la que decide a dónde ir cuando la sesión desaparece -- ver
+            // managesOwnSessionLoss --, con sus dos salidas, ambas sin dejar nada en el back stack:
+            // la baja hecha vuelve a la bienvenida; la sesión vencida, a Login como en cualquier
+            // otra pantalla.
+            LaunchedEffect(state.status) {
+                when (val status = state.status) {
+                    DeleteAccountStatus.Deleted -> navController.navigate(Route.WELCOME) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                    is DeleteAccountStatus.Failed -> if (status.error == DeleteAccountError.SessionExpired) {
+                        navController.navigate(Route.SIGN_IN) { popUpTo(0) { inclusive = true } }
+                    }
+                    DeleteAccountStatus.Idle,
+                    DeleteAccountStatus.Submitting,
+                    -> Unit
+                }
+            }
+
+            DeleteAccountScreen(
+                state = state,
+                onPasswordChange = viewModel::onPasswordChange,
+                onConfirm = viewModel::submit,
+                onBack = { navController.popBackStack() },
+            )
         }
 
         composable(Route.INBOX) { entry ->
@@ -554,6 +591,15 @@ private fun isPublicRoute(route: String?): Boolean =
         route == Route.WELCOME ||
         route == Route.SIGN_IN ||
         route.startsWith(Route.SIGN_UP_GRAPH)
+
+/**
+ * La baja de cuenta (US-11) borra la sesión local ella misma, y el destino de ese momento no es
+ * Login sino la bienvenida. Si el redireccionamiento genérico de arriba también reaccionara,
+ * las dos navegaciones competirían y ganaría la que corra última. Por eso, mientras el usuario
+ * está en esa pantalla, el redireccionamiento le deja la salida a ella: ver la ruta
+ * `DELETE_ACCOUNT` en el nav host.
+ */
+private fun managesOwnSessionLoss(route: String?): Boolean = route == Route.DELETE_ACCOUNT
 
 /**
  * El formulario, el consentimiento y la captura comparten un único ViewModel scopeado

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
@@ -58,6 +59,7 @@ fun VvTextField(
     enabled: Boolean = true,
     isPassword: Boolean = false,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
 
@@ -90,6 +92,7 @@ fun VvTextField(
                 else -> PasswordVisualTransformation()
             },
             keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
             trailingIcon = if (!isPassword) null else {
                 {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -127,7 +130,7 @@ fun VvTextField(
     }
 }
 
-/** Botón principal navy de ancho completo. */
+/** Botón principal de ancho completo: navy, o el [containerColor] que se pida (p. ej. naranja para una acción destructiva). */
 @Composable
 fun VvPrimaryButton(
     text: String,
@@ -135,13 +138,14 @@ fun VvPrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     loading: Boolean = false,
+    containerColor: Color = VvNavy,
 ) {
     Button(
         onClick = onClick,
         enabled = enabled && !loading,
         shape = RoundedCornerShape(10.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = VvNavy,
+            containerColor = containerColor,
             contentColor = Color.White,
         ),
         modifier = modifier
