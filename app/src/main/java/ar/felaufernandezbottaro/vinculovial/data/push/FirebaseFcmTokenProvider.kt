@@ -23,6 +23,15 @@ fun interface FcmTokenTaskSource {
 }
 
 /**
+ * `FirebaseMessaging.deleteToken()`, por la misma razón que [FcmTokenTaskSource]. Es una
+ * interfaz aparte para no romper a quien sólo necesita leer el token: el borrado es de la baja
+ * de cuenta (US-11).
+ */
+fun interface FcmTokenDeletionSource {
+    fun deleteTokenTask(): Task<Void>
+}
+
+/**
  * Envuelve el SDK de Firebase detrás de [FcmTokenProvider]. El catch es amplio a propósito
  * (no sólo `RuntimeException`): sin `google-services.json` real (ver app/build.gradle.kts)
  * `FirebaseMessaging.getInstance()` lanza `IllegalStateException`, y las fallas propias del
@@ -44,6 +53,7 @@ fun interface FcmTokenTaskSource {
 @Singleton
 class FirebaseFcmTokenProvider @Inject constructor(
     private val tokenSource: FcmTokenTaskSource,
+    private val deletionSource: FcmTokenDeletionSource,
 ) : FcmTokenProvider {
 
     override suspend fun getCurrentToken(): String? = try {
@@ -56,5 +66,19 @@ class FirebaseFcmTokenProvider @Inject constructor(
         throw e
     } catch (e: Exception) {
         null
+    }
+
+    /** Mismo presupuesto y mismo criterio de errores que [getCurrentToken]: nunca propaga un fallo del SDK. */
+    override suspend fun deleteCurrentToken(): Boolean = try {
+        withTimeout(BuildConfig.NETWORK_TIMEOUT_MS) {
+            deletionSource.deleteTokenTask().await()
+        }
+        true
+    } catch (e: TimeoutCancellationException) {
+        false
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        false
     }
 }

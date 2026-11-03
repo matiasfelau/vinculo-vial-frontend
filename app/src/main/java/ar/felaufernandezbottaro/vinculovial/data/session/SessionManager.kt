@@ -124,6 +124,23 @@ class SessionManager @Inject constructor(
         }
     }
 
+    /**
+     * Borrado de la sesión por baja de cuenta (US-11). A diferencia de [clearSession] suelto,
+     * toma el [Mutex]: un refresh en vuelo termina antes de borrar -- si no, podría guardar un
+     * par recién rotado *después* del borrado y resucitar una sesión de una cuenta que ya no
+     * existe -- y uno posterior ya no encuentra sesión que refrescar.
+     *
+     * [afterClear] corre con los tokens ya borrados y bajo el mismo lock: es donde se destruyen
+     * las claves que los cifraban, sin que un login o un refresh pueda cifrar con ellas a mitad
+     * de camino.
+     */
+    suspend fun clearSessionForAccountDeletion(afterClear: () -> Unit) = mutex.withLock {
+        withContext(dispatcher) {
+            clearSession()
+            afterClear()
+        }
+    }
+
     private companion object {
         const val HTTP_UNAUTHORIZED = 401
         const val HTTP_FORBIDDEN = 403

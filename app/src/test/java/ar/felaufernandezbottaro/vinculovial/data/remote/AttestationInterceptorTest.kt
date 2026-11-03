@@ -106,6 +106,16 @@ class AttestationInterceptorTest {
     }
 
     @Test
+    fun `si la attestation falla en users me (baja de cuenta) la request sigue sin el header`() {
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val response = clientWith(failingProvider()).newCall(requestTo("/api/v1/users/me")).execute()
+
+        assertEquals(204, response.code)
+        assertNull(server.takeRequest().getHeader(AttestationInterceptor.HEADER))
+    }
+
+    @Test
     fun `si la attestation funciona el header viaja igual en logout`() {
         server.enqueue(MockResponse().setResponseCode(200))
         val provider = object : AttestationProvider {
