@@ -25,9 +25,10 @@ class DeleteAccountTextsTest {
         assertEquals(
             listOf(
                 "Se borran tu perfil, tus vehículos vinculados, tus sesiones y tus dispositivos.",
-                "Por la Ley 25.326, art. 16 inc. 5, conservamos durante 3 años, cifrados y aislados, " +
-                    "tu DNI y la fecha y el tipo de las alertas que enviaste. Solo se abren ante un " +
-                    "pedido judicial. Después se destruyen.",
+                "Las alertas que enviaste y que llegaron a su destinatario se conservan durante 3 años " +
+                    "desde su envío, aunque elimines tu cuenta: el tipo, la fecha, las fotos tal como las " +
+                    "vio el destinatario y, cifrados, tu DNI y la patente. Se guardan aisladas, solo se " +
+                    "abren ante un pedido judicial (Ley 25.326, art. 16 inc. 5) y después se destruyen.",
                 "Esta acción no se puede deshacer.",
             ),
             DeleteAccountTexts.infoParagraphs,
