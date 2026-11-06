@@ -3,8 +3,9 @@ package ar.felaufernandezbottaro.vinculovial.presentation.account
 import ar.felaufernandezbottaro.vinculovial.domain.account.DeleteAccountError
 
 /**
- * Los textos de la pantalla informativa son los del contrato de US-11, palabra por palabra: el
- * párrafo de retención cita la Ley 25.326 y es lo que el usuario acepta al confirmar.
+ * Los textos de la pantalla informativa son los del contrato de US-11 (el de retención, el de la
+ * iteración de Audit), palabra por palabra: el párrafo de retención cita la Ley 25.326 y es lo
+ * que el usuario acepta al confirmar.
  *
  * Ningún texto de esta pantalla (ni de sus errores) menciona la reputación, las revisiones ni
  * las sanciones de la cuenta: eso no se le muestra al usuario en ningún momento.
@@ -16,9 +17,10 @@ object DeleteAccountTexts {
         "Se borran tu perfil, tus vehículos vinculados, tus sesiones y tus dispositivos."
 
     const val WHAT_IS_KEPT =
-        "Por la Ley 25.326, art. 16 inc. 5, conservamos durante 3 años, cifrados y aislados, " +
-            "tu DNI y la fecha y el tipo de las alertas que enviaste. Solo se abren ante un " +
-            "pedido judicial. Después se destruyen."
+        "Las alertas que enviaste y que llegaron a su destinatario se conservan durante 3 años " +
+            "desde su envío, aunque elimines tu cuenta: el tipo, la fecha, las fotos tal como las " +
+            "vio el destinatario y, cifrados, tu DNI y la patente. Se guardan aisladas, solo se " +
+            "abren ante un pedido judicial (Ley 25.326, art. 16 inc. 5) y después se destruyen."
 
     const val IRREVERSIBLE = "Esta acción no se puede deshacer."
 
