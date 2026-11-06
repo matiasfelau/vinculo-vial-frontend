@@ -51,7 +51,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import ar.felaufernandezbottaro.vinculovial.domain.scan.model.OverlayRect
-import ar.felaufernandezbottaro.vinculovial.presentation.camera.SecureScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.awaitCameraProviderInternal
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvCircleIconButton
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvTextField
@@ -89,7 +88,6 @@ fun ScanPlateScreen(
     var camera by remember { mutableStateOf<Camera?>(null) }
     var torchOn by remember { mutableStateOf(false) }
 
-    SecureScreen()
     BackHandler(enabled = !uiState.isBusy, onBack = onCancel)
 
     val previewView = remember {

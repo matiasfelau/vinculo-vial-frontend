@@ -87,8 +87,6 @@ fun LivenessCaptureScreen(
     // o el spinner tarde en aparecer.
     val locked = capturing || progress.stage == LivenessStage.PASSED
 
-    SecureScreen()
-
     // Siempre intercepta (no se deshabilita el handler): mientras se puede cancelar, sale
     // directo; una vez en curso la captura, directamente se ignora — no cae al back por
     // defecto de la navegación, que saldría de la pantalla sin avisar.

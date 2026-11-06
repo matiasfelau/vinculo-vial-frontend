@@ -56,7 +56,6 @@ import ar.felaufernandezbottaro.vinculovial.domain.vehicle.LinkVehicleError
 import ar.felaufernandezbottaro.vinculovial.domain.vehicle.QrCedulaScanner
 import ar.felaufernandezbottaro.vinculovial.domain.vehicle.model.CedulaData
 import ar.felaufernandezbottaro.vinculovial.domain.vehicle.model.CedulaScanStage
-import ar.felaufernandezbottaro.vinculovial.presentation.camera.SecureScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.awaitCameraProviderInternal
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.toCameraFrame
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvCircleIconButton
@@ -92,8 +91,6 @@ fun ScanCedulaScreen(
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var torchOn by remember { mutableStateOf(false) }
-
-    SecureScreen()
 
     // Mientras se está publicando el vínculo no tiene sentido dejar que "Atrás" corte la
     // request a mitad de camino.
