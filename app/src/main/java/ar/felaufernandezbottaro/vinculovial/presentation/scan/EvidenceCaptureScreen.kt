@@ -57,7 +57,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import ar.felaufernandezbottaro.vinculovial.data.edge.SecureBitmap
-import ar.felaufernandezbottaro.vinculovial.presentation.camera.SecureScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.awaitCameraProviderInternal
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.captureRawJpegInternal
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvCircleIconButton
@@ -97,7 +96,6 @@ fun EvidenceCaptureScreen(
     val busy = state.phase == EvidencePhase.PROCESSING
     val step = state.currentStep
 
-    SecureScreen()
     BackHandler(enabled = !busy) { showCancelDialog = true }
 
     val previewView = remember {

@@ -116,7 +116,6 @@ fun DocumentScanScreen(
     var camera by remember { mutableStateOf<Camera?>(null) }
     var torchOn by remember { mutableStateOf(false) }
 
-    SecureScreen()
     BackHandler(onBack = onCancel)
 
     val previewView = remember {
