@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material3.AlertDialog
@@ -43,6 +44,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMint
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMuted
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrange
+import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrangeDark
 
 /**
  * Parada temporal tras el login: todavía no existe una Home/Dashboard con identidad propia
@@ -58,6 +60,7 @@ fun SettingsScreen(
     onLinkVehicle: () -> Unit,
     onScanPlate: () -> Unit,
     onOpenInbox: () -> Unit,
+    onDeleteAccount: () -> Unit,
 ) {
     var showLogoutConfirmation by remember { mutableStateOf(false) }
 
@@ -115,6 +118,8 @@ fun SettingsScreen(
                 loading = state.isLoggingOut,
                 onClick = { showLogoutConfirmation = true },
             )
+
+            DeleteAccountRow(enabled = !state.isLoggingOut, onClick = onDeleteAccount)
         }
     }
 
@@ -201,6 +206,31 @@ private fun LogoutRow(enabled: Boolean, loading: Boolean, onClick: () -> Unit) {
     }
 }
 
+/**
+ * Más discreta todavía que [LogoutRow] y apartada de ella: es una acción sin vuelta atrás, no
+ * debe quedar al alcance de un toque distraído. La confirmación real es la pantalla siguiente.
+ */
+@Composable
+private fun DeleteAccountRow(enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(onClick = onClick, enabled = enabled) {
+            Icon(imageVector = Icons.Filled.DeleteForever, contentDescription = null, tint = VvOrangeDark)
+            Text(
+                text = "Eliminar cuenta",
+                style = MaterialTheme.typography.labelLarge,
+                color = VvOrangeDark,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+    }
+}
+
 @Composable
 private fun LogoutConfirmationDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
@@ -226,6 +256,7 @@ private fun SettingsScreenPreview() {
             onLinkVehicle = {},
             onScanPlate = {},
             onOpenInbox = {},
+            onDeleteAccount = {},
         )
     }
 }

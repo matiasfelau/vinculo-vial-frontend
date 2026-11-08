@@ -3,6 +3,7 @@ package ar.felaufernandezbottaro.vinculovial.di
 import android.content.Context
 import android.content.SharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.notifications.PushTokenRepositoryImpl
+import ar.felaufernandezbottaro.vinculovial.data.push.FcmTokenDeletionSource
 import ar.felaufernandezbottaro.vinculovial.data.push.FcmTokenTaskSource
 import ar.felaufernandezbottaro.vinculovial.data.push.FirebaseFcmTokenProvider
 import ar.felaufernandezbottaro.vinculovial.domain.push.FcmTokenProvider
@@ -45,6 +46,12 @@ abstract class PushModule {
         @Singleton
         fun provideFcmTokenTaskSource(): FcmTokenTaskSource =
             FcmTokenTaskSource { FirebaseMessaging.getInstance().token }
+
+        /** Detrás de [FcmTokenDeletionSource] por la misma razón (US-11, baja de cuenta). */
+        @Provides
+        @Singleton
+        fun provideFcmTokenDeletionSource(): FcmTokenDeletionSource =
+            FcmTokenDeletionSource { FirebaseMessaging.getInstance().deleteToken() }
 
         private const val PUSH_PREFS_FILE_NAME = "vinculo_vial_push_tokens"
     }

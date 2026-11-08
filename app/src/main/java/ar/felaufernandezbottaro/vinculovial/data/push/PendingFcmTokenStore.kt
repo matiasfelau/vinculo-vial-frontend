@@ -36,6 +36,15 @@ class PendingFcmTokenStore @Inject constructor(
         prefs.edit().remove(KEY_PENDING_DELETION).apply()
     }
 
+    /**
+     * Baja de cuenta (US-11): ni un registro ni una baja pendientes tienen sentido ya. Una baja
+     * pendiente iría contra una cuenta que no existe, y un registro pendiente le atribuiría al
+     * próximo usuario de este dispositivo un token que se invalida en el mismo paso.
+     */
+    fun clearAll() {
+        prefs.edit().clear().apply()
+    }
+
     private companion object {
         const val KEY_PENDING_REGISTRATION = "pending_registration_token"
         const val KEY_PENDING_DELETION = "pending_deletion_token"

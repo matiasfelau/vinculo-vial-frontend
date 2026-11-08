@@ -2,6 +2,7 @@ package ar.felaufernandezbottaro.vinculovial.di
 
 import com.squareup.moshi.Moshi
 import ar.felaufernandezbottaro.vinculovial.BuildConfig
+import ar.felaufernandezbottaro.vinculovial.data.account.AccountApi
 import ar.felaufernandezbottaro.vinculovial.data.alert.AlertApi
 import ar.felaufernandezbottaro.vinculovial.data.alert.AlertAttemptApi
 import ar.felaufernandezbottaro.vinculovial.data.inbox.InboxApi
@@ -179,6 +180,12 @@ object NetworkModule {
     @Singleton
     fun provideInboxApi(retrofit: Retrofit): InboxApi =
         retrofit.create(InboxApi::class.java)
+
+    /** Mismo cliente que `VehicleApi`: `/users/me` (baja de cuenta) es autenticado por JWT, no por attestation. */
+    @Provides
+    @Singleton
+    fun provideAccountApi(retrofit: Retrofit): AccountApi =
+        retrofit.create(AccountApi::class.java)
 
     /** Mismo cliente que `InboxApi`: `/notifications/tokens` es autenticado por JWT, no por attestation. */
     @Provides

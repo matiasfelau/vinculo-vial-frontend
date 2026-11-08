@@ -23,6 +23,8 @@ import javax.inject.Singleton
  *   contrapartida de seguridad del lado del servidor.
  * - `/alerts/attempts` y `/alerts` (contratos US-05 y US-08): misma decisión de velocidad --
  *   se compensan con Rate Limiting estricto en Kong por `X-User-Id`, no con attestation.
+ * - `/users/me` (contrato US-11, baja de cuenta): sin `app-attestation`, con el mismo criterio
+ *   que las rutas de alertas -- JWT más Rate Limiting de 3/min y 10/h por `X-User-Id`.
  */
 @Singleton
 class AttestationInterceptor @Inject constructor(
@@ -61,6 +63,7 @@ class AttestationInterceptor @Inject constructor(
             "/api/v1/vehicles",
             "/api/v1/alerts/attempts",
             "/api/v1/alerts",
+            "/api/v1/users/me",
         )
     }
 }

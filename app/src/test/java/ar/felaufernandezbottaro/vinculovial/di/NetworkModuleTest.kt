@@ -15,6 +15,7 @@ import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.KeysetHandle
 import com.google.crypto.tink.RegistryConfiguration
 import com.google.crypto.tink.aead.AeadConfig
+import com.squareup.moshi.Moshi
 import kotlinx.coroutines.Dispatchers
 import okhttp3.Authenticator
 import okhttp3.OkHttpClient
@@ -60,7 +61,10 @@ class NetworkModuleTest {
         val aead = KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM"))
             .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
         val store = SecureTokenStore(FakeSharedPreferences(), aead)
-        tokenAuthenticator = TokenAuthenticator(SessionManager(FakeRefreshApi(), store, Dispatchers.Unconfined))
+        tokenAuthenticator = TokenAuthenticator(
+            SessionManager(FakeRefreshApi(), store, Dispatchers.Unconfined),
+            Moshi.Builder().build(),
+        )
     }
 
     private fun authenticatedClient() =

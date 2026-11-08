@@ -11,6 +11,7 @@ import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.KeysetHandle
 import com.google.crypto.tink.RegistryConfiguration
 import com.google.crypto.tink.aead.AeadConfig
+import com.squareup.moshi.Moshi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import okhttp3.MediaType.Companion.toMediaType
@@ -47,7 +48,10 @@ class TokenAuthenticatorTest {
             .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
         tokenStore = SecureTokenStore(FakeSharedPreferences(), aead)
         refreshApi = FakeRefreshApi()
-        authenticator = TokenAuthenticator(SessionManager(refreshApi, tokenStore, UnconfinedTestDispatcher()))
+        authenticator = TokenAuthenticator(
+            SessionManager(refreshApi, tokenStore, UnconfinedTestDispatcher()),
+            Moshi.Builder().build(),
+        )
     }
 
     private fun requestWithBearer(token: String?): Request =
@@ -56,13 +60,13 @@ class TokenAuthenticatorTest {
             .apply { if (token != null) header("Authorization", "Bearer $token") }
             .build()
 
-    private fun unauthorizedResponseTo(request: Request, prior: Response? = null): Response =
+    private fun unauthorizedResponseTo(request: Request, prior: Response? = null, body: String = ""): Response =
         Response.Builder()
             .request(request)
             .protocol(Protocol.HTTP_1_1)
             .code(401)
             .message("Unauthorized")
-            .body("".toResponseBody("application/json".toMediaType()))
+            .body(body.toResponseBody("application/json".toMediaType()))
             .priorResponse(prior)
             .build()
 
@@ -106,6 +110,68 @@ class TokenAuthenticatorTest {
 
         assertNull(retried)
         assertEquals(0, refreshApi.callCount)
+    }
+
+    @Test
+    fun `un 401 INVALID_PASSWORD no refresca ni reintenta, la sesion no esta vencida`() {
+        tokenStore.save(SessionTokens(accessToken = "access-vigente", refreshToken = "refresh-vigente"))
+        val response = unauthorizedResponseTo(
+            requestWithBearer("access-vigente"),
+            body = """{"error":"contraseña incorrecta","code":"INVALID_PASSWORD"}""",
+        )
+
+        val retried = authenticator.authenticate(null, response)
+
+        assertNull(retried)
+        assertEquals(0, refreshApi.callCount)
+        // La sesión sigue intacta: no se la toca.
+        assertEquals("access-vigente", tokenStore.read()?.accessToken)
+    }
+
+    @Test
+    fun `el cuerpo del 401 INVALID_PASSWORD sigue legible despues de que el authenticator lo mira`() {
+        tokenStore.save(SessionTokens(accessToken = "access-vigente", refreshToken = "refresh-vigente"))
+        val raw = """{"error":"contraseña incorrecta","code":"INVALID_PASSWORD"}"""
+        val response = unauthorizedResponseTo(requestWithBearer("access-vigente"), body = raw)
+
+        authenticator.authenticate(null, response)
+
+        // El repositorio todavía tiene que leer el `code` de ese mismo cuerpo.
+        assertEquals(raw, response.body?.string())
+    }
+
+    @Test
+    fun `un 401 con otro code de la aplicacion sigue el camino de siempre y refresca`() {
+        tokenStore.save(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
+        val response = unauthorizedResponseTo(
+            requestWithBearer("access-viejo"),
+            body = """{"error":"otra cosa","code":"OTRO"}""",
+        )
+
+        val retried = authenticator.authenticate(null, response)
+
+        assertEquals("Bearer access-nuevo", retried?.header("Authorization"))
+    }
+
+    @Test
+    fun `un 401 de Kong sin code (token vencido) refresca`() {
+        tokenStore.save(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
+        val response = unauthorizedResponseTo(requestWithBearer("access-viejo"), body = """{"message":"Unauthorized"}""")
+
+        val retried = authenticator.authenticate(null, response)
+
+        assertEquals("Bearer access-nuevo", retried?.header("Authorization"))
+        assertEquals(1, refreshApi.callCount)
+    }
+
+    @Test
+    fun `un cuerpo que no es JSON no impide el refresh`() {
+        tokenStore.save(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
+        val response = unauthorizedResponseTo(requestWithBearer("access-viejo"), body = "<html>401</html>")
+
+        val retried = authenticator.authenticate(null, response)
+
+        assertEquals("Bearer access-nuevo", retried?.header("Authorization"))
     }
 
     @Test
