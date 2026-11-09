@@ -31,7 +31,7 @@ import javax.inject.Singleton
 
 /**
  * Cifra el payload interno contra Identity, lo publica en el Gateway y, ante un 200,
- * persiste el par de tokens que devuelve.
+ * inicia la sesión con el par de tokens que devuelve (en memoria: ver `SecureTokenStore`).
  *
  * Traduce el mundo HTTP a errores de dominio: `presentation` nunca ve un código de estado
  * ni una excepción de red.
@@ -68,7 +68,7 @@ class SignInRepositoryImpl @Inject constructor(
 
             when {
                 response.isSuccessful && body != null -> {
-                    tokenStore.save(SessionTokens(accessToken = body.accessToken, refreshToken = body.refreshToken))
+                    tokenStore.startSession(SessionTokens(accessToken = body.accessToken, refreshToken = body.refreshToken))
                     SignInResult.SignedIn
                 }
                 // 2xx sin cuerpo sería un contrato roto del lado del backend, no algo que la

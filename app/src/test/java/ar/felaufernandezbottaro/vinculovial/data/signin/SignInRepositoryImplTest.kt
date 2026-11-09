@@ -1,6 +1,5 @@
 package ar.felaufernandezbottaro.vinculovial.data.signin
 
-import com.google.crypto.tink.Aead
 import com.google.crypto.tink.HybridDecrypt
 import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.KeysetHandle
@@ -17,6 +16,7 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.MockAttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
 import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
+import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyVault
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.domain.signin.SignInError
@@ -81,9 +81,7 @@ class SignInRepositoryImplTest {
             (identityKeyset.publicKeysetHandle.primary.key as HpkePublicKey).publicKeyBytes.toByteArray(),
         )
 
-        val sessionAead: Aead = KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM"))
-            .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
-        tokenStore = SecureTokenStore(FakeSharedPreferences(), sessionAead)
+        tokenStore = SecureTokenStore(FakeSharedPreferences(), FakeSessionKeyVault())
 
         server = MockWebServer()
         server.start()

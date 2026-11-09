@@ -2,15 +2,11 @@ package ar.felaufernandezbottaro.vinculovial.data.remote.auth
 
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.dto.RefreshResponseDto
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeRefreshApi
+import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyVault
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionManager
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
-import com.google.crypto.tink.Aead
-import com.google.crypto.tink.KeyTemplates
-import com.google.crypto.tink.KeysetHandle
-import com.google.crypto.tink.RegistryConfiguration
-import com.google.crypto.tink.aead.AeadConfig
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -43,10 +39,7 @@ class TokenAuthenticatorTest {
 
     @Before
     fun setUp() {
-        AeadConfig.register()
-        val aead: Aead = KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM"))
-            .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
-        tokenStore = SecureTokenStore(FakeSharedPreferences(), aead)
+        tokenStore = SecureTokenStore(FakeSharedPreferences(), FakeSessionKeyVault())
         refreshApi = FakeRefreshApi()
         authenticator = TokenAuthenticator(
             SessionManager(refreshApi, tokenStore, UnconfinedTestDispatcher()),
@@ -72,7 +65,7 @@ class TokenAuthenticatorTest {
 
     @Test
     fun `401 con refresh exitoso reintenta con el token nuevo`() {
-        tokenStore.save(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
+        tokenStore.startSession(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
         val request = requestWithBearer("access-viejo")
 
         val retried = authenticator.authenticate(null, unauthorizedResponseTo(request))
@@ -83,7 +76,7 @@ class TokenAuthenticatorTest {
 
     @Test
     fun `un refresh rechazado con 403 no reintenta y limpia la sesion`() {
-        tokenStore.save(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
+        tokenStore.startSession(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
         refreshApi.response = errorResponse(403)
         val request = requestWithBearer("access-viejo")
 
@@ -114,7 +107,7 @@ class TokenAuthenticatorTest {
 
     @Test
     fun `un 401 INVALID_PASSWORD no refresca ni reintenta, la sesion no esta vencida`() {
-        tokenStore.save(SessionTokens(accessToken = "access-vigente", refreshToken = "refresh-vigente"))
+        tokenStore.startSession(SessionTokens(accessToken = "access-vigente", refreshToken = "refresh-vigente"))
         val response = unauthorizedResponseTo(
             requestWithBearer("access-vigente"),
             body = """{"error":"contraseña incorrecta","code":"INVALID_PASSWORD"}""",
@@ -130,7 +123,7 @@ class TokenAuthenticatorTest {
 
     @Test
     fun `el cuerpo del 401 INVALID_PASSWORD sigue legible despues de que el authenticator lo mira`() {
-        tokenStore.save(SessionTokens(accessToken = "access-vigente", refreshToken = "refresh-vigente"))
+        tokenStore.startSession(SessionTokens(accessToken = "access-vigente", refreshToken = "refresh-vigente"))
         val raw = """{"error":"contraseña incorrecta","code":"INVALID_PASSWORD"}"""
         val response = unauthorizedResponseTo(requestWithBearer("access-vigente"), body = raw)
 
@@ -142,7 +135,7 @@ class TokenAuthenticatorTest {
 
     @Test
     fun `un 401 con otro code de la aplicacion sigue el camino de siempre y refresca`() {
-        tokenStore.save(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
+        tokenStore.startSession(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
         val response = unauthorizedResponseTo(
             requestWithBearer("access-viejo"),
             body = """{"error":"otra cosa","code":"OTRO"}""",
@@ -155,7 +148,7 @@ class TokenAuthenticatorTest {
 
     @Test
     fun `un 401 de Kong sin code (token vencido) refresca`() {
-        tokenStore.save(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
+        tokenStore.startSession(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
         val response = unauthorizedResponseTo(requestWithBearer("access-viejo"), body = """{"message":"Unauthorized"}""")
 
         val retried = authenticator.authenticate(null, response)
@@ -166,7 +159,7 @@ class TokenAuthenticatorTest {
 
     @Test
     fun `un cuerpo que no es JSON no impide el refresh`() {
-        tokenStore.save(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
+        tokenStore.startSession(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
         val response = unauthorizedResponseTo(requestWithBearer("access-viejo"), body = "<html>401</html>")
 
         val retried = authenticator.authenticate(null, response)
@@ -176,7 +169,7 @@ class TokenAuthenticatorTest {
 
     @Test
     fun `no reintenta una segunda vez si el reintento tambien vuelve 401`() {
-        tokenStore.save(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
+        tokenStore.startSession(SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo"))
         // OkHttp exige que un priorResponse no tenga cuerpo (se descarta al encadenarlo).
         val firstResponse = unauthorizedResponseTo(requestWithBearer("access-viejo")).newBuilder().body(null).build()
         val secondResponse = unauthorizedResponseTo(requestWithBearer("access-nuevo"), prior = firstResponse)

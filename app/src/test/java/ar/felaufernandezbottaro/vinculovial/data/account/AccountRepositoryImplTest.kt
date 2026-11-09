@@ -1,16 +1,12 @@
 package ar.felaufernandezbottaro.vinculovial.data.account
 
 import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
+import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyVault
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
 import ar.felaufernandezbottaro.vinculovial.domain.account.DeleteAccountError
 import ar.felaufernandezbottaro.vinculovial.domain.account.DeleteAccountResult
-import com.google.crypto.tink.Aead
-import com.google.crypto.tink.KeyTemplates
-import com.google.crypto.tink.KeysetHandle
-import com.google.crypto.tink.RegistryConfiguration
-import com.google.crypto.tink.aead.AeadConfig
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,11 +33,8 @@ class AccountRepositoryImplTest {
 
     @Before
     fun setUp() {
-        AeadConfig.register()
-        val aead: Aead = KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM"))
-            .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
-        tokenStore = SecureTokenStore(FakeSharedPreferences(), aead)
-        tokenStore.save(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
+        tokenStore = SecureTokenStore(FakeSharedPreferences(), FakeSessionKeyVault())
+        tokenStore.startSession(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
         api = FakeAccountApi()
     }
 
@@ -120,7 +113,7 @@ class AccountRepositoryImplTest {
         listOf("", "no es json").forEach { body ->
             api.response = errorResponse(401, body)
             api.onCall = { tokenStore.clear() }
-            tokenStore.save(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
+            tokenStore.startSession(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
 
             assertEquals(
                 "cuerpo '$body'",

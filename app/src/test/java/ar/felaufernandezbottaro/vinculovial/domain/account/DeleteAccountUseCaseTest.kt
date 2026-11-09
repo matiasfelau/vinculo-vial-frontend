@@ -3,10 +3,10 @@ package ar.felaufernandezbottaro.vinculovial.domain.account
 import ar.felaufernandezbottaro.vinculovial.data.account.LocalAccountDataEraserImpl
 import ar.felaufernandezbottaro.vinculovial.data.push.PendingFcmTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeRefreshApi
-import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyProvisioner
+import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyVault
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
-import ar.felaufernandezbottaro.vinculovial.data.session.SessionAead
+import ar.felaufernandezbottaro.vinculovial.data.session.SessionState
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionManager
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
 import ar.felaufernandezbottaro.vinculovial.domain.push.FakeFcmTokenProvider
@@ -108,18 +108,17 @@ class DeleteAccountUseCaseTest {
     /** Las piezas reales de la limpieza, sólo el Keystore y Firebase sustituidos. */
     @Test
     fun `ante un 204 la limpieza local es completa`() = runTest {
-        val provisioner = FakeSessionKeyProvisioner()
+        val vault = FakeSessionKeyVault()
         val sessionPrefs = FakeSharedPreferences()
-        val sessionAead = SessionAead(provisioner)
-        val tokenStore = SecureTokenStore(sessionPrefs, sessionAead)
-        tokenStore.save(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
+        val tokenStore = SecureTokenStore(sessionPrefs, vault)
+        tokenStore.startSession(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
+        assertTrue(tokenStore.enableBiometric())
         val fcmTokenProvider = FakeFcmTokenProvider()
         val pendingStore = PendingFcmTokenStore(FakeSharedPreferences())
         pendingStore.savePendingRegistration("fcm-por-registrar")
         pendingStore.savePendingDeletion("fcm-por-borrar")
         val realEraser = LocalAccountDataEraserImpl(
             sessionManager = SessionManager(FakeRefreshApi(), tokenStore, UnconfinedTestDispatcher()),
-            sessionAead = sessionAead,
             fcmTokenProvider = fcmTokenProvider,
             pendingFcmTokenStore = pendingStore,
         )
@@ -128,8 +127,9 @@ class DeleteAccountUseCaseTest {
         DeleteAccountUseCase(repository, realEraser)("mi-clave")
 
         assertNull("tokens de sesión", tokenStore.read())
-        assertFalse("sessionState", tokenStore.sessionState.value)
-        assertFalse("clave de Keystore", provisioner.hasPersistedKey)
+        assertEquals("sessionState", SessionState.NONE, tokenStore.sessionState.value)
+        assertNull("blob biométrico", tokenStore.readWrappedRefresh())
+        assertFalse("clave de Keystore", vault.hasKey)
         assertEquals("token FCM invalidado", 1, fcmTokenProvider.deleteCallCount)
         assertNull("alta FCM pendiente", pendingStore.readPendingRegistration())
         assertNull("baja FCM pendiente", pendingStore.readPendingDeletion())
@@ -137,16 +137,15 @@ class DeleteAccountUseCaseTest {
 
     @Test
     fun `ante un fallo la sesion, las claves y los tokens FCM quedan intactos`() = runTest {
-        val provisioner = FakeSessionKeyProvisioner()
-        val sessionAead = SessionAead(provisioner)
-        val tokenStore = SecureTokenStore(FakeSharedPreferences(), sessionAead)
-        tokenStore.save(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
+        val vault = FakeSessionKeyVault()
+        val tokenStore = SecureTokenStore(FakeSharedPreferences(), vault)
+        tokenStore.startSession(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
+        assertTrue(tokenStore.enableBiometric())
         val fcmTokenProvider = FakeFcmTokenProvider()
         val pendingStore = PendingFcmTokenStore(FakeSharedPreferences())
         pendingStore.savePendingRegistration("fcm-por-registrar")
         val realEraser = LocalAccountDataEraserImpl(
             sessionManager = SessionManager(FakeRefreshApi(), tokenStore, UnconfinedTestDispatcher()),
-            sessionAead = sessionAead,
             fcmTokenProvider = fcmTokenProvider,
             pendingFcmTokenStore = pendingStore,
         )
@@ -155,7 +154,7 @@ class DeleteAccountUseCaseTest {
         DeleteAccountUseCase(repository, realEraser)("mala")
 
         assertNotNull("tokens de sesión", tokenStore.read())
-        assertTrue("clave de Keystore", provisioner.hasPersistedKey)
+        assertTrue("clave de Keystore", vault.hasKey)
         assertEquals("token FCM", 0, fcmTokenProvider.deleteCallCount)
         assertEquals("alta FCM pendiente", "fcm-por-registrar", pendingStore.readPendingRegistration())
     }

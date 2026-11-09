@@ -2,13 +2,13 @@ package ar.felaufernandezbottaro.vinculovial.data.vehicle
 
 import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
+import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyVault
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
 import ar.felaufernandezbottaro.vinculovial.domain.vehicle.LinkVehicleError
 import ar.felaufernandezbottaro.vinculovial.domain.vehicle.LinkVehicleResult
 import ar.felaufernandezbottaro.vinculovial.domain.vehicle.model.CedulaData
-import com.google.crypto.tink.Aead
 import com.google.crypto.tink.HybridDecrypt
 import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.KeysetHandle
@@ -54,10 +54,8 @@ class VehicleRepositoryImplTest {
     fun setUp() {
         HybridConfig.register()
         AeadConfig.register()
-        val aead: Aead = KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM"))
-            .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
-        tokenStore = SecureTokenStore(FakeSharedPreferences(), aead)
-        tokenStore.save(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
+        tokenStore = SecureTokenStore(FakeSharedPreferences(), FakeSessionKeyVault())
+        tokenStore.startSession(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
         api = FakeVehicleApi()
     }
 

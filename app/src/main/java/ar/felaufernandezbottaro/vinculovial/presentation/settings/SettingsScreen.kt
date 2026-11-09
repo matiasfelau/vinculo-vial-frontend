@@ -24,6 +24,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,7 +39,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.Fingerprint
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvBottomBar
+import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionTexts
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VinculoVialTheme
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMint
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMuted
@@ -61,6 +64,9 @@ fun SettingsScreen(
     onScanPlate: () -> Unit,
     onOpenInbox: () -> Unit,
     onDeleteAccount: () -> Unit,
+    onBiometricToggle: (Boolean) -> Unit,
+    onBiometricOfferDismissed: () -> Unit,
+    onBiometricActivationFailureDismissed: () -> Unit,
 ) {
     var showLogoutConfirmation by remember { mutableStateOf(false) }
 
@@ -113,6 +119,14 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(8.dp))
 
+            if (state.isBiometricAvailable) {
+                BiometricRow(
+                    checked = state.isBiometricEnabled,
+                    enabled = !state.isLoggingOut,
+                    onCheckedChange = onBiometricToggle,
+                )
+            }
+
             LogoutRow(
                 enabled = !state.isLoggingOut,
                 loading = state.isLoggingOut,
@@ -121,6 +135,25 @@ fun SettingsScreen(
 
             DeleteAccountRow(enabled = !state.isLoggingOut, onClick = onDeleteAccount)
         }
+    }
+
+    if (state.showBiometricOffer) {
+        BiometricOfferDialog(
+            onAccept = { onBiometricToggle(true) },
+            onDismiss = onBiometricOfferDismissed,
+        )
+    }
+
+    if (state.biometricActivationFailed) {
+        AlertDialog(
+            onDismissRequest = onBiometricActivationFailureDismissed,
+            text = { Text(SessionTexts.ACTIVATION_FAILED) },
+            confirmButton = {
+                TextButton(onClick = onBiometricActivationFailureDismissed) {
+                    Text(SessionTexts.ACTIVATION_FAILED_DISMISS, color = VvNavy)
+                }
+            },
+        )
     }
 
     if (showLogoutConfirmation) {
@@ -175,6 +208,41 @@ private fun HomeActionCard(
             )
         }
     }
+}
+
+/** El interruptor del desbloqueo con huella (US-12): activarlo envuelve el refresh actual; apagarlo borra blob y clave. */
+@Composable
+private fun BiometricRow(checked: Boolean, enabled: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(imageVector = Icons.Filled.Fingerprint, contentDescription = null, tint = VvNavy)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = SessionTexts.SETTING_TITLE, style = MaterialTheme.typography.labelLarge, color = VvNavy)
+            Text(text = SessionTexts.SETTING_SUBTITLE, style = MaterialTheme.typography.bodyMedium, color = VvMuted)
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
+}
+
+/** Se ofrece una vez por login con contraseña, cuando hay biometría fuerte enrolada y no está activada. */
+@Composable
+private fun BiometricOfferDialog(onAccept: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(SessionTexts.OFFER_TITLE) },
+        text = { Text(SessionTexts.OFFER_TEXT) },
+        confirmButton = {
+            TextButton(onClick = onAccept) { Text(SessionTexts.OFFER_ACCEPT, color = VvNavy) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(SessionTexts.OFFER_DISMISS, color = VvMuted) }
+        },
+    )
 }
 
 /**
@@ -257,6 +325,9 @@ private fun SettingsScreenPreview() {
             onScanPlate = {},
             onOpenInbox = {},
             onDeleteAccount = {},
+            onBiometricToggle = {},
+            onBiometricOfferDismissed = {},
+            onBiometricActivationFailureDismissed = {},
         )
     }
 }

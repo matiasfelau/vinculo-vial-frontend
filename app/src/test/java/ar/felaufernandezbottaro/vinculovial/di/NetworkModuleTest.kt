@@ -7,14 +7,10 @@ import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerIntercepto
 import ar.felaufernandezbottaro.vinculovial.data.remote.NetworkTimeouts
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.TokenAuthenticator
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeRefreshApi
+import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyVault
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionManager
-import com.google.crypto.tink.Aead
-import com.google.crypto.tink.KeyTemplates
-import com.google.crypto.tink.KeysetHandle
-import com.google.crypto.tink.RegistryConfiguration
-import com.google.crypto.tink.aead.AeadConfig
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.Dispatchers
 import okhttp3.Authenticator
@@ -57,10 +53,7 @@ class NetworkModuleTest {
 
     @Before
     fun setUp() {
-        AeadConfig.register()
-        val aead = KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM"))
-            .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
-        val store = SecureTokenStore(FakeSharedPreferences(), aead)
+        val store = SecureTokenStore(FakeSharedPreferences(), FakeSessionKeyVault())
         tokenAuthenticator = TokenAuthenticator(
             SessionManager(FakeRefreshApi(), store, Dispatchers.Unconfined),
             Moshi.Builder().build(),

@@ -9,6 +9,9 @@ import ar.felaufernandezbottaro.vinculovial.presentation.navigation.Route
  * que uno conocido, nunca una excepción. El chat concreto lo abre después el buzón, cuando ya
  * tiene la alerta cargada.
  *
+ * [hasSession] es "la sesión está desbloqueada": con la app bloqueada (US-12) el plan es vacío, el
+ * push queda pendiente y se aplica recién cuando el desbloqueo termina.
+ *
  * La Bandeja de Entrada nunca queda sola en el stack: siempre va precedida por Settings, el
  * home temporal de la app -- así "atrás" lleva ahí, nunca cierra la app.
  */

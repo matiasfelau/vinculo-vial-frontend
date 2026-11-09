@@ -1,5 +1,6 @@
 package ar.felaufernandezbottaro.vinculovial.data.push
 
+import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyVault
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
@@ -11,11 +12,6 @@ import ar.felaufernandezbottaro.vinculovial.domain.push.FakePushTokenRepository
 import ar.felaufernandezbottaro.vinculovial.domain.push.SyncFcmTokenError
 import ar.felaufernandezbottaro.vinculovial.domain.push.SyncFcmTokenResult
 import ar.felaufernandezbottaro.vinculovial.domain.push.SyncFcmTokenUseCase
-import com.google.crypto.tink.Aead
-import com.google.crypto.tink.KeyTemplates
-import com.google.crypto.tink.KeysetHandle
-import com.google.crypto.tink.RegistryConfiguration
-import com.google.crypto.tink.aead.AeadConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -44,10 +40,7 @@ class TokenSyncManagerTest {
 
     @Before
     fun setUp() {
-        AeadConfig.register()
-        val aead: Aead = KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM"))
-            .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
-        tokenStore = SecureTokenStore(FakeSharedPreferences(), aead)
+        tokenStore = SecureTokenStore(FakeSharedPreferences(), FakeSessionKeyVault())
         pendingStore = PendingFcmTokenStore(FakeSharedPreferences())
         repository = FakePushTokenRepository()
         fcmTokenProvider = FakeFcmTokenProvider()
@@ -64,7 +57,7 @@ class TokenSyncManagerTest {
 
     @Test
     fun `arranque con sesion activa sincroniza el token vigente`() = runTest {
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
         fcmTokenProvider.token = "fcm-arranque"
 
         manager()
@@ -84,7 +77,7 @@ class TokenSyncManagerTest {
         manager()
         fcmTokenProvider.token = "fcm-login"
 
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
 
         assertEquals(listOf("fcm-login"), repository.registeredTokens)
     }
@@ -101,7 +94,7 @@ class TokenSyncManagerTest {
 
     @Test
     fun `onNewToken con sesion activa sincroniza el token nuevo`() {
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
         val syncManager = manager()
         // El arranque con sesión activa ya generó un POST con el token por defecto del fake;
         // esto aísla que la rotación posterior dispara uno propio, con el token nuevo.
@@ -117,7 +110,7 @@ class TokenSyncManagerTest {
     @Test
     fun `un registro fallido deja el token pendiente para el proximo intento`() {
         repository.registerResult = SyncFcmTokenResult.Failed(SyncFcmTokenError.Network)
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
 
         manager()
 
@@ -126,7 +119,7 @@ class TokenSyncManagerTest {
 
     @Test
     fun `un registro exitoso limpia el token pendiente`() {
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
 
         manager()
 
@@ -136,7 +129,7 @@ class TokenSyncManagerTest {
     @Test
     fun `el token pendiente se reintenta en la siguiente sincronizacion, no se pierde`() {
         pendingStore.savePendingRegistration("fcm-pendiente-de-antes")
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
         fcmTokenProvider.token = "fcm-otro-distinto"
 
         // Simula el próximo arranque: una instancia nueva del manager sobre el mismo store.
@@ -148,7 +141,7 @@ class TokenSyncManagerTest {
     @Test
     fun `una baja pendiente de un logout se reintenta en el siguiente arranque con sesion activa`() {
         pendingStore.savePendingDeletion("fcm-a-borrar")
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
 
         // Simula el próximo arranque: una instancia nueva del manager sobre el mismo store.
         manager()
@@ -161,7 +154,7 @@ class TokenSyncManagerTest {
     fun `una baja pendiente que vuelve a fallar sigue pendiente`() {
         repository.deleteResult = DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Network)
         pendingStore.savePendingDeletion("fcm-a-borrar")
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
 
         manager()
 
