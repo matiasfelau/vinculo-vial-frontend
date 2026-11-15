@@ -2,11 +2,12 @@ package ar.felaufernandezbottaro.vinculovial
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.fragment.app.FragmentActivity
+import ar.felaufernandezbottaro.vinculovial.data.session.SessionLockCoordinator
 import ar.felaufernandezbottaro.vinculovial.data.push.EXTRA_ALERT_ID
 import ar.felaufernandezbottaro.vinculovial.data.push.EXTRA_ALERT_TYPE
 import ar.felaufernandezbottaro.vinculovial.data.push.EXTRA_PUSH_TYPE
@@ -15,9 +16,12 @@ import ar.felaufernandezbottaro.vinculovial.presentation.push.PushTarget
 import ar.felaufernandezbottaro.vinculovial.presentation.push.parsePushTarget
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VinculoVialTheme
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+
+    @Inject lateinit var sessionLockCoordinator: SessionLockCoordinator
 
     private var pendingPush by mutableStateOf<PushTarget?>(null)
 
@@ -34,6 +38,15 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    /**
+     * US-12: si la Activity termina de verdad (se cerró la app, no se giró la pantalla), la sesión
+     * se bloquea. Con la biometría activada queda LOCKED; sin ella se cierra en el servidor.
+     */
+    override fun onDestroy() {
+        if (isFinishing && !isChangingConfigurations) sessionLockCoordinator.onActivityFinished()
+        super.onDestroy()
     }
 
     /**

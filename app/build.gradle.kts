@@ -96,6 +96,14 @@ android {
         buildConfigField("long", "CIRCUIT_BREAKER_WINDOW_MS", config("CIRCUIT_BREAKER_WINDOW_MS", "60000") + "L")
         buildConfigField("long", "CIRCUIT_BREAKER_OPEN_MS", config("CIRCUIT_BREAKER_OPEN_MS", "30000") + "L")
 
+        // US-12: tiempo en segundo plano a partir del cual la sesión se bloquea al volver a
+        // primer plano (ver SessionLockCoordinator). Configurable por local.properties.
+        buildConfigField(
+            "long",
+            "SESSION_LOCK_AFTER_BACKGROUND_SECONDS",
+            config("SESSION_LOCK_AFTER_BACKGROUND_SECONDS", "300") + "L",
+        )
+
         // Pivote RENAPER-Ready: ya no hay umbral de similitud coseno ni modelo .tflite que
         // configurar acá — la verificación de identidad (comparar la selfie contra el
         // documento) se movió al backend, contra el padrón del Estado. FACE_MATCH_THRESHOLD
@@ -179,6 +187,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.process)
+    implementation(libs.androidx.biometric)
     implementation(libs.androidx.activity.compose)
 
     implementation(platform(libs.androidx.compose.bom))

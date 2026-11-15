@@ -2,6 +2,8 @@ package ar.felaufernandezbottaro.vinculovial.presentation.signin
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import ar.felaufernandezbottaro.vinculovial.domain.session.LoginNotice
+import ar.felaufernandezbottaro.vinculovial.domain.session.LoginNoticeStore
 import ar.felaufernandezbottaro.vinculovial.domain.signin.SignInResult
 import ar.felaufernandezbottaro.vinculovial.domain.signin.SignInUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.signin.model.SignInField
@@ -24,10 +26,17 @@ import javax.inject.Inject
 @HiltViewModel
 class SignInViewModel @Inject constructor(
     private val signIn: SignInUseCase,
+    private val loginNotice: LoginNoticeStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SignInUiState())
     val uiState: StateFlow<SignInUiState> = _uiState.asStateFlow()
+
+    /**
+     * Por qué se llegó a Login sin pedirlo (sesión vencida, huellas cambiadas), si corresponde.
+     * Sobrevive a escribir en el formulario y se descarta al intentar entrar.
+     */
+    val notice: StateFlow<LoginNotice?> = loginNotice.notice
 
     /** Barrera sincrónica contra un doble tap en "Iniciar sesión". Ver [submit]. */
     private val submitInFlight = AtomicBoolean(false)
@@ -53,6 +62,8 @@ class SignInViewModel @Inject constructor(
         // Misma barrera sincrónica que SignUpViewModel.submit(): compareAndSet corta un
         // doble tap antes de que la recomposición refleje isSubmitting = true.
         if (!submitInFlight.compareAndSet(false, true)) return
+
+        loginNotice.clear()
 
         viewModelScope.launch {
             try {

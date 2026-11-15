@@ -1,6 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.data.push
 
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
+import ar.felaufernandezbottaro.vinculovial.data.session.SessionState
 import ar.felaufernandezbottaro.vinculovial.di.ApplicationScope
 import ar.felaufernandezbottaro.vinculovial.domain.push.DeleteFcmTokenResult
 import ar.felaufernandezbottaro.vinculovial.domain.push.DeleteFcmTokenUseCase
@@ -17,9 +18,13 @@ import javax.inject.Singleton
  * Orquesta los tres momentos de sincronización del token FCM (ver CLAUDE.md), pero sólo expone
  * dos entradas: `sessionState` de [SecureTokenStore] ya cubre "login exitoso" y "arranque con
  * sesión activa" con un único mecanismo reactivo -- es un `StateFlow`, así que el primer
- * colector recibe el valor vigente al suscribirse (arranque) y cada transición posterior de
- * `false` a `true` (login). Un refresh de token no dispara una re-sincronización espuria
- * porque `save()` deja el valor en `true` de nuevo y `StateFlow` sólo emite ante un cambio real.
+ * colector recibe el valor vigente al suscribirse (arranque) y cada transición posterior a
+ * `UNLOCKED` (login o desbloqueo). Un refresh de token no dispara una re-sincronización
+ * espuria porque `rotate()` deja el valor en `UNLOCKED` de nuevo y `StateFlow` sólo emite ante
+ * un cambio real.
+ *
+ * Con la sesión bloqueada (US-12) no hay access token, así que el trabajo en segundo plano que
+ * lo necesita queda diferido hasta `UNLOCKED`: sólo ese estado dispara la sincronización.
  *
  * `onTokenRotated` sigue siendo un método aparte: `onNewToken` es un evento propio de Firebase
  * que no encaja en ese stream.
@@ -39,7 +44,7 @@ class TokenSyncManager @Inject constructor(
 
     init {
         scope.launch {
-            tokenStore.sessionState.filter { it }.collect { syncCurrentToken() }
+            tokenStore.sessionState.filter { it == SessionState.UNLOCKED }.collect { syncCurrentToken() }
         }
     }
 

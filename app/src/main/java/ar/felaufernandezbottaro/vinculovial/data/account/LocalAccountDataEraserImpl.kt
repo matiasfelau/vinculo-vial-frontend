@@ -2,7 +2,6 @@ package ar.felaufernandezbottaro.vinculovial.data.account
 
 import android.util.Log
 import ar.felaufernandezbottaro.vinculovial.data.push.PendingFcmTokenStore
-import ar.felaufernandezbottaro.vinculovial.data.session.SessionAead
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionManager
 import ar.felaufernandezbottaro.vinculovial.domain.account.LocalAccountDataEraser
 import ar.felaufernandezbottaro.vinculovial.domain.push.FcmTokenProvider
@@ -12,7 +11,8 @@ import javax.inject.Singleton
 
 /**
  * Lo que la app guarda del usuario en el dispositivo, y que la baja de cuenta (US-11) borra:
- * - los tokens de sesión y las claves de Keystore que los cifraban;
+ * - la sesión: los tokens en memoria y, si la biometría estaba activada, el blob del refresh
+ *   token y la clave del Keystore que lo envolvía;
  * - el token FCM del dispositivo, y los pendientes de alta o baja.
  *
  * Del buzón no hay nada que borrar acá: la app no lo guarda en disco ni en caché (las alertas
@@ -26,15 +26,15 @@ import javax.inject.Singleton
 @Singleton
 class LocalAccountDataEraserImpl @Inject constructor(
     private val sessionManager: SessionManager,
-    private val sessionAead: SessionAead,
     private val fcmTokenProvider: FcmTokenProvider,
     private val pendingFcmTokenStore: PendingFcmTokenStore,
 ) : LocalAccountDataEraser {
 
     override suspend fun eraseAll() {
-        // Los tokens se borran primero y sin depender de nada más: es lo que saca al usuario de
-        // la sesión. Las claves se destruyen dentro del mismo lock, ver SessionManager.
-        step("sesion") { sessionManager.clearSessionForAccountDeletion(sessionAead::destroyKeys) }
+        // La sesión se borra primero y sin depender de nada más: es lo que saca al usuario de
+        // ella. Los tokens, el blob y la clave biométrica se borran dentro del mismo lock, ver
+        // SessionManager.
+        step("sesion") { sessionManager.clearSessionForAccountDeletion() }
         step("token fcm") {
             if (!fcmTokenProvider.deleteCurrentToken()) Log.w(TAG, "No se pudo invalidar el token FCM")
         }
