@@ -17,7 +17,12 @@ data class SignUpUiState(
     val completedCaptures: Set<CaptureTarget> = emptySet(),
     val capturing: CaptureTarget? = null,
     val status: SignUpStatus = SignUpStatus.Idle,
+    /** Email cuya propiedad ya se confirmó con el código (US-13). El token en sí no está acá. */
+    val verifiedEmail: String? = null,
 ) {
+    /** El email del formulario es el que se verificó: se puede seguir sin volver a pedir el código. */
+    val isEmailVerified: Boolean get() = verifiedEmail != null && verifiedEmail == form.email.trim()
+
     val isSubmitting: Boolean get() = status is SignUpStatus.Submitting
 
     val isBusy: Boolean get() = isSubmitting || capturing != null

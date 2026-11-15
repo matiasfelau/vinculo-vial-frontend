@@ -209,7 +209,7 @@ private fun TermsAndConditionsDialog(onDismiss: () -> Unit) {
     )
 }
 
-private fun passwordErrorText(problem: CredentialProblem?, password: String): String? = when (problem) {
+internal fun passwordErrorText(problem: CredentialProblem?, password: String): String? = when (problem) {
     null -> null
     CredentialProblem.REQUIRED -> problem.message()
     else -> CredentialRules.unmetPasswordRequirements(password).message()

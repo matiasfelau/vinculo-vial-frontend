@@ -15,6 +15,7 @@ captures/
 !debug.keystore
 CLAUDE.md
 .clauderules
+clauderules
 CONTRATO-*.md
 *.log
 

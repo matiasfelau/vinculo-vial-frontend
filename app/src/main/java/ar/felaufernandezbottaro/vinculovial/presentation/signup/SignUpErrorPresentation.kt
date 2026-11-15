@@ -12,6 +12,9 @@ enum class SignUpErrorAction {
     /** Volver al formulario a corregir datos. */
     EDIT_FORM,
 
+    /** Volver a verificar el email (el token venció o no corresponde). */
+    VERIFY_EMAIL,
+
     /** Sólo cerrar: no hay nada que el usuario pueda corregir ahora. */
     DISMISS,
 }
@@ -90,6 +93,15 @@ fun SignUpError.presentation(): SignUpErrorPresentation = when (this) {
         message = "Volvé a escanear el DNI y a sacarte la selfie, con buena luz y de frente a " +
             "la cámara.",
         action = SignUpErrorAction.RETRY_CAPTURE,
+    )
+
+    // El token de verificación dura un rato: si venció mientras se hacía la captura, se verifica
+    // de nuevo. No es un error del usuario, así que el texto no acusa.
+    SignUpError.EmailNotVerified -> SignUpErrorPresentation(
+        title = "Verificá tu email de nuevo",
+        message = "La verificación de tu email venció o no corresponde a este registro. " +
+            "Pedí un código nuevo y volvé a intentar.",
+        action = SignUpErrorAction.VERIFY_EMAIL,
     )
 
     SignUpError.AttestationRejected -> SignUpErrorPresentation(

@@ -104,6 +104,10 @@ android {
             config("SESSION_LOCK_AFTER_BACKGROUND_SECONDS", "300") + "L",
         )
 
+        // US-13: cuenta regresiva del botón "Reenviar" del código por email. Tiene que coincidir con
+        // EMAIL_CODE_RESEND_SECONDS de Identity, que es quien aplica el throttle de verdad.
+        buildConfigField("int", "EMAIL_CODE_RESEND_SECONDS", config("EMAIL_CODE_RESEND_SECONDS", "60"))
+
         // Pivote RENAPER-Ready: ya no hay umbral de similitud coseno ni modelo .tflite que
         // configurar acá — la verificación de identidad (comparar la selfie contra el
         // documento) se movió al backend, contra el padrón del Estado. FACE_MATCH_THRESHOLD

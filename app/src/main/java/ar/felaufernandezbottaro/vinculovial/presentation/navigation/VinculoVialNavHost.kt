@@ -32,6 +32,12 @@ import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxTab
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.push.NotificationPermissionRequester
+import ar.felaufernandezbottaro.vinculovial.presentation.recovery.RecoveryCodeScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.recovery.RecoveryDniScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.recovery.RecoveryDoneScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.recovery.RecoveryEvent
+import ar.felaufernandezbottaro.vinculovial.presentation.recovery.RecoveryPasswordScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.recovery.RecoveryViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.push.PushTarget
 import ar.felaufernandezbottaro.vinculovial.presentation.push.planPushNavigation
 import ar.felaufernandezbottaro.vinculovial.presentation.sent.SentChatScreen
@@ -52,6 +58,9 @@ import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpFormScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpStatus
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpSuccessScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signup.SignUpViewModel
+import ar.felaufernandezbottaro.vinculovial.presentation.signup.VerifyEmailEvent
+import ar.felaufernandezbottaro.vinculovial.presentation.signup.VerifyEmailScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.signup.VerifyEmailViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.EvidenceCaptureScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.EvidencePhase
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.ReportChatScreen
@@ -72,12 +81,21 @@ object Route {
     const val DELETE_ACCOUNT = "settings/delete-account"
     const val SIGN_UP_GRAPH = "signup"
     const val SIGN_UP_FORM = "signup/form"
+    const val SIGN_UP_VERIFY_EMAIL = "signup/verify-email"
     const val SIGN_UP_CONSENT = "signup/consent"
     const val SIGN_UP_CAPTURE = "signup/capture"
     const val SIGN_UP_SUCCESS = "signup/success"
 
     const val SIGN_UP_DOCUMENT_SCAN = "signup/document-scan"
     const val SIGN_UP_LIVENESS = "signup/liveness"
+
+    const val RECOVERY_GRAPH = "recovery"
+    const val RECOVERY_DNI = "recovery/dni"
+    const val RECOVERY_CODE = "recovery/code"
+    const val RECOVERY_PASSWORD = "recovery/password"
+    const val RECOVERY_DOCUMENT_SCAN = "recovery/document-scan"
+    const val RECOVERY_LIVENESS = "recovery/liveness"
+    const val RECOVERY_DONE = "recovery/done"
 
     const val LINK_VEHICLE = "vehicle/link"
 
@@ -193,6 +211,7 @@ fun VinculoVialNavHost(
                 onPasswordChange = viewModel::onPasswordChange,
                 onSubmit = viewModel::submit,
                 onGoToSignUp = { navController.navigate(Route.SIGN_UP_GRAPH) },
+                onForgotPassword = { navController.navigate(Route.RECOVERY_GRAPH) },
             )
         }
 
@@ -511,9 +530,46 @@ fun VinculoVialNavHost(
                     onPasswordChange = viewModel::onPasswordChange,
                     onPasswordConfirmationChange = viewModel::onPasswordConfirmationChange,
                     onValidateIdentity = {
-                        if (viewModel.validateForm()) navController.navigate(Route.SIGN_UP_CONSENT)
+                        if (viewModel.validateForm()) {
+                            // Con el email ya verificado (volvió atrás sin tocarlo) no se pide otro código.
+                            val next = if (state.isEmailVerified) Route.SIGN_UP_CONSENT else Route.SIGN_UP_VERIFY_EMAIL
+                            navController.navigate(next)
+                        }
                     },
                     onGoToLogin = { navController.navigate(Route.SIGN_IN) },
+                )
+            }
+
+            composable(Route.SIGN_UP_VERIFY_EMAIL) { entry ->
+                val signUpViewModel = entry.sharedSignUpViewModel(navController)
+                val signUpState by signUpViewModel.uiState.collectAsStateWithLifecycle()
+                val viewModel = hiltViewModel<VerifyEmailViewModel>(entry)
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+                // Pide el código al email del formulario; con el mismo email no vuelve a pedir otro.
+                LaunchedEffect(signUpState.form.email) { viewModel.start(signUpState.form.email) }
+
+                // El token pasa al SignUpViewModel, que lo guarda sólo en memoria. Se sigue al
+                // consentimiento sacando esta pantalla del stack: atrás vuelve al formulario.
+                LaunchedEffect(viewModel) {
+                    viewModel.events.collect { event ->
+                        when (event) {
+                            is VerifyEmailEvent.Verified -> {
+                                signUpViewModel.onEmailVerified(event.email, event.token)
+                                navController.navigate(Route.SIGN_UP_CONSENT) {
+                                    popUpTo(Route.SIGN_UP_VERIFY_EMAIL) { inclusive = true }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                VerifyEmailScreen(
+                    state = state,
+                    onCodeChange = viewModel::onCodeChange,
+                    onConfirm = viewModel::confirm,
+                    onResend = viewModel::resend,
+                    onBack = { navController.popBackStack() },
                 )
             }
 
@@ -555,6 +611,14 @@ fun VinculoVialNavHost(
                     onEditForm = {
                         viewModel.onErrorDismissed()
                         navController.popBackStack(Route.SIGN_UP_FORM, inclusive = false)
+                    },
+                    // EMAIL_NOT_VERIFIED: el token venció o no corresponde. Se vuelve a verificar el
+                    // email sobre el formulario, sin dejar el consentimiento ni la captura en el stack.
+                    onVerifyEmail = {
+                        viewModel.onErrorDismissed()
+                        navController.navigate(Route.SIGN_UP_VERIFY_EMAIL) {
+                            popUpTo(Route.SIGN_UP_FORM) { inclusive = false }
+                        }
                     },
                 )
             }
@@ -601,6 +665,115 @@ fun VinculoVialNavHost(
                 )
             }
         }
+
+        // Recuperación de contraseña (US-13): mundo público, con un único ViewModel scopeado al grafo.
+        navigation(startDestination = Route.RECOVERY_DNI, route = Route.RECOVERY_GRAPH) {
+
+            composable(Route.RECOVERY_DNI) { entry ->
+                val viewModel = entry.sharedRecoveryViewModel(navController)
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                RecoveryEventsEffect(viewModel, navController)
+
+                RecoveryDniScreen(
+                    state = state,
+                    onDniChange = viewModel::onDniChange,
+                    onSubmit = viewModel::requestCode,
+                    onBack = { navController.popBackStack(Route.SIGN_IN, inclusive = false) },
+                )
+            }
+
+            composable(Route.RECOVERY_CODE) { entry ->
+                val viewModel = entry.sharedRecoveryViewModel(navController)
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                RecoveryEventsEffect(viewModel, navController)
+
+                RecoveryCodeScreen(
+                    state = state,
+                    onCodeChange = viewModel::onCodeChange,
+                    onConfirm = viewModel::confirmCode,
+                    onResend = viewModel::resend,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+
+            composable(Route.RECOVERY_PASSWORD) { entry ->
+                val viewModel = entry.sharedRecoveryViewModel(navController)
+                val state by viewModel.uiState.collectAsStateWithLifecycle()
+                RecoveryEventsEffect(viewModel, navController)
+
+                RecoveryPasswordScreen(
+                    state = state,
+                    onPasswordChange = viewModel::onPasswordChange,
+                    onPasswordConfirmationChange = viewModel::onPasswordConfirmationChange,
+                    onStartCapture = {
+                        if (viewModel.validatePassword()) navController.navigate(Route.RECOVERY_DOCUMENT_SCAN)
+                    },
+                    onErrorDismissed = viewModel::onErrorDismissed,
+                    onEditPassword = viewModel::onErrorDismissed,
+                    onRequestNewCode = viewModel::onRestartRequested,
+                    onBack = {
+                        viewModel.onCaptureCancelled()
+                        navController.popBackStack()
+                    },
+                )
+            }
+
+            composable(Route.RECOVERY_DOCUMENT_SCAN) { entry ->
+                val viewModel = entry.sharedRecoveryViewModel(navController)
+
+                CameraPermissionGate(onDenied = { navController.popBackStack() }) {
+                    DocumentScanScreen(
+                        scanSession = viewModel.documentScanSession,
+                        onScanned = { document ->
+                            // Si el DNI escaneado no es el ingresado, se vuelve a la contraseña con el
+                            // aviso y sin llamar al backend; si coincide, sigue la selfie.
+                            if (viewModel.onDocumentScanned(document)) {
+                                navController.navigate(Route.RECOVERY_LIVENESS) {
+                                    popUpTo(Route.RECOVERY_DOCUMENT_SCAN) { inclusive = true }
+                                }
+                            } else {
+                                navController.popBackStack()
+                            }
+                        },
+                        onCancel = { navController.popBackStack() },
+                    )
+                }
+            }
+
+            composable(Route.RECOVERY_LIVENESS) { entry ->
+                val viewModel = entry.sharedRecoveryViewModel(navController)
+
+                CameraPermissionGate(
+                    onDenied = {
+                        viewModel.onCaptureCancelled()
+                        navController.popBackStack()
+                    },
+                ) {
+                    LivenessCaptureScreen(
+                        livenessSession = viewModel.livenessSession,
+                        // Con las dos capturas el envío arranca solo; la pantalla de la contraseña
+                        // muestra el progreso o el error.
+                        onCaptured = { image, livenessPassed ->
+                            viewModel.onSelfieCaptured(image, livenessPassed)
+                            navController.popBackStack()
+                        },
+                        onCancel = {
+                            viewModel.onCaptureCancelled()
+                            navController.popBackStack()
+                        },
+                    )
+                }
+            }
+
+            composable(Route.RECOVERY_DONE) {
+                RecoveryDoneScreen(
+                    onGoToLogin = {
+                        // Salida del mundo de recuperación: la sesión ya se borró y Login lleva el aviso.
+                        navController.navigate(Route.SIGN_IN) { popUpTo(0) { inclusive = true } }
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -623,4 +796,32 @@ private fun NavBackStackEntry.sharedSignUpViewModel(navController: NavHostContro
 private fun NavBackStackEntry.sharedScanViewModel(navController: NavHostController): ScanViewModel {
     val parentEntry = remember(this) { navController.getBackStackEntry(Route.SCAN_GRAPH) }
     return hiltViewModel(parentEntry)
+}
+
+/** Todas las pantallas del grafo `recovery` comparten el ViewModel: el de la entrada del grafo. */
+@Composable
+private fun NavBackStackEntry.sharedRecoveryViewModel(navController: NavHostController): RecoveryViewModel {
+    val parentEntry = remember(this) { navController.getBackStackEntry(Route.RECOVERY_GRAPH) }
+    return hiltViewModel(parentEntry)
+}
+
+/**
+ * Traduce los eventos del `RecoveryViewModel` en navegación. Lo usa cada pantalla del grafo: sólo
+ * hay una compuesta a la vez, y la que está en pantalla es la que originó el evento.
+ */
+@Composable
+private fun RecoveryEventsEffect(viewModel: RecoveryViewModel, navController: NavHostController) {
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                RecoveryEvent.CodeRequested -> navController.navigate(Route.RECOVERY_CODE)
+                RecoveryEvent.CodeConfirmed -> navController.navigate(Route.RECOVERY_PASSWORD)
+                RecoveryEvent.RestartRequested -> navController.popBackStack(Route.RECOVERY_DNI, inclusive = false)
+                // La recuperación terminó: ya no hay a dónde volver dentro del grafo.
+                RecoveryEvent.Completed -> navController.navigate(Route.RECOVERY_DONE) {
+                    popUpTo(Route.RECOVERY_DNI) { inclusive = true }
+                }
+            }
+        }
+    }
 }

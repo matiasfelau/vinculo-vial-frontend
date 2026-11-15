@@ -13,6 +13,9 @@ enum class LoginNotice {
 
     /** Se enroló una huella nueva en el dispositivo: la clave biométrica quedó invalidada. */
     BIOMETRICS_CHANGED,
+
+    /** Se recuperó la contraseña: el servidor revocó todas las sesiones y hay que ingresar con la nueva. */
+    PASSWORD_RESET,
 }
 
 /**
