@@ -103,7 +103,7 @@ class AlertRepositoryImpl @Inject constructor(
         for (step in steps) {
             val partName = step.role.name.lowercase()
             val count = evidence.count(step.role)
-            if (count !in 1..EvidencePlan.contractMaxPhotos(step.role)) return null
+            if (count != 1) return null
 
             for (index in 0 until count) {
                 val ciphertext = evidence.read(step.role, index) { jpeg -> evidenceEncryptor.encrypt(jpeg, attemptId) }

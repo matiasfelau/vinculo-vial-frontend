@@ -15,6 +15,7 @@ captures/
 !debug.keystore
 CLAUDE.md
 .clauderules
+CONTRATO-*.md
 *.log
 
 # Artefactos de un crash del daemon de Gradle/JVM (quedan en la raíz del proyecto cuando

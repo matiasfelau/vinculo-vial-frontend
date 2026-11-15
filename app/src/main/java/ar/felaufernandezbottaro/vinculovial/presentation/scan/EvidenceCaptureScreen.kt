@@ -7,7 +7,6 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,12 +41,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -143,10 +138,6 @@ fun EvidenceCaptureScreen(
             .background(Color.Black),
     ) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-
-        step?.overlayHint?.let { hint ->
-            if (state.phase == EvidencePhase.CAPTURING) FramingGuide(hint = hint)
-        }
 
         reviewBitmap?.let { bitmap ->
             Image(
@@ -312,39 +303,6 @@ private fun ReviewActions(
     }
 }
 
-/** Marco guía del encuadre de un paso, con la indicación sobre cómo tiene que entrar la escena. */
-@Composable
-private fun FramingGuide(hint: String) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width * FRAME_WIDTH_FRACTION
-            val height = size.height * FRAME_HEIGHT_FRACTION
-            drawRoundRect(
-                color = Color.White.copy(alpha = 0.9f),
-                topLeft = Offset((size.width - width) / 2f, size.height * FRAME_TOP_FRACTION),
-                size = Size(width, height),
-                cornerRadius = CornerRadius(FRAME_CORNER_PX, FRAME_CORNER_PX),
-                style = Stroke(width = FRAME_STROKE_PX),
-            )
-        }
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = Color.Black.copy(alpha = 0.6f),
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(horizontal = 40.dp),
-        ) {
-            Text(
-                text = hint,
-                style = MaterialTheme.typography.titleSmall,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            )
-        }
-    }
-}
-
 private fun stepCounter(state: EvidenceCaptureState): String {
     val step = state.currentStep ?: return ""
     val base = "Paso ${state.stepIndex + 1} de ${state.steps.size}"
@@ -357,8 +315,3 @@ private fun EvidenceError.message(): String = when (this) {
     EvidenceError.TOO_LARGE -> "La foto es demasiado pesada. Sacala de nuevo."
 }
 
-private const val FRAME_WIDTH_FRACTION = 0.86f
-private const val FRAME_HEIGHT_FRACTION = 0.34f
-private const val FRAME_TOP_FRACTION = 0.42f
-private const val FRAME_CORNER_PX = 48f
-private const val FRAME_STROKE_PX = 4f

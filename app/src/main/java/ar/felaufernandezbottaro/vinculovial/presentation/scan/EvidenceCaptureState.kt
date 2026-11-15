@@ -61,7 +61,7 @@ data class EvidenceCaptureState(
 
     /**
      * Cuántas fotos se sacaron hasta ahora. Los pasos anteriores al actual tienen una sola foto
-     * (sólo el daño admite varias y es el último paso); el actual, tantas como índices recorrió.
+     * (ningún paso pide más de una); el actual, tantas como índices recorrió.
      * Con la captura [EvidencePhase.COMPLETE] es el total que se adjunta.
      */
     fun photoCount(): Int = if (steps.isEmpty()) 0 else stepIndex + photoIndex + 1

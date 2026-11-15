@@ -115,43 +115,43 @@ class AlertWireContractTest {
         }
     }
 
-    private fun crashed(details: Int) = evidence(EvidenceRole.GENERAL to 1, EvidenceRole.PLATE to 1, EvidenceRole.DETAIL to details)
+    private fun crashed() = evidence(EvidenceRole.GENERAL to 1, EvidenceRole.PLATE to 1)
 
-    private fun garage() = evidence(EvidenceRole.GENERAL to 1, EvidenceRole.PLATE to 1, EvidenceRole.CONTEXT to 1)
+    private fun garage() = evidence(EvidenceRole.GENERAL to 1, EvidenceRole.PLATE to 1)
 
     // -- Nombre y Content-Type de cada parte, en el cable ------------------------------------
 
     @Test
-    fun `CRASHED con 3 fotos de daño sale con las partes metadata, general, plate y detail x3`() = runTest {
+    fun `CRASHED sale con las partes metadata, general y plate`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
 
-        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(details = 3))
+        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed())
 
         val parts = server.takeRequest().parseMultipartWire()
-        assertEquals(listOf("metadata", "general", "plate", "detail", "detail", "detail"), parts.map { it.name })
+        assertEquals(listOf("metadata", "general", "plate"), parts.map { it.name })
     }
 
     @Test
-    fun `PARKED_ON_GARAGE sale con las partes metadata, general, plate y context`() = runTest {
+    fun `PARKED_ON_GARAGE sale con las partes metadata, general y plate`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
 
         alertRepository.sendAlert(attemptId, patEnc,AlertType.PARKED_ON_GARAGE, garage())
 
         val parts = server.takeRequest().parseMultipartWire()
-        assertEquals(listOf("metadata", "general", "plate", "context"), parts.map { it.name })
+        assertEquals(listOf("metadata", "general", "plate"), parts.map { it.name })
     }
 
     @Test
     fun `el nombre de cada parte de foto es el rol en minuscula`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
-        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(details = 2))
+        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed())
         val crashedPhotos = server.takeRequest().parseMultipartWire().drop(1).map { it.name }
 
         server.enqueue(MockResponse().setResponseCode(202))
         alertRepository.sendAlert(attemptId, patEnc,AlertType.PARKED_ON_GARAGE, garage())
         val garagePhotos = server.takeRequest().parseMultipartWire().drop(1).map { it.name }
 
-        val roleNames = setOf("general", "plate", "detail", "context")
+        val roleNames = setOf("general", "plate")
         assertTrue((crashedPhotos + garagePhotos).all { it in roleNames })
         assertTrue((crashedPhotos + garagePhotos).all { it == it.lowercase() })
         assertEquals(roleNames, (crashedPhotos + garagePhotos).toSet())
@@ -161,10 +161,10 @@ class AlertWireContractTest {
     fun `toda parte de foto sale con Content-Type application octet-stream exacto`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
 
-        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(details = 3))
+        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed())
 
         val photos = server.takeRequest().parseMultipartWire().drop(1)
-        assertEquals(5, photos.size)
+        assertEquals(2, photos.size)
         assertTrue(photos.all { it.contentType == "application/octet-stream" })
     }
 
@@ -172,7 +172,7 @@ class AlertWireContractTest {
     fun `la parte metadata sale con Content-Type application json exacto`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
 
-        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(details = 1))
+        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed())
 
         val metadata = server.takeRequest().parseMultipartWire().first()
         assertEquals("metadata", metadata.name)
@@ -200,7 +200,7 @@ class AlertWireContractTest {
     fun `un 503 de Vehicle durante el envio es Unavailable`() = runTest {
         server.enqueue(jsonUnavailable(503))
 
-        val result = alertRepository.sendAlert(attemptId, patEnc, AlertType.CRASHED, crashed(1))
+        val result = alertRepository.sendAlert(attemptId, patEnc, AlertType.CRASHED, crashed())
 
         assertEquals(SendAlertResult.Failed(SendAlertError.Unavailable), result)
     }
@@ -214,7 +214,7 @@ class AlertWireContractTest {
                 .setBody("""{"error":"patente invalida","code":"INVALID_PLATE_CRYPTOGRAM"}"""),
         )
 
-        val result = alertRepository.sendAlert(attemptId, patEnc, AlertType.CRASHED, crashed(1))
+        val result = alertRepository.sendAlert(attemptId, patEnc, AlertType.CRASHED, crashed())
 
         assertEquals(SendAlertResult.Failed(SendAlertError.InvalidData), result)
     }
@@ -252,7 +252,7 @@ class AlertWireContractTest {
     fun `el request es multipart form-data con el bearer`() = runTest {
         server.enqueue(MockResponse().setResponseCode(202))
 
-        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(details = 1))
+        alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed())
 
         val request = server.takeRequest()
         assertEquals("POST", request.method)
@@ -277,13 +277,13 @@ class AlertWireContractTest {
     @Test
     fun `un 504 nativo de Kong al enviar es Unavailable, igual que un 502 y un 503`() = runTest {
         server.enqueue(kongGatewayTimeout())
-        val gatewayTimeout = alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(1))
+        val gatewayTimeout = alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed())
 
         server.enqueue(jsonUnavailable(503))
-        val unavailable = alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(1))
+        val unavailable = alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed())
 
         server.enqueue(jsonUnavailable(502))
-        val badGateway = alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed(1))
+        val badGateway = alertRepository.sendAlert(attemptId, patEnc,AlertType.CRASHED, crashed())
 
         assertEquals(SendAlertResult.Failed(SendAlertError.Unavailable), gatewayTimeout)
         assertEquals(unavailable, gatewayTimeout)

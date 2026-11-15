@@ -43,12 +43,20 @@ class SenderChatTest {
         assertEquals(SenderChatItem.User("Tu auto fue chocado."), items[1])
         assertEquals(
             SenderChatItem.Vivi(
-                "Para avisarle necesito fotos. Te guío con la cámara: el auto con la patente visible, " +
-                    "la patente de cerca y una foto del daño.",
+                "Para avisarle necesito dos fotos. Te guío con la cámara: el auto con la patente visible " +
+                    "y la patente de cerca.",
             ),
             items[2],
         )
         assertEquals(3, items.size)
+    }
+
+    @Test
+    fun `la explicacion de las fotos es la misma para los dos tipos`() {
+        val crashed = senderChatItems(stateOf(AlertType.CRASHED, evidence = readyEvidence(AlertType.CRASHED)))
+        val garage = senderChatItems(stateOf(AlertType.PARKED_ON_GARAGE, evidence = readyEvidence(AlertType.PARKED_ON_GARAGE)))
+
+        assertEquals(crashed[2], garage[2])
     }
 
     @Test
@@ -76,23 +84,23 @@ class SenderChatTest {
 
         val attachments = items.filterIsInstance<SenderChatItem.Attachment>()
         assertEquals(1, attachments.size)
-        assertEquals("3 fotos cifradas adjuntas", attachments.single().summary)
+        assertEquals("2 fotos cifradas adjuntas", attachments.single().summary)
         assertEquals(false, attachments.single().sent)
     }
 
     @Test
-    fun `el adjunto cuenta 3 fotos en todos los tipos, CRASHED pide una sola de daño`() {
-        assertEquals(3, completedEvidence(AlertType.CRASHED).photoCount())
-        assertEquals(3, completedEvidence(AlertType.PARKED_ON_GARAGE).photoCount())
+    fun `el adjunto cuenta 2 fotos en todos los tipos`() {
+        assertEquals(2, completedEvidence(AlertType.CRASHED).photoCount())
+        assertEquals(2, completedEvidence(AlertType.PARKED_ON_GARAGE).photoCount())
     }
 
     @Test
-    fun `PARKED_ON_GARAGE adjunta 3 fotos cifradas`() {
+    fun `PARKED_ON_GARAGE adjunta 2 fotos cifradas`() {
         val items = senderChatItems(stateOf(AlertType.PARKED_ON_GARAGE, evidence = completedEvidence(AlertType.PARKED_ON_GARAGE)))
 
         val attachment = items.last() as SenderChatItem.Attachment
-        assertEquals(3, attachment.photoCount)
-        assertEquals("3 fotos cifradas adjuntas", attachment.summary)
+        assertEquals(2, attachment.photoCount)
+        assertEquals("2 fotos cifradas adjuntas", attachment.summary)
     }
 
     @Test

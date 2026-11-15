@@ -33,7 +33,7 @@ fun senderChatItems(state: ScanUiState): List<SenderChatItem> = buildList {
     }
 
     add(SenderChatItem.User(alertType.senderMessage()))
-    add(SenderChatItem.Vivi(ViviMessages.senderPhotosIntro(alertType)))
+    add(SenderChatItem.Vivi(ViviMessages.SENDER_PHOTOS_INTRO))
 
     if (state.evidence.phase == EvidencePhase.COMPLETE) {
         val photoCount = state.evidence.photoCount()

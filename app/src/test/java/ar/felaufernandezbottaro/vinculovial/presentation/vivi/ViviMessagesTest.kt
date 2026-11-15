@@ -88,11 +88,14 @@ class ViviMessagesTest {
     fun `las etiquetas de las fotos llevan numero solo si hay varias del mismo rol`() {
         assertEquals("General", evidenceTileLabel("GENERAL", 0, 1))
         assertEquals("Patente", evidenceTileLabel("PLATE", 0, 1))
-        assertEquals("Contexto", evidenceTileLabel("CONTEXT", 0, 1))
-        assertEquals("Daño", evidenceTileLabel("DETAIL", 0, 1))
-        assertEquals("Daño 1", evidenceTileLabel("DETAIL", 0, 2))
-        assertEquals("Daño 3", evidenceTileLabel("DETAIL", 2, 3))
+        assertEquals("Patente 2", evidenceTileLabel("PLATE", 1, 2))
         assertEquals("Foto", evidenceTileLabel("ROL_NUEVO", 0, 1))
+    }
+
+    @Test
+    fun `los roles eliminados DETAIL y CONTEXT ya no tienen etiqueta propia`() {
+        assertEquals("Foto", evidenceTileLabel("DETAIL", 0, 1))
+        assertEquals("Foto", evidenceTileLabel("CONTEXT", 0, 1))
     }
 
     // -- Pestaña Enviados --------------------------------------------------------------------
@@ -134,10 +137,13 @@ class ViviMessagesTest {
     }
 
     @Test
-    fun `la intro de la captura pide las fotos segun el tipo`() {
-        assertTrue(ViviMessages.senderPhotosIntro(AlertType.CRASHED).contains("el daño"))
-        assertTrue(ViviMessages.senderPhotosIntro(AlertType.PARKED_ON_GARAGE).contains("desde la vereda"))
-        assertFalse(ViviMessages.senderPhotosIntro(AlertType.PARKED_ON_GARAGE).contains("el daño"))
+    fun `la intro de la captura pide solo el auto y la patente`() {
+        assertEquals(
+            "Para avisarle necesito dos fotos. Te guío con la cámara: el auto con la patente visible y la patente de cerca.",
+            ViviMessages.SENDER_PHOTOS_INTRO,
+        )
+        assertFalse(ViviMessages.SENDER_PHOTOS_INTRO.contains("daño"))
+        assertFalse(ViviMessages.SENDER_PHOTOS_INTRO.contains("rampa"))
     }
 
     @Test

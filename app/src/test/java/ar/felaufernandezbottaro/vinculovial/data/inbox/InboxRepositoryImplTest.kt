@@ -183,7 +183,7 @@ class InboxRepositoryImplTest {
                         alertType = "CRASHED",
                         createdAt = "2026-08-18T10:00:00Z",
                         requiresReview = true,
-                        evidence = listOf(EvidenceRefDto("GENERAL", 0), EvidenceRefDto("DETAIL", 1)),
+                        evidence = listOf(EvidenceRefDto("GENERAL", 0), EvidenceRefDto("PLATE", 0)),
                         evidenceExpiresAt = "2026-09-17T07:00:00-03:00",
                         myFeedback = "DOWN",
                         reported = true,
@@ -196,7 +196,7 @@ class InboxRepositoryImplTest {
         val item = (repository().getInbox() as GetInboxResult.Success).page.items.single()
 
         assertEquals(true, item.requiresReview)
-        assertEquals(listOf(EvidenceRef("GENERAL", 0), EvidenceRef("DETAIL", 1)), item.evidence)
+        assertEquals(listOf(EvidenceRef("GENERAL", 0), EvidenceRef("PLATE", 0)), item.evidence)
         assertEquals(Instant.parse("2026-09-17T10:00:00Z"), item.evidenceExpiresAt)
         assertEquals(FeedbackRating.DOWN, item.myFeedback)
         assertEquals(true, item.reported)

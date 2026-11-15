@@ -30,8 +30,8 @@ data class AlertItem(
 )
 
 /**
- * Una foto de evidencia redactada. [role] es el del contrato (`GENERAL`, `PLATE`, `DETAIL`,
- * `CONTEXT`) tal cual lo manda el servidor: es un `String` y no un enum porque el catálogo puede
+ * Una foto de evidencia redactada. [role] es el del contrato (`GENERAL` o `PLATE`)
+ * tal cual lo manda el servidor: es un `String` y no un enum porque el catálogo puede
  * crecer antes de que la app se actualice, y se reenvía sin interpretarlo en el GET de la imagen.
  */
 data class EvidenceRef(val role: String, val index: Int)
