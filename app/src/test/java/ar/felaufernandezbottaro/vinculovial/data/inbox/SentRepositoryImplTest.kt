@@ -5,6 +5,7 @@ import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.InboxPageDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.SentAlertDto
 import ar.felaufernandezbottaro.vinculovial.data.inbox.dto.SentPageDto
 import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
+import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyVault
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
@@ -14,11 +15,6 @@ import ar.felaufernandezbottaro.vinculovial.domain.inbox.InboxError
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.SeenResult
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.SentAlert
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.SentAlertStatus
-import com.google.crypto.tink.Aead
-import com.google.crypto.tink.KeyTemplates
-import com.google.crypto.tink.KeysetHandle
-import com.google.crypto.tink.RegistryConfiguration
-import com.google.crypto.tink.aead.AeadConfig
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -41,11 +37,8 @@ class SentRepositoryImplTest {
 
     @Before
     fun setUp() {
-        AeadConfig.register()
-        val aead: Aead = KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM"))
-            .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
-        tokenStore = SecureTokenStore(FakeSharedPreferences(), aead)
-        tokenStore.save(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
+        tokenStore = SecureTokenStore(FakeSharedPreferences(), FakeSessionKeyVault())
+        tokenStore.startSession(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
         api = FakeInboxApi()
     }
 

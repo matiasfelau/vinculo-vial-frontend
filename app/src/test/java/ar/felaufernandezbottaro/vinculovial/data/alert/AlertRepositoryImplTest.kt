@@ -5,6 +5,7 @@ import ar.felaufernandezbottaro.vinculovial.data.edge.SecureImageBuffer
 import ar.felaufernandezbottaro.vinculovial.data.evidence.EvidenceBuffers
 import ar.felaufernandezbottaro.vinculovial.data.evidence.EvidenceEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
+import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyVault
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
@@ -12,7 +13,6 @@ import ar.felaufernandezbottaro.vinculovial.domain.evidence.EvidenceRole
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertResult
-import com.google.crypto.tink.Aead
 import com.google.crypto.tink.HybridDecrypt
 import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.KeysetHandle
@@ -70,10 +70,8 @@ class AlertRepositoryImplTest {
 
     @Before
     fun setUp() {
-        val aead: Aead = KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM"))
-            .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
-        tokenStore = SecureTokenStore(FakeSharedPreferences(), aead)
-        tokenStore.save(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
+        tokenStore = SecureTokenStore(FakeSharedPreferences(), FakeSessionKeyVault())
+        tokenStore.startSession(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
         api = FakeAlertApi()
     }
 

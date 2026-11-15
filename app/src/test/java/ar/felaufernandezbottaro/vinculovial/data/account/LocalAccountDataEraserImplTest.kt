@@ -1,12 +1,14 @@
 package ar.felaufernandezbottaro.vinculovial.data.account
 
+import ar.felaufernandezbottaro.vinculovial.data.crypto.CryptoOperationException
 import ar.felaufernandezbottaro.vinculovial.data.push.PendingFcmTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeRefreshApi
-import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyProvisioner
+import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyVault
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
-import ar.felaufernandezbottaro.vinculovial.data.session.SessionAead
+import ar.felaufernandezbottaro.vinculovial.data.session.SessionKeyVault
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionManager
+import ar.felaufernandezbottaro.vinculovial.data.session.SessionState
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
 import ar.felaufernandezbottaro.vinculovial.domain.push.FakeFcmTokenProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -15,20 +17,20 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
 /**
  * La limpieza local de la baja de cuenta (US-11) con las piezas reales -- `SecureTokenStore`,
- * `SessionAead`, `SessionManager`, `PendingFcmTokenStore` -- y sólo el Keystore y Firebase
- * sustituidos por fakes. Cada test afirma una de las cosas que el contrato manda borrar.
+ * `SessionManager`, `PendingFcmTokenStore` -- y sólo el Keystore y Firebase sustituidos por
+ * fakes. Cada test afirma una de las cosas que el contrato manda borrar.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class LocalAccountDataEraserImplTest {
 
-    private lateinit var provisioner: FakeSessionKeyProvisioner
+    private lateinit var vault: FakeSessionKeyVault
     private lateinit var sessionPrefs: FakeSharedPreferences
-    private lateinit var sessionAead: SessionAead
     private lateinit var tokenStore: SecureTokenStore
     private lateinit var fcmTokenProvider: FakeFcmTokenProvider
     private lateinit var pendingStore: PendingFcmTokenStore
@@ -37,18 +39,16 @@ class LocalAccountDataEraserImplTest {
 
     @Before
     fun setUp() {
-        provisioner = FakeSessionKeyProvisioner()
+        vault = FakeSessionKeyVault()
         sessionPrefs = FakeSharedPreferences()
-        sessionAead = SessionAead(provisioner)
-        tokenStore = SecureTokenStore(sessionPrefs, sessionAead)
-        tokenStore.save(tokens)
+        tokenStore = SecureTokenStore(sessionPrefs, vault)
+        tokenStore.startSession(tokens)
         fcmTokenProvider = FakeFcmTokenProvider()
         pendingStore = PendingFcmTokenStore(FakeSharedPreferences())
     }
 
     private fun eraser() = LocalAccountDataEraserImpl(
         sessionManager = SessionManager(FakeRefreshApi(), tokenStore, UnconfinedTestDispatcher()),
-        sessionAead = sessionAead,
         fcmTokenProvider = fcmTokenProvider,
         pendingFcmTokenStore = pendingStore,
     )
@@ -58,15 +58,19 @@ class LocalAccountDataEraserImplTest {
         eraser().eraseAll()
 
         assertNull(tokenStore.read())
-        assertFalse(tokenStore.sessionState.value)
+        assertEquals(SessionState.NONE, tokenStore.sessionState.value)
     }
 
     @Test
-    fun `destruye las claves de Keystore de la sesion`() = runTest {
+    fun `con la biometria activa borra tambien el blob y la clave`() = runTest {
+        assertTrue(tokenStore.enableBiometric())
+
         eraser().eraseAll()
 
-        assertEquals(1, provisioner.destroyCount)
-        assertFalse(provisioner.hasPersistedKey)
+        assertNull(tokenStore.readWrappedRefresh())
+        assertFalse(tokenStore.biometricEnabled.value)
+        assertFalse(vault.hasKey)
+        assertTrue("no queda nada de la sesión en disco", sessionPrefs.getAll().isEmpty())
     }
 
     @Test
@@ -87,26 +91,35 @@ class LocalAccountDataEraserImplTest {
         assertNull(pendingStore.readPendingDeletion())
     }
 
-    /** La regresión que motivó `SessionAead`: el login siguiente no puede quedar ilegible tras un reinicio. */
     @Test
-    fun `un login posterior en el mismo proceso sobrevive a un reinicio de la app`() = runTest {
+    fun `un login posterior en el mismo proceso arranca limpio, sin biometria heredada`() = runTest {
+        assertTrue(tokenStore.enableBiometric())
         eraser().eraseAll()
 
         val nextAccount = SessionTokens(accessToken = "access-otra-cuenta", refreshToken = "refresh-otra-cuenta")
-        tokenStore.save(nextAccount)
+        tokenStore.startSession(nextAccount)
 
-        val afterRestart = SecureTokenStore(sessionPrefs, SessionAead(provisioner))
-        assertEquals(nextAccount, afterRestart.read())
+        assertEquals(nextAccount, tokenStore.read())
+        assertFalse(tokenStore.biometricEnabled.value)
+        assertNull(tokenStore.readWrappedRefresh())
     }
 
     @Test
-    fun `si destruir las claves falla, los tokens ya estan borrados y el resto de la limpieza corre igual`() = runTest {
-        provisioner.destroyFailure = IllegalStateException("Keystore roto")
+    fun `si el Keystore falla al borrar la clave, la sesion ya esta borrada y el resto de la limpieza corre igual`() = runTest {
+        assertTrue(tokenStore.enableBiometric())
+        val failingVault = object : SessionKeyVault by vault {
+            override fun deleteKey() = throw CryptoOperationException("Keystore roto")
+        }
+        val store = SecureTokenStore(sessionPrefs, failingVault).also { it.startSession(tokens) }
         pendingStore.savePendingRegistration("fcm-por-registrar")
 
-        eraser().eraseAll()
+        LocalAccountDataEraserImpl(
+            sessionManager = SessionManager(FakeRefreshApi(), store, UnconfinedTestDispatcher()),
+            fcmTokenProvider = fcmTokenProvider,
+            pendingFcmTokenStore = pendingStore,
+        ).eraseAll()
 
-        assertNull(tokenStore.read())
+        assertNull(store.read())
         assertEquals(1, fcmTokenProvider.deleteCallCount)
         assertNull(pendingStore.readPendingRegistration())
     }
@@ -128,7 +141,6 @@ class LocalAccountDataEraserImplTest {
 
         eraser().eraseAll()
 
-        assertEquals(1, provisioner.destroyCount)
         assertEquals(1, fcmTokenProvider.deleteCallCount)
     }
 }

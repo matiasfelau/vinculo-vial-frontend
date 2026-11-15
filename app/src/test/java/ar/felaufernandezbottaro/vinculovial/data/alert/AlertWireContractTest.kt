@@ -4,6 +4,7 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.HpkeEncryptor
 import ar.felaufernandezbottaro.vinculovial.data.edge.SecureImageBuffer
 import ar.felaufernandezbottaro.vinculovial.data.evidence.EvidenceBuffers
 import ar.felaufernandezbottaro.vinculovial.data.evidence.EvidenceEncryptor
+import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyVault
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionTokens
@@ -12,10 +13,8 @@ import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertResult
 import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
-import com.google.crypto.tink.Aead
 import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.KeysetHandle
-import com.google.crypto.tink.RegistryConfiguration
 import com.google.crypto.tink.aead.AeadConfig
 import com.google.crypto.tink.hybrid.HpkePublicKey
 import com.google.crypto.tink.hybrid.HybridConfig
@@ -70,10 +69,8 @@ class AlertWireContractTest {
         server = MockWebServer()
         server.start()
 
-        val aead: Aead = KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM"))
-            .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
-        val tokenStore = SecureTokenStore(FakeSharedPreferences(), aead)
-        tokenStore.save(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
+        val tokenStore = SecureTokenStore(FakeSharedPreferences(), FakeSessionKeyVault())
+        tokenStore.startSession(SessionTokens(accessToken = "access-abc", refreshToken = "refresh-xyz"))
 
         val moshi = Moshi.Builder().build()
         val retrofit = Retrofit.Builder()

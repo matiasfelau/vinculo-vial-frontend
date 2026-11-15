@@ -1,5 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.signin
 
+import ar.felaufernandezbottaro.vinculovial.domain.session.LoginNotice
+import ar.felaufernandezbottaro.vinculovial.domain.session.LoginNoticeStore
 import ar.felaufernandezbottaro.vinculovial.domain.signin.FakeSignInRepository
 import ar.felaufernandezbottaro.vinculovial.domain.signin.SignInError
 import ar.felaufernandezbottaro.vinculovial.domain.signin.SignInResult
@@ -20,12 +22,42 @@ class SignInViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private val repository = FakeSignInRepository()
+    private val loginNotice = LoginNoticeStore()
 
-    private fun viewModel() = SignInViewModel(SignInUseCase(repository))
+    private fun viewModel() = SignInViewModel(SignInUseCase(repository), loginNotice)
 
     private fun SignInViewModel.completarFormulario() {
         onDniChange("12345678")
         onPasswordChange("Password123!")
+    }
+
+    @Test
+    fun `muestra el aviso con el que se llego a Login`() {
+        loginNotice.post(LoginNotice.SESSION_EXPIRED)
+
+        assertEquals(LoginNotice.SESSION_EXPIRED, viewModel().notice.value)
+    }
+
+    @Test
+    fun `escribir en el formulario no descarta el aviso`() {
+        loginNotice.post(LoginNotice.BIOMETRICS_CHANGED)
+        val viewModel = viewModel()
+
+        viewModel.onDniChange("1234")
+        viewModel.onPasswordChange("abc")
+
+        assertEquals(LoginNotice.BIOMETRICS_CHANGED, viewModel.notice.value)
+    }
+
+    @Test
+    fun `intentar entrar descarta el aviso`() = runTest {
+        loginNotice.post(LoginNotice.SESSION_EXPIRED)
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+
+        viewModel.submit()
+
+        assertEquals(null, viewModel.notice.value)
     }
 
     @Test

@@ -3,6 +3,7 @@ package ar.felaufernandezbottaro.vinculovial.domain.session
 import ar.felaufernandezbottaro.vinculovial.data.push.PendingFcmTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.push.TokenSyncManager
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeRefreshApi
+import ar.felaufernandezbottaro.vinculovial.data.session.FakeSessionKeyVault
 import ar.felaufernandezbottaro.vinculovial.data.session.FakeSharedPreferences
 import ar.felaufernandezbottaro.vinculovial.data.session.SecureTokenStore
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionManager
@@ -13,11 +14,6 @@ import ar.felaufernandezbottaro.vinculovial.domain.push.DeleteFcmTokenUseCase
 import ar.felaufernandezbottaro.vinculovial.domain.push.FakeFcmTokenProvider
 import ar.felaufernandezbottaro.vinculovial.domain.push.FakePushTokenRepository
 import ar.felaufernandezbottaro.vinculovial.domain.push.SyncFcmTokenUseCase
-import com.google.crypto.tink.Aead
-import com.google.crypto.tink.KeyTemplates
-import com.google.crypto.tink.KeysetHandle
-import com.google.crypto.tink.RegistryConfiguration
-import com.google.crypto.tink.aead.AeadConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -48,10 +44,7 @@ class LogoutUseCaseTest {
 
     @Before
     fun setUp() {
-        AeadConfig.register()
-        val aead: Aead = KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM"))
-            .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
-        tokenStore = SecureTokenStore(FakeSharedPreferences(), aead)
+        tokenStore = SecureTokenStore(FakeSharedPreferences(), FakeSessionKeyVault())
         refreshApi = FakeRefreshApi()
         pushRepository = FakePushTokenRepository()
         fcmTokenProvider = FakeFcmTokenProvider()
@@ -74,7 +67,7 @@ class LogoutUseCaseTest {
 
     @Test
     fun `logout exitoso borra la sesion local`() = runTest {
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
         val logout = logoutUseCase()
 
         logout()
@@ -84,7 +77,7 @@ class LogoutUseCaseTest {
 
     @Test
     fun `logout borra la sesion local aun cuando la llamada de red falla`() = runTest {
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
         refreshApi.logoutExceptionToThrow = IOException("sin conexion")
         val logout = logoutUseCase()
 
@@ -95,7 +88,7 @@ class LogoutUseCaseTest {
 
     @Test
     fun `un logout exitoso da de baja el token FCM antes de limpiar la sesion`() = runTest {
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
         fcmTokenProvider.token = "fcm-a-borrar"
         val logout = logoutUseCase()
 
@@ -106,7 +99,7 @@ class LogoutUseCaseTest {
 
     @Test
     fun `sin token FCM disponible el logout no intenta darlo de baja`() = runTest {
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
         fcmTokenProvider.token = null
         val logout = logoutUseCase()
 
@@ -118,7 +111,7 @@ class LogoutUseCaseTest {
 
     @Test
     fun `un fallo al dar de baja el token FCM no bloquea el logout`() = runTest {
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
         pushRepository.deleteResult = DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Network)
         val logout = logoutUseCase()
 
@@ -129,7 +122,7 @@ class LogoutUseCaseTest {
 
     @Test
     fun `un fallo al dar de baja el token FCM lo deja pendiente para reintentar`() = runTest {
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
         pushRepository.deleteResult = DeleteFcmTokenResult.Failed(DeleteFcmTokenError.Network)
         fcmTokenProvider.token = "fcm-a-borrar"
         val logout = logoutUseCase()
@@ -141,7 +134,7 @@ class LogoutUseCaseTest {
 
     @Test
     fun `una baja exitosa no deja nada pendiente`() = runTest {
-        tokenStore.save(tokens)
+        tokenStore.startSession(tokens)
         fcmTokenProvider.token = "fcm-a-borrar"
         val logout = logoutUseCase()
 

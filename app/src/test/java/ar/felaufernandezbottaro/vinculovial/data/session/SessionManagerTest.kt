@@ -3,11 +3,6 @@ package ar.felaufernandezbottaro.vinculovial.data.session
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.RefreshApi
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.dto.RefreshResponseDto
 import ar.felaufernandezbottaro.vinculovial.data.remote.auth.dto.RefreshTokenRequestDto
-import com.google.crypto.tink.Aead
-import com.google.crypto.tink.KeyTemplates
-import com.google.crypto.tink.KeysetHandle
-import com.google.crypto.tink.RegistryConfiguration
-import com.google.crypto.tink.aead.AeadConfig
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -33,6 +28,7 @@ import java.io.IOException
 class SessionManagerTest {
 
     private lateinit var tokenStore: SecureTokenStore
+    private lateinit var vault: FakeSessionKeyVault
     private lateinit var refreshApi: FakeRefreshApi
 
     private val tokenViejo = SessionTokens(accessToken = "access-viejo", refreshToken = "refresh-viejo")
@@ -40,10 +36,8 @@ class SessionManagerTest {
 
     @Before
     fun setUp() {
-        AeadConfig.register()
-        val aead: Aead = KeysetHandle.generateNew(KeyTemplates.get("AES256_GCM"))
-            .getPrimitive(RegistryConfiguration.get(), Aead::class.java)
-        tokenStore = SecureTokenStore(FakeSharedPreferences(), aead)
+        vault = FakeSessionKeyVault()
+        tokenStore = SecureTokenStore(FakeSharedPreferences(), vault)
         refreshApi = FakeRefreshApi()
     }
 
@@ -58,7 +52,7 @@ class SessionManagerTest {
 
     @Test
     fun `N corrutinas concurrentes disparan una unica llamada a refresh`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
         val manager = manager()
 
         val results = (1..20).map {
@@ -71,7 +65,7 @@ class SessionManagerTest {
 
     @Test
     fun `ninguna corrutina reenvia el refresh token ya rotado`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
         val manager = manager()
 
         (1..20).map { async { manager.refreshSession(failedAccessToken = tokenViejo.accessToken) } }.awaitAll()
@@ -81,7 +75,7 @@ class SessionManagerTest {
 
     @Test
     fun `el 200 deja el par nuevo persistido`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
 
         manager().refreshSession(failedAccessToken = tokenViejo.accessToken)
 
@@ -89,8 +83,32 @@ class SessionManagerTest {
     }
 
     @Test
+    fun `con la biometria activa el 200 vuelve a envolver el refresh nuevo`() = runTest {
+        tokenStore.startSession(tokenViejo)
+        assertTrue(tokenStore.enableBiometric())
+
+        manager().refreshSession(failedAccessToken = tokenViejo.accessToken)
+
+        val blob = requireNotNull(tokenStore.readWrappedRefresh())
+        assertEquals(tokenNuevo.refreshToken, String(vault.createUnlockCipher().doFinal(blob)))
+    }
+
+    @Test
+    fun `el 401 con la biometria activa borra tambien el blob y la clave`() = runTest {
+        tokenStore.startSession(tokenViejo)
+        assertTrue(tokenStore.enableBiometric())
+        refreshApi.response = errorResponse(401)
+
+        manager().refreshSession(failedAccessToken = tokenViejo.accessToken)
+
+        assertEquals(SessionState.NONE, tokenStore.sessionState.value)
+        assertEquals(null, tokenStore.readWrappedRefresh())
+        assertFalse(vault.hasKey)
+    }
+
+    @Test
     fun `una corrutina cuyo token ya no es el actual no llama a refresh`() = runTest {
-        tokenStore.save(SessionTokens(accessToken = "access-actual", refreshToken = "refresh-actual"))
+        tokenStore.startSession(SessionTokens(accessToken = "access-actual", refreshToken = "refresh-actual"))
 
         val result = manager().refreshSession(failedAccessToken = "access-ya-rotado")
 
@@ -111,7 +129,7 @@ class SessionManagerTest {
 
     @Test
     fun `401 limpia la sesion local`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
         refreshApi.response = errorResponse(401)
 
         val result = manager().refreshSession(failedAccessToken = tokenViejo.accessToken)
@@ -122,7 +140,7 @@ class SessionManagerTest {
 
     @Test
     fun `403 limpia la sesion local`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
         refreshApi.response = errorResponse(403)
 
         val result = manager().refreshSession(failedAccessToken = tokenViejo.accessToken)
@@ -133,7 +151,7 @@ class SessionManagerTest {
 
     @Test
     fun `un fallo de red no limpia la sesion local`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
         refreshApi.exceptionToThrow = IOException("sin conexion")
 
         val result = manager().refreshSession(failedAccessToken = tokenViejo.accessToken)
@@ -144,7 +162,7 @@ class SessionManagerTest {
 
     @Test
     fun `500 no limpia la sesion local`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
         refreshApi.response = errorResponse(500)
 
         val result = manager().refreshSession(failedAccessToken = tokenViejo.accessToken)
@@ -155,7 +173,7 @@ class SessionManagerTest {
 
     @Test
     fun `clearSession borra la sesion sin llamar a la red`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
 
         manager().clearSession()
 
@@ -165,7 +183,7 @@ class SessionManagerTest {
 
     @Test
     fun `logout llama al endpoint con el refresh token y limpia la sesion`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
 
         manager().logout()
 
@@ -174,8 +192,20 @@ class SessionManagerTest {
     }
 
     @Test
+    fun `logout explicito borra el blob y la clave biometrica`() = runTest {
+        tokenStore.startSession(tokenViejo)
+        assertTrue(tokenStore.enableBiometric())
+
+        manager().logout()
+
+        assertEquals(SessionState.NONE, tokenStore.sessionState.value)
+        assertEquals(null, tokenStore.readWrappedRefresh())
+        assertFalse(vault.hasKey)
+    }
+
+    @Test
     fun `logout no llama a refresh`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
 
         manager().logout()
 
@@ -184,7 +214,7 @@ class SessionManagerTest {
 
     @Test
     fun `logout limpia la sesion aun cuando la llamada de red falla`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
         refreshApi.logoutExceptionToThrow = IOException("sin conexion")
 
         manager().logout()
@@ -194,7 +224,7 @@ class SessionManagerTest {
 
     @Test
     fun `logout limpia la sesion aun cuando el backend responde con error`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
         refreshApi.logoutResponse = Response.error(500, "".toResponseBody("application/json".toMediaType()))
 
         manager().logout()
@@ -211,9 +241,9 @@ class SessionManagerTest {
 
     @Test
     fun `clearSessionForAccountDeletion borra los tokens sin llamar a la red`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
 
-        manager().clearSessionForAccountDeletion { }
+        manager().clearSessionForAccountDeletion()
 
         assertEquals(null, tokenStore.read())
         assertEquals(0, refreshApi.callCount)
@@ -221,37 +251,24 @@ class SessionManagerTest {
     }
 
     @Test
-    fun `clearSessionForAccountDeletion corre afterClear con los tokens ya borrados`() = runTest {
-        tokenStore.save(tokenViejo)
-        var sessionWhenAfterClearRan: SessionTokens? = tokenViejo
-
-        manager().clearSessionForAccountDeletion { sessionWhenAfterClearRan = tokenStore.read() }
-
-        assertEquals(null, sessionWhenAfterClearRan)
-    }
-
-    @Test
     fun `clearSessionForAccountDeletion avisa por sessionState que ya no hay sesion`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
 
-        manager().clearSessionForAccountDeletion { }
+        manager().clearSessionForAccountDeletion()
 
-        assertEquals(false, tokenStore.sessionState.value)
+        assertEquals(SessionState.NONE, tokenStore.sessionState.value)
     }
 
     @Test
-    fun `si afterClear falla los tokens igual quedaron borrados`() = runTest {
-        tokenStore.save(tokenViejo)
+    fun `clearSessionForAccountDeletion tambien borra el blob y la clave biometrica`() = runTest {
+        tokenStore.startSession(tokenViejo)
+        assertTrue(tokenStore.enableBiometric())
 
-        val failure = try {
-            manager().clearSessionForAccountDeletion { throw IllegalStateException("Keystore roto") }
-            null
-        } catch (e: IllegalStateException) {
-            e
-        }
+        manager().clearSessionForAccountDeletion()
 
-        assertEquals("Keystore roto", failure?.message)
-        assertEquals(null, tokenStore.read())
+        assertEquals(null, tokenStore.readWrappedRefresh())
+        assertFalse(vault.hasKey)
+        assertFalse(tokenStore.biometricEnabled.value)
     }
 
     /**
@@ -260,7 +277,7 @@ class SessionManagerTest {
      */
     @Test
     fun `clearSessionForAccountDeletion espera a un refresh en vuelo y la sesion no resucita`() = runTest {
-        tokenStore.save(tokenViejo)
+        tokenStore.startSession(tokenViejo)
         val gate = CompletableDeferred<Unit>()
         val gatedApi = object : RefreshApi {
             override suspend fun refresh(body: RefreshTokenRequestDto): Response<RefreshResponseDto> {
@@ -277,7 +294,7 @@ class SessionManagerTest {
         val refresh = async(start = CoroutineStart.UNDISPATCHED) {
             manager.refreshSession(failedAccessToken = tokenViejo.accessToken)
         }
-        val deletion = async(start = CoroutineStart.UNDISPATCHED) { manager.clearSessionForAccountDeletion { } }
+        val deletion = async(start = CoroutineStart.UNDISPATCHED) { manager.clearSessionForAccountDeletion() }
 
         assertFalse("el borrado tiene que esperar al refresh", deletion.isCompleted)
 

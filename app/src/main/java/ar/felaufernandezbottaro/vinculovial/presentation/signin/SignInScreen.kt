@@ -26,10 +26,12 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import ar.felaufernandezbottaro.vinculovial.domain.session.LoginNotice
 import ar.felaufernandezbottaro.vinculovial.domain.signin.model.SignInField
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvBottomBar
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvPrimaryButton
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvTextField
+import ar.felaufernandezbottaro.vinculovial.presentation.session.message
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VinculoVialTheme
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMuted
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
@@ -38,6 +40,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 @Composable
 fun SignInScreen(
     state: SignInUiState,
+    notice: LoginNotice?,
     onDniChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onSubmit: () -> Unit,
@@ -62,6 +65,17 @@ fun SignInScreen(
                 color = VvNavy,
                 textAlign = TextAlign.Center,
             )
+
+            // Por qué se llegó acá sin pedirlo: sesión vencida o huellas cambiadas (US-12).
+            notice?.let {
+                Text(
+                    text = it.message(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = VvNavy,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
 
             SignUpLink(onGoToSignUp = onGoToSignUp)
 
@@ -138,6 +152,7 @@ private fun SignInScreenPreview() {
     VinculoVialTheme {
         SignInScreen(
             state = SignInUiState(),
+            notice = null,
             onDniChange = {},
             onPasswordChange = {},
             onSubmit = {},

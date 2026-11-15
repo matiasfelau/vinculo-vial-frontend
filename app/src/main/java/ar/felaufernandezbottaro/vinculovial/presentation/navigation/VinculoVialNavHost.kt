@@ -18,6 +18,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
+import ar.felaufernandezbottaro.vinculovial.data.session.SessionState
 import ar.felaufernandezbottaro.vinculovial.domain.account.DeleteAccountError
 import ar.felaufernandezbottaro.vinculovial.presentation.account.DeleteAccountScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.account.DeleteAccountStatus
@@ -37,6 +38,8 @@ import ar.felaufernandezbottaro.vinculovial.presentation.sent.SentChatScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.sent.SentEvent
 import ar.felaufernandezbottaro.vinculovial.presentation.sent.SentViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionViewModel
+import ar.felaufernandezbottaro.vinculovial.presentation.session.UnlockRoute
+import ar.felaufernandezbottaro.vinculovial.presentation.session.UnlockViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.signin.SignInScreen
@@ -64,6 +67,7 @@ object Route {
     const val SPLASH = "splash"
     const val WELCOME = "welcome"
     const val SIGN_IN = "signin"
+    const val UNLOCK = "unlock"
     const val SETTINGS = "settings"
     const val DELETE_ACCOUNT = "settings/delete-account"
     const val SIGN_UP_GRAPH = "signup"
@@ -93,38 +97,40 @@ fun VinculoVialNavHost(
     pendingPush: PushTarget? = null,
     onPendingPushConsumed: () -> Unit = {},
 ) {
-    // RTR fallido (401/403 al refrescar) borra la sesión local en segundo plano, sin que la
-    // pantalla que disparó la request original se entere -- SessionManager ni sabe qué
-    // pantalla es. Este observer es el único lugar que reacciona a esa caída y saca al
-    // usuario a Login, sea cual sea la pantalla en la que esté. Hoy no dispara en la
-    // práctica: no hay ninguna pantalla protegida más allá de Login/Registro (no existe
-    // todavía una Home/Dashboard, fuera del alcance de este CU) -- pero la próxima pantalla
-    // autenticada hereda esta redirección gratis, sin tocar este archivo.
+    // La sesión puede cambiar en segundo plano, sin que la pantalla que disparó la request
+    // original se entere -- SessionManager ni sabe qué pantalla es: un RTR fallido la borra, el
+    // bloqueo (US-12) la deja en LOCKED, el login o el desbloqueo la pasan a UNLOCKED. Este
+    // observer es el único lugar que reacciona y aplica la regla de mundos (#9) -- ver
+    // worldRedirect --, sea cual sea la pantalla en la que esté el usuario. Toda transición entre
+    // mundos vacía el back stack, así que Back nunca muestra una pantalla de otro mundo.
     val sessionViewModel = hiltViewModel<SessionViewModel>()
-    val hasSession by sessionViewModel.hasSession.collectAsStateWithLifecycle()
+    val sessionState by sessionViewModel.sessionState.collectAsStateWithLifecycle()
     val currentEntry by navController.currentBackStackEntryAsState()
 
     // Se pide el permiso de notificaciones una única vez, recién tras un login exitoso -- ver
     // NotificationPermissionRequester. Volver a Settings desde otra pantalla no lo vuelve a
     // disparar: se consume apenas se compone.
     var justSignedIn by remember { mutableStateOf(false) }
-    LaunchedEffect(hasSession, currentEntry) {
-        val route = currentEntry?.destination?.route
-        if (!hasSession && !isPublicRoute(route) && !managesOwnSessionLoss(route)) {
-            navController.navigate(Route.SIGN_IN) {
+    LaunchedEffect(sessionState, currentEntry) {
+        // La ruta se lee en vivo y no de `currentEntry`: otra navegación de esta misma pasada (el
+        // plan del push, por ejemplo) pudo cambiarla antes de que este efecto corra.
+        val target = worldRedirect(sessionState, navController.currentDestination?.route)
+        if (target != null) {
+            navController.navigate(target) {
                 popUpTo(0) { inclusive = true }
             }
         }
     }
 
     // Al tocar una notificación se reconstruye el stack (Settings antes de Inbox, nunca Inbox
-    // sola) en vez de navegar directo -- ver planPushNavigation. Sin sesión todavía, el efecto
-    // de arriba ya se encarga de mandar a Login; esta misma clave (hasSession) hace que el
-    // plan se reevalúe apenas haya sesión, así que un login iniciado desde la notificación
-    // igual termina en el buzón. El destino no se consume acá sino en el buzón, que es quien
-    // abre el chat concreto una vez cargada la lista.
-    LaunchedEffect(hasSession, pendingPush) {
-        val plan = planPushNavigation(hasSession, pendingPush)
+    // sola) en vez de navegar directo -- ver planPushNavigation. Sin sesión desbloqueada todavía,
+    // el efecto de arriba ya se encarga de mandar a Login (sin sesión) o a Desbloqueo (bloqueada);
+    // esta misma clave (sessionState) hace que el plan se reevalúe apenas la sesión esté
+    // desbloqueada, así que un push tocado con la app bloqueada pide la huella y después abre el
+    // buzón. El destino no se consume acá sino en el buzón, que es quien abre el chat concreto
+    // una vez cargada la lista.
+    LaunchedEffect(sessionState, pendingPush) {
+        val plan = planPushNavigation(sessionState == SessionState.UNLOCKED, pendingPush)
         if (plan.isNotEmpty()) {
             navController.navigate(plan.first()) {
                 popUpTo(0) { inclusive = true }
@@ -138,13 +144,25 @@ fun VinculoVialNavHost(
         composable(Route.SPLASH) {
             SplashScreen(
                 onFinished = {
-                    // La bienvenida pasa a ser la puerta de entrada de la app. El caso "ya
-                    // hay una sesión guardada" queda pendiente de una Home/Dashboard que
-                    // todavía no existe (fuera del alcance de este CU) — por ahora se
-                    // aterriza siempre acá, sin distinguir si hay sesión o no.
-                    navController.navigate(Route.WELCOME) {
-                        popUpTo(Route.SPLASH) { inclusive = true }
+                    // El Splash decide el mundo: sesión bloqueada -> Desbloqueo; sin sesión ->
+                    // Bienvenida. El estado se lee ahora, no al componer: pudo cambiar mientras
+                    // se mostraba el Splash.
+                    navController.navigate(splashDestination(sessionViewModel.sessionState.value)) {
+                        popUpTo(0) { inclusive = true }
                     }
+                },
+            )
+        }
+
+        composable(Route.UNLOCK) { entry ->
+            val viewModel = hiltViewModel<UnlockViewModel>(entry)
+
+            // "Usar contraseña" lleva a Login con la sesión todavía bloqueada: el blob se borra
+            // recién cuando ese login sale bien (SecureTokenStore.startSession).
+            UnlockRoute(
+                viewModel = viewModel,
+                onUsePassword = {
+                    navController.navigate(Route.SIGN_IN) { popUpTo(0) { inclusive = true } }
                 },
             )
         }
@@ -159,21 +177,18 @@ fun VinculoVialNavHost(
         composable(Route.SIGN_IN) { entry ->
             val viewModel = hiltViewModel<SignInViewModel>(entry)
             val state by viewModel.uiState.collectAsStateWithLifecycle()
+            val notice by viewModel.notice.collectAsStateWithLifecycle()
 
-            // Todavía no hay Home/Dashboard (fuera del alcance de US-02/US-03): Settings
-            // hace de parada temporal tras el login, ya que es la única pantalla
-            // autenticada que existe hoy.
+            // Settings hace de Home tras el login. El salto lo hace el observer de mundos de
+            // arriba (la sesión pasa a UNLOCKED y Login es del mundo público), con el back stack
+            // vacío: acá sólo se marca el login para pedir el permiso de notificaciones.
             LaunchedEffect(state.status) {
-                if (state.status is SignInStatus.SignedIn) {
-                    justSignedIn = true
-                    navController.navigate(Route.SETTINGS) {
-                        popUpTo(Route.SIGN_IN) { inclusive = true }
-                    }
-                }
+                if (state.status is SignInStatus.SignedIn) justSignedIn = true
             }
 
             SignInScreen(
                 state = state,
+                notice = notice,
                 onDniChange = viewModel::onDniChange,
                 onPasswordChange = viewModel::onPasswordChange,
                 onSubmit = viewModel::submit,
@@ -186,12 +201,17 @@ fun VinculoVialNavHost(
             val state by viewModel.uiState.collectAsStateWithLifecycle()
 
             SettingsScreen(
-                state = state,
+                // El ofrecimiento de la huella espera a que termine el pedido de permiso de
+                // notificaciones: dos diálogos a la vez no se entienden.
+                state = state.copy(showBiometricOffer = state.showBiometricOffer && !justSignedIn),
                 onLogout = viewModel::logout,
                 onLinkVehicle = { navController.navigate(Route.LINK_VEHICLE) },
                 onScanPlate = { navController.navigate(Route.SCAN_GRAPH) },
                 onOpenInbox = { navController.navigate(Route.INBOX) },
                 onDeleteAccount = { navController.navigate(Route.DELETE_ACCOUNT) },
+                onBiometricToggle = viewModel::onBiometricToggle,
+                onBiometricOfferDismissed = viewModel::onBiometricOfferDismissed,
+                onBiometricActivationFailureDismissed = viewModel::onBiometricActivationFailureDismissed,
             )
 
             if (justSignedIn) {
@@ -583,23 +603,6 @@ fun VinculoVialNavHost(
         }
     }
 }
-
-/** Pantallas donde no hacer nada aunque no haya sesión: son justamente las que no la requieren. */
-private fun isPublicRoute(route: String?): Boolean =
-    route == null ||
-        route == Route.SPLASH ||
-        route == Route.WELCOME ||
-        route == Route.SIGN_IN ||
-        route.startsWith(Route.SIGN_UP_GRAPH)
-
-/**
- * La baja de cuenta (US-11) borra la sesión local ella misma, y el destino de ese momento no es
- * Login sino la bienvenida. Si el redireccionamiento genérico de arriba también reaccionara,
- * las dos navegaciones competirían y ganaría la que corra última. Por eso, mientras el usuario
- * está en esa pantalla, el redireccionamiento le deja la salida a ella: ver la ruta
- * `DELETE_ACCOUNT` en el nav host.
- */
-private fun managesOwnSessionLoss(route: String?): Boolean = route == Route.DELETE_ACCOUNT
 
 /**
  * El formulario, el consentimiento y la captura comparten un único ViewModel scopeado
