@@ -173,6 +173,31 @@ class ViviMessagesTest {
     }
 
     @Test
+    fun `el cupo diario dice el dia y la hora en que se libera, en hora argentina`() {
+        assertEquals(
+            "Ya enviaste una alerta para esta patente. Vas a poder enviar otra desde el 2 de enero a las 12:30.",
+            ViviMessages.senderDailyLimit(Instant.parse("2030-01-02T15:30:00Z")),
+        )
+    }
+
+    @Test
+    fun `el cupo diario usa la zona de Buenos Aires aunque el telefono tenga otra`() {
+        // 01:30 UTC del 3 ya es 22:30 del 2 en Argentina: el dia se cuenta en hora argentina, no UTC.
+        val instant = Instant.parse("2030-01-03T01:30:00Z")
+        val previous = java.util.TimeZone.getDefault()
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Tokyo"))
+
+            assertEquals(
+                "Ya enviaste una alerta para esta patente. Vas a poder enviar otra desde el 2 de enero a las 22:30.",
+                ViviMessages.senderDailyLimit(instant),
+            )
+        } finally {
+            java.util.TimeZone.setDefault(previous)
+        }
+    }
+
+    @Test
     fun `el avatar y el nombre son los de ViVIAna`() {
         assertEquals("ViVIAna", ViviMessages.NAME)
         assertEquals("Asistente de Vínculo Vial", ViviMessages.TAGLINE)

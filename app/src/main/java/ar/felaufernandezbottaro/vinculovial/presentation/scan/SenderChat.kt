@@ -26,6 +26,14 @@ sealed interface SenderChatItem {
 fun senderChatItems(state: ScanUiState): List<SenderChatItem> = buildList {
     add(SenderChatItem.Vivi(ViviMessages.SENDER_GREETING))
 
+    // Cupo diario ocupado desde el intento: ViVIAna lo explica y la conversación termina acá,
+    // sin ofrecer mensajes ni captura de fotos.
+    val status = state.status
+    if (status is ScanStatus.DailyLimitReached) {
+        add(SenderChatItem.Vivi(ViviMessages.senderDailyLimit(status.availableAt), isWarning = true))
+        return@buildList
+    }
+
     val alertType = state.selectedAlertType
     if (alertType == null) {
         add(SenderChatItem.Vivi(ViviMessages.SENDER_PROMPT))
@@ -46,7 +54,7 @@ fun senderChatItems(state: ScanUiState): List<SenderChatItem> = buildList {
         )
     }
 
-    when (val status = state.status) {
+    when (status) {
         ScanStatus.SendingAlert -> add(SenderChatItem.Typing)
         ScanStatus.AlertSent -> add(SenderChatItem.Vivi(ViviMessages.SENDER_SENT_RECEIPT))
         is ScanStatus.AlertFailed -> add(SenderChatItem.Vivi(status.error.message(), isWarning = true))

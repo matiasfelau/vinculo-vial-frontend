@@ -151,6 +151,12 @@ class AlertDateFormatterTest {
     // -- Fecha larga --------------------------------------------------------------------------
 
     @Test
+    fun `la hora del dia es HH mm en la zona pedida`() {
+        assertEquals("10:05", Instant.parse("2026-11-09T13:05:00Z").toClockTime(zoneAr))
+        assertEquals("00:00", Instant.parse("2026-11-09T03:00:00Z").toClockTime(zoneAr))
+    }
+
+    @Test
     fun `la fecha larga es dia de mes en espanol`() {
         assertEquals("9 de noviembre", Instant.parse("2026-11-09T13:00:00Z").toLongDate(zoneAr))
         assertEquals("1 de enero", Instant.parse("2027-01-01T13:00:00Z").toLongDate(zoneAr))

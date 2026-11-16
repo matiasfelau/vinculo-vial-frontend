@@ -6,6 +6,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 
 class SenderChatTest {
 
@@ -31,6 +32,36 @@ class SenderChatTest {
             ),
             items,
         )
+    }
+
+    private val availableAt = Instant.parse("2030-01-02T15:30:00Z")
+    private val dailyLimitText =
+        "Ya enviaste una alerta para esta patente. Vas a poder enviar otra desde el 2 de enero a las 12:30."
+
+    @Test
+    fun `con el cupo diario ocupado en el intento ViVIAna lo explica y no ofrece mensajes ni fotos`() {
+        val items = senderChatItems(stateOf(alertType = null, status = ScanStatus.DailyLimitReached(availableAt)))
+
+        assertEquals(
+            listOf(
+                SenderChatItem.Vivi("Hola, soy ViVIAna. Ya tengo la patente."),
+                SenderChatItem.Vivi(dailyLimitText, isWarning = true),
+            ),
+            items,
+        )
+    }
+
+    @Test
+    fun `con el cupo diario ocupado en el envio ViVIAna lo dice tras las fotos`() {
+        val items = senderChatItems(
+            stateOf(
+                AlertType.CRASHED,
+                status = ScanStatus.AlertFailed(SendAlertError.DailyLimit(availableAt)),
+                evidence = completedEvidence(AlertType.CRASHED),
+            ),
+        )
+
+        assertEquals(SenderChatItem.Vivi(dailyLimitText, isWarning = true), items.last())
     }
 
     private fun readyEvidence(alertType: AlertType) =

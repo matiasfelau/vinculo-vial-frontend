@@ -37,6 +37,7 @@ import org.junit.Test
 import retrofit2.Response
 import java.io.IOException
 import java.security.GeneralSecurityException
+import java.time.Instant
 import java.util.Base64
 
 /**
@@ -306,6 +307,33 @@ class AlertRepositoryImplTest {
 
         api.response = errorResponse(410, """{"error":"x","code":"EVIDENCE_EXPIRED"}""")
         assertEquals(SendAlertResult.Failed(SendAlertError.Unexpected), send())
+    }
+
+    @Test
+    fun `409 ALERT_DAILY_LIMIT es DailyLimit con el available_at`() = runTest {
+        api.response = errorResponse(
+            409,
+            """{"error":"ya enviaste una alerta para esta patente","code":"ALERT_DAILY_LIMIT","available_at":"2030-01-02T15:30:00Z"}""",
+        )
+
+        assertEquals(
+            SendAlertResult.Failed(SendAlertError.DailyLimit(Instant.parse("2030-01-02T15:30:00Z"))),
+            send(),
+        )
+    }
+
+    @Test
+    fun `409 con otro code, sin available_at o con uno ilegible es inesperado`() = runTest {
+        listOf(
+            """{"error":"x","code":"OTRO","available_at":"2030-01-02T15:30:00Z"}""",
+            """{"error":"x","code":"ALERT_DAILY_LIMIT"}""",
+            """{"error":"x","code":"ALERT_DAILY_LIMIT","available_at":"manana"}""",
+            "",
+        ).forEach { body ->
+            api.response = errorResponse(409, body)
+
+            assertEquals(body, SendAlertResult.Failed(SendAlertError.Unexpected), send())
+        }
     }
 
     @Test

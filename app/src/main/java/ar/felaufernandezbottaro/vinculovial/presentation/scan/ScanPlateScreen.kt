@@ -243,6 +243,7 @@ private fun statusHeadline(status: ScanStatus): String = when (status) {
     is ScanStatus.ManualEntry -> "Ingresá la patente"
     ScanStatus.Checking -> "Preparando el reporte…"
     ScanStatus.AwaitingAlertType -> "Elegí qué querés reportar"
+    is ScanStatus.DailyLimitReached -> "Ya enviaste una alerta para esta patente"
     ScanStatus.SendingAlert -> "Enviando el reporte…"
     ScanStatus.AlertSent -> "¡Listo!"
     is ScanStatus.CheckFailed -> "No pudimos preparar el reporte"

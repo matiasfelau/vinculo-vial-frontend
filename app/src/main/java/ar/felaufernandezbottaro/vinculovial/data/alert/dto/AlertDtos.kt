@@ -10,11 +10,26 @@ data class AlertAttemptResponseDto(
     @Json(name = "expires_at") val expiresAt: String,
 )
 
-/** Cuerpo de error del contrato de US-08: `{ "error": "<mensaje>", "code": "<CODE>" }`. */
+/**
+ * Body de `POST /api/v1/alerts/attempts`: la patente cifrada para Vehicle, el mismo criptograma
+ * (`pat_enc`) que viaja en el envío. Es un secreto en tránsito: [toString] no lo imprime.
+ */
+@JsonClass(generateAdapter = true)
+data class AlertAttemptRequestDto(
+    @Json(name = "pat_enc") val patEnc: String,
+) {
+    override fun toString(): String = "AlertAttemptRequestDto(patEnc=***)"
+}
+
+/**
+ * Cuerpo de error del contrato de US-08: `{ "error": "<mensaje>", "code": "<CODE>" }`. El 409
+ * `ALERT_DAILY_LIMIT` (US-16) suma `available_at`, RFC 3339.
+ */
 @JsonClass(generateAdapter = true)
 data class ApiErrorDto(
     @Json(name = "error") val error: String? = null,
     @Json(name = "code") val code: String? = null,
+    @Json(name = "available_at") val availableAt: String? = null,
 )
 
 /**
