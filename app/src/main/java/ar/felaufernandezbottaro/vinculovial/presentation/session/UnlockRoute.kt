@@ -2,6 +2,7 @@ package ar.felaufernandezbottaro.vinculovial.presentation.session
 
 import android.content.Context
 import android.content.ContextWrapper
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -15,6 +16,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
  * apenas aparece la pantalla -- el usuario viene a desbloquear --, y el botón lo reabre si se
  * canceló o si no había red.
  */
+@ExcludeFromCoverage(reason = "Une el ViewModel con BiometricPrompt, que necesita la Activity y la biometría del dispositivo; la pantalla (UnlockScreen) y el ViewModel sí se prueban")
 @Composable
 fun UnlockRoute(viewModel: UnlockViewModel, onUsePassword: () -> Unit) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()

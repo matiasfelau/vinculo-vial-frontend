@@ -18,12 +18,14 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Qualifier
 import javax.inject.Singleton
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 
 /** Segundos en segundo plano a partir de los cuales volver a primer plano bloquea la sesión. */
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class SessionLockAfterBackgroundSeconds
 
+@ExcludeFromCoverage(reason = "Módulo de Hilt: solo cableado de dependencias, sin lógica propia")
 @Module
 @InstallIn(SingletonComponent::class)
 object SessionModule {

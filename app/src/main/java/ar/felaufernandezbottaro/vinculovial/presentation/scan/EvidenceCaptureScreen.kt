@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 import ar.felaufernandezbottaro.vinculovial.data.edge.SecureBitmap
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.awaitCameraProviderInternal
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.captureRawJpegInternal
@@ -68,6 +69,7 @@ import kotlinx.coroutines.withContext
  * cámara in-app (`ImageCapture` en memoria); en `debug`, [galleryEvidenceSource] suma la opción
  * de elegir de la galería, que en release no existe.
  */
+@ExcludeFromCoverage(reason = "Captura con CameraX (ImageCapture): necesita cámara real; la instrucción, el obturador, la revisión y el diálogo viven en EvidenceCaptureOverlay, que sí se prueba")
 @Composable
 fun EvidenceCaptureScreen(
     state: EvidenceCaptureState,
@@ -89,7 +91,6 @@ fun EvidenceCaptureScreen(
     var showCancelDialog by remember { mutableStateOf(false) }
 
     val busy = state.phase == EvidencePhase.PROCESSING
-    val step = state.currentStep
 
     BackHandler(enabled = !busy) { showCancelDialog = true }
 
@@ -132,12 +133,71 @@ fun EvidenceCaptureScreen(
 
     val pickGalleryImage = galleryEvidenceSource.rememberPickerLauncher { bytes -> onPhotoCaptured(bytes, 0) }
 
+    EvidenceCaptureOverlay(
+        state = state,
+        cameraFailure = cameraFailure,
+        reviewBitmap = reviewBitmap,
+        shutterEnabled = cameraProvider != null && !capturing,
+        showCancelDialog = showCancelDialog,
+        onBack = { showCancelDialog = true },
+        onCancelDialogDismissed = { showCancelDialog = false },
+        onCancelConfirmed = {
+            showCancelDialog = false
+            onCancel()
+        },
+        onShutter = {
+            capturing = true
+            imageCapture.captureRawJpegInternal(
+                context = context,
+                onJpeg = { jpeg, rotationDegrees ->
+                    capturing = false
+                    onPhotoCaptured(jpeg, rotationDegrees)
+                },
+                onFailure = {
+                    capturing = false
+                    onPhotoCaptureFailed()
+                },
+            )
+        },
+        onPickFromGallery = pickGalleryImage,
+        onPhotoRetake = onPhotoRetake,
+        onAddAnotherPhoto = onAddAnotherPhoto,
+        onStepConfirmed = onStepConfirmed,
+        preview = { AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize()) },
+    )
+}
+
+/**
+ * Lo que se ve sobre la cámara en la captura de evidencia: la instrucción del paso, el obturador,
+ * la revisión de la foto y el diálogo de salida. Separado del anfitrión de CameraX
+ * ([EvidenceCaptureScreen]) para poder probarlo sin cámara; [preview] es el hueco del `PreviewView`.
+ */
+@Composable
+internal fun EvidenceCaptureOverlay(
+    state: EvidenceCaptureState,
+    cameraFailure: String?,
+    reviewBitmap: Bitmap?,
+    shutterEnabled: Boolean,
+    showCancelDialog: Boolean,
+    onBack: () -> Unit,
+    onCancelDialogDismissed: () -> Unit,
+    onCancelConfirmed: () -> Unit,
+    onShutter: () -> Unit,
+    onPickFromGallery: (() -> Unit)?,
+    onPhotoRetake: () -> Unit,
+    onAddAnotherPhoto: () -> Unit,
+    onStepConfirmed: () -> Unit,
+    preview: @Composable () -> Unit,
+) {
+    val busy = state.phase == EvidencePhase.PROCESSING
+    val step = state.currentStep
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black),
     ) {
-        AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+        preview()
 
         reviewBitmap?.let { bitmap ->
             Image(
@@ -161,7 +221,7 @@ fun EvidenceCaptureScreen(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Volver al chat",
                 enabled = !busy,
-                onClick = { showCancelDialog = true },
+                onClick = onBack,
             )
 
             if (step != null) {
@@ -203,24 +263,8 @@ fun EvidenceCaptureScreen(
 
             when (state.phase) {
                 EvidencePhase.CAPTURING -> {
-                    ShutterButton(
-                        enabled = cameraProvider != null && !capturing,
-                        onClick = {
-                            capturing = true
-                            imageCapture.captureRawJpegInternal(
-                                context = context,
-                                onJpeg = { jpeg, rotationDegrees ->
-                                    capturing = false
-                                    onPhotoCaptured(jpeg, rotationDegrees)
-                                },
-                                onFailure = {
-                                    capturing = false
-                                    onPhotoCaptureFailed()
-                                },
-                            )
-                        },
-                    )
-                    pickGalleryImage?.let { launch ->
+                    ShutterButton(enabled = shutterEnabled, onClick = onShutter)
+                    onPickFromGallery?.let { launch ->
                         TextButton(onClick = launch) {
                             Text(text = "Elegir de la galería", color = Color.White)
                         }
@@ -246,26 +290,21 @@ fun EvidenceCaptureScreen(
 
     if (showCancelDialog) {
         AlertDialog(
-            onDismissRequest = { showCancelDialog = false },
+            onDismissRequest = onCancelDialogDismissed,
             title = { Text("¿Volver al chat?") },
             text = { Text("Las fotos que sacaste se descartan y vas a tener que sacarlas de nuevo.") },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        showCancelDialog = false
-                        onCancel()
-                    },
-                ) { Text("Sí, volver", color = VvOrange) }
+                TextButton(onClick = onCancelConfirmed) { Text("Sí, volver", color = VvOrange) }
             },
             dismissButton = {
-                TextButton(onClick = { showCancelDialog = false }) { Text("Seguir sacando", color = VvNavy) }
+                TextButton(onClick = onCancelDialogDismissed) { Text("Seguir sacando", color = VvNavy) }
             },
         )
     }
 }
 
 @Composable
-private fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
+internal fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         enabled = enabled,
@@ -303,13 +342,13 @@ private fun ReviewActions(
     }
 }
 
-private fun stepCounter(state: EvidenceCaptureState): String {
+internal fun stepCounter(state: EvidenceCaptureState): String {
     val step = state.currentStep ?: return ""
     val base = "Paso ${state.stepIndex + 1} de ${state.steps.size}"
     return if (step.maxPhotos > 1) "$base · foto ${state.photoIndex + 1} de hasta ${step.maxPhotos}" else base
 }
 
-private fun EvidenceError.message(): String = when (this) {
+internal fun EvidenceError.message(): String = when (this) {
     EvidenceError.CAPTURE_FAILED -> "No pudimos sacar la foto. Intentá de nuevo."
     EvidenceError.UNREADABLE -> "No pudimos leer la imagen. Probá con otra foto."
     EvidenceError.TOO_LARGE -> "La foto es demasiado pesada. Sacala de nuevo."

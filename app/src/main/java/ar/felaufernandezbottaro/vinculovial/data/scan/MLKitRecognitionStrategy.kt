@@ -1,6 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.data.scan
 
 import android.graphics.Bitmap
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 import ar.felaufernandezbottaro.vinculovial.domain.scan.PlateRecognitionStrategy
 import ar.felaufernandezbottaro.vinculovial.domain.scan.model.RecognizedText
 import com.google.mlkit.vision.common.InputImage
@@ -17,6 +18,7 @@ import javax.inject.Singleton
  * `PlateRegexFilter` decide cuál (si alguna) tiene forma de patente -- acá no se valida formato,
  * sólo se lee texto.
  */
+@ExcludeFromCoverage(reason = "Cliente de ML Kit Text Recognition: necesita los servicios de Google; el filtro de patentes vive en PlateRegexFilter")
 @Singleton
 class MLKitRecognitionStrategy @Inject constructor() : PlateRecognitionStrategy {
 

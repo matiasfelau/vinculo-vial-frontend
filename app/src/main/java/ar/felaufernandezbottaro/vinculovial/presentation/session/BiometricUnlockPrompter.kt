@@ -1,5 +1,6 @@
 package ar.felaufernandezbottaro.vinculovial.presentation.session
 
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
@@ -11,6 +12,7 @@ import javax.crypto.Cipher
  * clave privada como `CryptoObject`. Sin PIN ni patrón del dispositivo como alternativa: la
  * alternativa es "Usar contraseña" en la propia pantalla de Desbloqueo.
  */
+@ExcludeFromCoverage(reason = "BiometricPrompt: necesita la biometría del dispositivo; el mapeo de errores vive en toPromptFailure, que sí se prueba")
 object BiometricUnlockPrompter {
 
     /**
@@ -43,18 +45,5 @@ object BiometricUnlockPrompter {
 
         BiometricPrompt(activity, ContextCompat.getMainExecutor(activity), callback)
             .authenticate(info, BiometricPrompt.CryptoObject(cipher))
-    }
-
-    private fun Int.toPromptFailure(): PromptFailure = when (this) {
-        BiometricPrompt.ERROR_USER_CANCELED,
-        BiometricPrompt.ERROR_NEGATIVE_BUTTON,
-        BiometricPrompt.ERROR_CANCELED,
-        -> PromptFailure.CANCELLED
-
-        BiometricPrompt.ERROR_LOCKOUT,
-        BiometricPrompt.ERROR_LOCKOUT_PERMANENT,
-        -> PromptFailure.LOCKED_OUT
-
-        else -> PromptFailure.OTHER
     }
 }
