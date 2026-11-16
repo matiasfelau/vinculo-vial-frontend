@@ -2,6 +2,26 @@
 
 App Android de Vínculo Vial.
 
+## Beneficios de partners (US-18)
+
+Un partner (por ejemplo, una petrolera) entrega códigos de descuento de un solo uso; Vínculo Vial le asigna uno por persona y por campaña. La app solo los muestra: no los genera ni los valida.
+
+- **Home:** debajo de "Mis alertas" hay un carrusel (`HorizontalPager`) con los banners de las promociones vigentes, con un indicador de página. Avanza solo cada 5 s y se detiene mientras el usuario lo toca o lo arrastra. Si la lista viene vacía o falla, el carrusel no se muestra: sin error ni espacio vacío. La lista se actualiza cada vez que se vuelve al Home, así que una promoción vencida o agotada desaparece.
+- **Banner:** `GET /benefits/{id}/banner` con el cliente HTTP autenticado, como bytes; no hay librería de imágenes. La ruta se arma desde el `id`, nunca desde el `banner_url` que manda el servidor, para que el Bearer no pueda ir a otro host. Se guarda en una caché en memoria por `ETag` (con `If-None-Match`, un 304 devuelve los bytes guardados). Mientras no llega, o si falla, se ve una tarjeta con el título.
+- **Detalle:** banner, título, partner, "Hasta el dd/mm" (hora argentina), descripción y condiciones (plegadas).
+  - Sin código: "Obtener código" (`POST /benefits/{id}/claim`, idempotente en el servidor: al volver se ve el mismo).
+  - Con código: el código en grande, "Copiar" (portapapeles, marcado como sensible; avisa "Código copiado") y "Abrir <partner>" (`ACTION_VIEW` sobre `open_url`). Debajo: "Ingresá el código en la app de <partner>".
+  - "Abrir" solo se ofrece si `open_url` es `https://` con host; cualquier otro esquema no se abre nunca.
+- **Errores:** se mapean por el `code`, no por el status. `NO_CODES_LEFT`: "Se agotaron los códigos de esta promoción". `BENEFIT_NOT_FOUND`: "Esta promoción ya no está disponible", y se recarga la lista. En ambos casos ya no se ofrece pedir el código. El resto (429, 503, red) muestra un mensaje y deja reintentar.
+- **Privacidad:** el código nunca se loguea ni sale en un `toString`. Una promoción cuyo `ends_at` no se puede leer se descarta sin tumbar al resto de la lista.
+- **Regla del servidor que se nota en la app:** una campaña es visible si hay códigos disponibles o si el usuario ya tiene uno asignado. Un usuario sin código no ve una campaña agotada; solo ve el `NO_CODES_LEFT` si el pool se agota mientras tiene abierto el detalle.
+
+Para probarlo contra Benefits de verdad: `docker compose --profile seed run --rm vinculo-vial-benefits-seed` en `vinculo-vial-benefits` carga "Estación de prueba" (100 códigos falsos y un banner generado) y una campaña vencida que no debe aparecer.
+
+### Pruebas de pantalla
+
+Las pantallas Compose se prueban en la JVM con Robolectric y `createComposeRule` (dentro de `testDebugUnitTest`). Se verifica el estado que muestran y los callbacks que disparan. Los tests de pantalla usan `@Config(qualifiers = "w411dp-h1600dp-xhdpi")` para que el contenido quede a la vista sin scrollear.
+
 ## Evidencia de una alerta: dos fotos (US-15)
 
 Todo tipo de alerta que la app ofrece (`CRASHED` y `PARKED_ON_GARAGE`) pide exactamente dos fotos, en este orden:

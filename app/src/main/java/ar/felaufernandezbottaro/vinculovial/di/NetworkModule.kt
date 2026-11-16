@@ -5,6 +5,7 @@ import ar.felaufernandezbottaro.vinculovial.BuildConfig
 import ar.felaufernandezbottaro.vinculovial.data.account.AccountApi
 import ar.felaufernandezbottaro.vinculovial.data.alert.AlertApi
 import ar.felaufernandezbottaro.vinculovial.data.alert.AlertAttemptApi
+import ar.felaufernandezbottaro.vinculovial.data.benefits.BenefitsApi
 import ar.felaufernandezbottaro.vinculovial.data.inbox.InboxApi
 import ar.felaufernandezbottaro.vinculovial.data.notifications.NotificationsApi
 import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
@@ -192,6 +193,12 @@ object NetworkModule {
     @Singleton
     fun provideNotificationsApi(retrofit: Retrofit): NotificationsApi =
         retrofit.create(NotificationsApi::class.java)
+
+    /** Mismo cliente que `InboxApi`: `/benefits` es autenticado por JWT, no por attestation. */
+    @Provides
+    @Singleton
+    fun provideBenefitsApi(retrofit: Retrofit): BenefitsApi =
+        retrofit.create(BenefitsApi::class.java)
 
     @Provides
     @Singleton
