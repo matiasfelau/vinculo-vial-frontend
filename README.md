@@ -66,3 +66,49 @@ Se entra desde "¿Olvidaste tu contraseña?" en el Login. Es parte del mundo pú
 ### Configuración
 
 `EMAIL_CODE_RESEND_SECONDS` (`local.properties` o variable de entorno, 60 por defecto) es la cuenta regresiva del botón "Reenviar". Tiene que coincidir con la de Identity, que es quien aplica el throttle. Ver `local.properties.example` y `.env.example`.
+
+## Vinculación del vehículo por dominio (US-14)
+
+La patente se vincula al usuario de la sesión escribiéndola a mano, sin verificar la titularidad: el Estado no ofrece a los privados un servicio para validarla. La mitigación es el tope de 3 vehículos por usuario (`VEHICLE_MAX_PER_USER` en Vehicle; la app toma el máximo de la respuesta, no lo tiene fijo). Se eliminó el escaneo del QR de la cédula (`ScanCedulaScreen`, `CedulaQrParser` y la ruta `vehicle/link`).
+
+### Mis vehículos
+
+Se entra desde el Home ("Mis vehículos", ruta `vehicles`). **La app nunca muestra qué patentes tiene vinculadas el usuario, sólo cuántas**: "Tenés N de 3 vehículos vinculados". Quien acceda a una sesión ajena no puede ver qué vehículos tiene esa persona.
+
+| Botón | Qué hace |
+|---|---|
+| Vincular vehículo | Modal para escribir la patente y confirmarla. Deshabilitado al llegar al tope, con el texto "Podés tener hasta 3 vehículos" |
+| Desvincular un vehículo | Modal para volver a escribir la patente, con la misma validación y una confirmación |
+| Desvincular todos | Confirmación: "Vas a dejar de recibir las alertas de todos tus vehículos". Es la salida de quien no recuerda cómo escribió una patente |
+
+- **Campo de patente:** mayúsculas, sin espacios ni guiones, hasta 7 caracteres, con validación de `AAA999` o `AA999AA` en la app (`PlateRules`). Una patente inválida no sale del dispositivo.
+- **Confirmación del alta:** "Vas a vincular AB123CD. Vas a recibir las alertas de esta patente".
+
+### Endpoints
+
+Todos con `Authorization: Bearer`, sin App Attestation (JWT y rate limit en Kong). Ninguna respuesta trae patentes.
+
+| Operación | Endpoint | Cuerpo | Respuesta |
+|---|---|---|---|
+| Contar | `GET /api/v1/vehicles` | — | 200 `{ count, max }` |
+| Vincular | `POST /api/v1/vehicles` | `{ payload_enc }` | 201 `{ count, max }` |
+| Desvincular una | `POST /api/v1/vehicles/unlink` | `{ payload_enc }` | 200 `{ count, max }` |
+| Desvincular todos | `DELETE /api/v1/vehicles` | — | 204 |
+
+`payload_enc` es el HPKE vigente contra Vehicle (clave pública `VEHICLE_HPKE_PUBLIC_KEY`, `info` vacío) de `{ "patente" }`, con la patente en base64 porque Vehicle la tipa `[]byte`.
+
+### Errores (por `code`, no por status)
+
+| `code` | Texto |
+|---|---|
+| `DUPLICATE_VEHICLE` | "Ya tenés esta patente vinculada" |
+| `VEHICLE_LIMIT_REACHED` | "Podés tener hasta 3 vehículos" (el mismo del botón deshabilitado) |
+| `INVALID_PLATE` | "Revisá el formato de la patente" |
+| `VEHICLE_NOT_FOUND` | "No tenés esa patente vinculada" |
+| `DEPENDENCY_UNAVAILABLE` (503) | Mensaje de reintento |
+
+La patente que se escribe vive sólo en el estado del modal abierto: no se loguea, no se persiste y se descarta al cerrarlo.
+
+### Pruebas de pantalla
+
+Las pantallas se prueban con Robolectric y `createComposeRule` (`MyVehiclesScreenTest`). Para eso se sumaron `robolectric` y `ui-test-junit4` a las dependencias de prueba y `ui-test-manifest` a `debug`.

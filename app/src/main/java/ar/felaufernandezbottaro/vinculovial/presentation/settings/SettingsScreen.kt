@@ -60,7 +60,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrangeDark
 fun SettingsScreen(
     state: SettingsUiState,
     onLogout: () -> Unit,
-    onLinkVehicle: () -> Unit,
+    onOpenVehicles: () -> Unit,
     onScanPlate: () -> Unit,
     onOpenInbox: () -> Unit,
     onDeleteAccount: () -> Unit,
@@ -95,10 +95,10 @@ fun SettingsScreen(
 
             HomeActionCard(
                 icon = Icons.Filled.DirectionsCar,
-                title = "Vincular vehículo",
-                subtitle = "Sumá un auto a tu cuenta",
+                title = "Mis vehículos",
+                subtitle = "Vinculá o desvinculá tus autos",
                 enabled = !state.isLoggingOut,
-                onClick = onLinkVehicle,
+                onClick = onOpenVehicles,
             )
 
             HomeActionCard(
@@ -321,7 +321,7 @@ private fun SettingsScreenPreview() {
         SettingsScreen(
             state = SettingsUiState(),
             onLogout = {},
-            onLinkVehicle = {},
+            onOpenVehicles = {},
             onScanPlate = {},
             onOpenInbox = {},
             onDeleteAccount = {},

@@ -88,7 +88,7 @@ class ScanViewModel @Inject constructor(
     /**
      * Recorta, corre OCR y filtra un frame del análisis en vivo. Se llama desde el hilo del
      * analizador de CameraX (no el hilo principal) -- mismo patrón que
-     * `MlKitQrCedulaScanner.submitFrame`. Sólo actualiza [uiState] a [ScanStatus.Detected]:
+     * `MlKitDocumentScanSession.submitFrame`. Sólo actualiza [uiState] a [ScanStatus.Detected]:
      * a partir de ahí el pipeline se pausa (ya no corre porque el status deja de ser
      * `Scanning`) hasta que el humano confirme o rechace lo que leyó el OCR -- ver
      * [onPlateConfirmed] / [onPlateRejected].
