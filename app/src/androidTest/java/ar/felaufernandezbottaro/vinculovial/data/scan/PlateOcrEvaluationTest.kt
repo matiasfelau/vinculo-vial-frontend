@@ -1,13 +1,11 @@
 package ar.felaufernandezbottaro.vinculovial.data.scan
 
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -24,8 +22,9 @@ import java.util.Locale
  *
  * Corre cada recorte por el mismo reconocimiento que usa la app, sin la parte de cámara
  * (`FrameCropper` no interviene: los recortes ya vienen recortados):
- * `MLKitRecognitionStrategy.recognize` -> `PlateRegexFilter.filter`. Ninguno de los dos se
- * modifica ni se reimplementa acá.
+ * `MLKitRecognitionStrategy.recognize` -> `PlateRegexFilter.selectMatch` (el mismo camino de
+ * `ScanViewModel.processFrame`: normalización por posición y elección por confianza). Ninguno de
+ * los dos se reimplementa acá.
  *
  * El set NO está en el repo. Se empuja con `adb push` a `/data/local/tmp` y se copia a la
  * carpeta interna de la app con `run-as` (el almacenamiento externo no es visible bajo
@@ -36,17 +35,21 @@ import java.util.Locale
  *
  * y escribe en `filesDir/ocr-eval/out/` (se baja con `run-as ... cat`):
  *
- *     ocr-results.csv id,formato,luz,lectura,candidatos,confianza,tiempo_ms
+ *     ocr-results.csv id,formato,luz,lectura,candidatos,confianza,tiempo_ms,linea_elegida
  *     ocr-device.txt  modelo del dispositivo, versión de Android y cantidad de recortes
  *
+ * El nombre del CSV se cambia con `-e outName <archivo>` en `am instrument` (por defecto
+ * `ocr-results.csv`), para no pisar una corrida anterior.
+ *
  * Columnas del CSV:
- *  - `lectura`: lo que devuelve `PlateRegexFilter` (patente normalizada) o vacío si ninguna línea
- *    tiene forma de patente.
+ *  - `lectura`: la patente que elige la app (ya normalizada) o vacío si ningún candidato es una
+ *    patente válida.
  *  - `candidatos`: las líneas crudas que devolvió ML Kit, separadas por `|`.
- *  - `confianza`: confianza de ML Kit para la línea de la que salió `lectura` (vacía si no hubo
- *    lectura). La app no la usa y su estrategia no la expone, así que se obtiene con una segunda
- *    pasada de ML Kit, fuera de la medición de tiempo.
- *  - `tiempo_ms`: `recognize` + `filter`, medido con `System.nanoTime`, sin decodificar el PNG.
+ *  - `confianza`: confianza de ML Kit para la línea elegida (vacía si no hubo lectura).
+ *  - `tiempo_ms`: `recognize` + `selectMatch`, medido con `System.nanoTime`, sin decodificar el
+ *    PNG.
+ *  - `linea_elegida`: el texto crudo del que salió `lectura`, para ver qué corrigió la
+ *    normalización.
  *
  * Las patentes del set aparecen en el CSV porque es el producto de la medición; esta prueba no
  * loguea ninguna. (El log de depuración de `PlateRegexFilter`, ya existente, sí imprime los
@@ -55,10 +58,12 @@ import java.util.Locale
 @RunWith(AndroidJUnit4::class)
 class PlateOcrEvaluationTest {
 
-    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val instrumentation = InstrumentationRegistry.getInstrumentation()
+    private val context = instrumentation.targetContext
     private val baseDir = File(context.filesDir, "ocr-eval")
     private val inDir = File(baseDir, "in")
     private val outDir = File(baseDir, "out")
+    private val outName = InstrumentationRegistry.getArguments().getString("outName") ?: "ocr-results.csv"
 
     @Test
     fun evaluaElSetDeRecortes() = runBlocking {
@@ -71,26 +76,24 @@ class PlateOcrEvaluationTest {
 
         val strategy = MLKitRecognitionStrategy()
         val filter = PlateRegexFilter()
-        val confidenceClient = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
         // Calentamiento: las primeras inferencias pagan la inicialización del modelo y del
         // delegado; sin esto sesgarían hacia arriba el tiempo de los primeros recortes.
         decode(File(inDir, "${index.first().id}.png")).let { warm ->
-            repeat(WARMUP_RUNS) { filter.filter(strategy.recognize(warm)) }
+            repeat(WARMUP_RUNS) { filter.selectMatch(strategy.recognize(warm)) }
             warm.recycle()
         }
 
         outDir.mkdirs()
-        val rows = StringBuilder("id,formato,luz,lectura,candidatos,confianza,tiempo_ms\n")
+        val rows = StringBuilder("id,formato,luz,lectura,candidatos,confianza,tiempo_ms,linea_elegida\n")
         for (entry in index) {
             val bitmap = decode(File(inDir, "${entry.id}.png"))
 
             val t0 = System.nanoTime()
             val candidates = strategy.recognize(bitmap)
-            val plate = filter.filter(candidates)
+            val match = filter.selectMatch(candidates)
             val elapsedMs = (System.nanoTime() - t0) / 1_000_000.0
 
-            val confidence = plate?.let { lineConfidence(confidenceClient, bitmap, it) }
             bitmap.recycle()
 
             rows.append(
@@ -98,16 +101,16 @@ class PlateOcrEvaluationTest {
                     entry.id,
                     entry.formato,
                     entry.luz,
-                    plate.orEmpty(),
-                    candidates.joinToString("|"),
-                    confidence?.let { String.format(Locale.ROOT, "%.4f", it) }.orEmpty(),
+                    match?.plate.orEmpty(),
+                    candidates.joinToString("|") { it.text },
+                    match?.let { String.format(Locale.ROOT, "%.4f", it.source.confidence) }.orEmpty(),
                     String.format(Locale.ROOT, "%.1f", elapsedMs),
+                    match?.source?.text.orEmpty(),
                 ).joinToString(",") { csv(it) },
             ).append('\n')
         }
-        confidenceClient.close()
 
-        File(outDir, "ocr-results.csv").writeText(rows.toString())
+        File(outDir, outName).writeText(rows.toString())
         File(outDir, "ocr-device.txt").writeText(
             "modelo=${Build.MANUFACTURER} ${Build.MODEL}\n" +
                 "android=${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\n" +
@@ -147,21 +150,6 @@ class PlateOcrEvaluationTest {
         }
     }
 
-    private suspend fun lineConfidence(
-        client: TextRecognizer,
-        bitmap: Bitmap,
-        plate: String,
-    ): Float? {
-        val result = try {
-            client.process(InputImage.fromBitmap(bitmap, 0)).await()
-        } catch (e: Exception) {
-            return null
-        }
-        return result.textBlocks.flatMap { it.lines }
-            .firstOrNull { it.text.trim().uppercase().replace(NOISE, "") == plate }
-            ?.confidence
-    }
-
     private fun decode(file: File) =
         requireNotNull(BitmapFactory.decodeFile(file.path)) { "No se pudo decodificar ${file.name}" }
 
@@ -185,6 +173,5 @@ class PlateOcrEvaluationTest {
         const val WARMUP_RUNS = 3
         const val MODEL_READY_TIMEOUT_MS = 90_000L
         const val MODEL_READY_RETRY_MS = 2_000L
-        val NOISE = Regex("[\\s-]")
     }
 }
