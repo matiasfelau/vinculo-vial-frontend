@@ -241,4 +241,7 @@ dependencies {
     testRuntimeOnly(libs.jjwt.impl)
     testRuntimeOnly(libs.jjwt.orgjson)
     testRuntimeOnly(libs.json)
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
 }
