@@ -110,7 +110,7 @@ class ScanViewModel @Inject constructor(
                 bitmap.recycle()
             }
 
-            val patente = regexFilter.filter(candidates)
+            val patente = regexFilter.select(candidates)
             if (patente != null) onPlateFound(patente)
         } finally {
             frameInFlight.unlock()

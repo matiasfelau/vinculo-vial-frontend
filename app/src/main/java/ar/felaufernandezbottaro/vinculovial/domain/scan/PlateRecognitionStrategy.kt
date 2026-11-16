@@ -1,6 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.domain.scan
 
 import android.graphics.Bitmap
+import ar.felaufernandezbottaro.vinculovial.domain.scan.model.RecognizedText
 
 /**
  * Reconocimiento de texto sobre un frame ya recortado al overlay. Única implementación de
@@ -13,6 +14,9 @@ import android.graphics.Bitmap
  */
 interface PlateRecognitionStrategy {
 
-    /** Cada elemento es una línea de texto candidata; ninguna está garantizada como patente. */
-    suspend fun recognize(bitmap: Bitmap): List<String>
+    /**
+     * Cada elemento es una línea de texto candidata con su confianza; ninguna está garantizada
+     * como patente.
+     */
+    suspend fun recognize(bitmap: Bitmap): List<RecognizedText>
 }
