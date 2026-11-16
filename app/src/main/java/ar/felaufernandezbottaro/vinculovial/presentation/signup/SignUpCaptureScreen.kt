@@ -53,6 +53,7 @@ fun SignUpCaptureScreen(
     onSubmit: () -> Unit,
     onErrorDismissed: () -> Unit = {},
     onEditForm: () -> Unit = {},
+    onVerifyEmail: () -> Unit = {},
 ) {
     // Mientras se está enviando (verificación + HPKE + POST en curso), el back se
     // ignora del todo: salir a mitad del envío dejaría una carrera entre esa corrutina
@@ -67,6 +68,7 @@ fun SignUpCaptureScreen(
             error = error,
             onDismiss = onErrorDismissed,
             onEditForm = onEditForm,
+            onVerifyEmail = onVerifyEmail,
         )
     }
 

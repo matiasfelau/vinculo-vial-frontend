@@ -21,6 +21,11 @@ class SessionTextsTest {
     }
 
     @Test
+    fun `la recuperacion de contrasena deja el aviso del contrato en Login`() {
+        assertEquals("Listo. Ingresá con tu nueva contraseña", LoginNotice.PASSWORD_RESET.message())
+    }
+
+    @Test
     fun `las dos acciones del Desbloqueo son huella y contrasena`() {
         assertEquals("Usar huella", SessionTexts.UNLOCK_BUTTON)
         assertEquals("Usar contraseña", SessionTexts.USE_PASSWORD_BUTTON)

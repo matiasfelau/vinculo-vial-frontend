@@ -21,12 +21,13 @@ class RedactedModelsTest {
             email = "usuario@ejemplo.com",
             password = "Password123!",
             selfieBase64 = "c2VsZmll",
+            emailVerificationToken = "token-de-verificacion",
         )
 
         val rendered = credentials.toString()
 
         assertEquals("Credentials(***)", rendered)
-        listOf("12345678", "00307513148", "usuario@ejemplo.com", "Password123!", "c2VsZmll").forEach {
+        listOf("12345678", "00307513148", "usuario@ejemplo.com", "Password123!", "c2VsZmll", "token-de-verificacion").forEach {
             assertFalse("el toString filtró '$it'", rendered.contains(it))
         }
     }

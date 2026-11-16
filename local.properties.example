@@ -63,3 +63,7 @@ CIRCUIT_BREAKER_OPEN_MS=30000
 # US-12: segundos en segundo plano tras los cuales la sesión se bloquea al volver a primer plano
 # (pide la huella o, sin biometría activada, cierra la sesión). Bajalo para probar el bloqueo.
 SESSION_LOCK_AFTER_BACKGROUND_SECONDS=300
+
+# US-13: segundos de la cuenta regresiva del botón "Reenviar" del código por email. Tiene que
+# coincidir con EMAIL_CODE_RESEND_SECONDS de Identity, que es quien aplica el throttle.
+EMAIL_CODE_RESEND_SECONDS=60

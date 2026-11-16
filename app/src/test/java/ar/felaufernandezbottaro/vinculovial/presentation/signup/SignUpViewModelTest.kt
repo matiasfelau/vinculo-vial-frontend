@@ -22,6 +22,10 @@ import org.junit.Test
 
 class SignUpViewModelTest {
 
+    private companion object {
+        const val TOKEN = "token-de-verificacion"
+    }
+
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
@@ -42,6 +46,7 @@ class SignUpViewModelTest {
         onEmailChange("usuario@ejemplo.com")
         onPasswordChange("Password123!")
         onPasswordConfirmationChange("Password123!")
+        onEmailVerified("usuario@ejemplo.com", TOKEN)
     }
 
     /** La cámara real entrega bytes; en los tests alcanza con cualquier contenido. */
@@ -54,6 +59,109 @@ class SignUpViewModelTest {
     private fun SignUpViewModel.capturarTodo(livenessPassed: Boolean = true) {
         onDocumentScanned(documento())
         onSelfieCaptured(foto(), livenessPassed)
+    }
+
+    // --- Verificación del email (US-13) ---
+
+    @Test
+    fun `el email verificado se reconoce y el token no queda en el estado`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onEmailChange("usuario@ejemplo.com")
+
+        viewModel.onEmailVerified("usuario@ejemplo.com", TOKEN)
+
+        assertTrue(viewModel.uiState.value.isEmailVerified)
+        assertEquals("usuario@ejemplo.com", viewModel.uiState.value.verifiedEmail)
+        assertFalse(viewModel.uiState.value.toString().contains(TOKEN))
+    }
+
+    @Test
+    fun `cambiar el email descarta la verificacion`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onEmailChange("usuario@ejemplo.com")
+        viewModel.onEmailVerified("usuario@ejemplo.com", TOKEN)
+
+        viewModel.onEmailChange("otro@ejemplo.com")
+
+        assertFalse(viewModel.uiState.value.isEmailVerified)
+        assertEquals(null, viewModel.uiState.value.verifiedEmail)
+    }
+
+    @Test
+    fun `editar otro campo no descarta la verificacion`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onEmailChange("usuario@ejemplo.com")
+        viewModel.onEmailVerified("usuario@ejemplo.com", TOKEN)
+
+        viewModel.onPasswordChange("OtraClave123!")
+        viewModel.onEmailChange("  usuario@ejemplo.com  ")
+
+        assertTrue(viewModel.uiState.value.isEmailVerified)
+    }
+
+    @Test
+    fun `el token verificado viaja en el registro`() = runTest {
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+        viewModel.capturarTodo()
+
+        viewModel.submit()
+
+        assertEquals(TOKEN, repository.received.single().emailVerificationToken)
+    }
+
+    @Test
+    fun `sin verificar el email no se llega al backend y se pide verificar`() = runTest {
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+        viewModel.onEmailChange("usuario@ejemplo.com ") // mismo email: no descarta
+        viewModel.onEmailChange("nuevo@ejemplo.com") // otro email: descarta la verificación
+        viewModel.capturarTodo()
+
+        viewModel.submit()
+
+        assertEquals(
+            SignUpStatus.Failed(SignUpError.EmailNotVerified),
+            viewModel.uiState.value.status,
+        )
+        assertTrue(repository.received.isEmpty())
+    }
+
+    @Test
+    fun `si el backend dice EMAIL_NOT_VERIFIED se descarta la verificacion`() = runTest {
+        repository.result = SignUpResult.Failed(SignUpError.EmailNotVerified)
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+        viewModel.capturarTodo()
+
+        viewModel.submit()
+
+        assertEquals(SignUpStatus.Failed(SignUpError.EmailNotVerified), viewModel.uiState.value.status)
+        assertFalse(viewModel.uiState.value.isEmailVerified)
+    }
+
+    @Test
+    fun `un registro exitoso consume el token`() = runTest {
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+        viewModel.capturarTodo()
+
+        viewModel.submit()
+
+        assertEquals(SignUpStatus.Registered, viewModel.uiState.value.status)
+        assertFalse(viewModel.uiState.value.isEmailVerified)
+    }
+
+    @Test
+    fun `otro error del backend no descarta la verificacion`() = runTest {
+        repository.result = SignUpResult.Failed(SignUpError.Network)
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+        viewModel.capturarTodo()
+
+        viewModel.submit()
+
+        assertTrue(viewModel.uiState.value.isEmailVerified)
     }
 
     @Test

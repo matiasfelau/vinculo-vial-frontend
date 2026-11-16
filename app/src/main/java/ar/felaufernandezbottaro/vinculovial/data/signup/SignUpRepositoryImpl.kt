@@ -116,6 +116,7 @@ class SignUpRepositoryImpl @Inject constructor(
                     email = credentials.email,
                     password = credentials.password,
                     selfie = credentials.selfieBase64,
+                    emailVerificationToken = credentials.emailVerificationToken,
                 ),
             )
             plaintext = buffer.readByteArray()
@@ -161,6 +162,7 @@ class SignUpRepositoryImpl @Inject constructor(
 
     private fun SignUpErrorResponseDto.toSignUpError(): SignUpError = when (code) {
         CODE_IDENTITY_NOT_VERIFIED -> SignUpError.IdentityNotVerified
+        CODE_EMAIL_NOT_VERIFIED -> SignUpError.EmailNotVerified
         CODE_INVALID_DATA -> details.orEmpty().toSignUpError()
         // Código de nivel superior no documentado todavía: no se inventa un mapeo específico.
         else -> SignUpError.InvalidData
@@ -239,6 +241,7 @@ class SignUpRepositoryImpl @Inject constructor(
 
         const val CODE_INVALID_DATA = "datos_invalidos"
         const val CODE_IDENTITY_NOT_VERIFIED = "identidad_no_verificada"
+        const val CODE_EMAIL_NOT_VERIFIED = "EMAIL_NOT_VERIFIED"
 
         /** Los únicos dos campos que el usuario puede corregir volviendo al formulario. */
         val FORM_FIELDS = setOf("email", "password")

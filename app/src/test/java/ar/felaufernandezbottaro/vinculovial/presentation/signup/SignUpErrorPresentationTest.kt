@@ -16,6 +16,7 @@ class SignUpErrorPresentationTest {
         SignUpError.DocumentDataRejected,
         SignUpError.PasswordRejected,
         SignUpError.IdentityNotVerified,
+        SignUpError.EmailNotVerified,
         SignUpError.AttestationRejected,
         SignUpError.DeviceNotTrusted,
         SignUpError.AttestationUnavailable,
@@ -32,6 +33,11 @@ class SignUpErrorPresentationTest {
             assertTrue("$error sin título", presentation.title.isNotBlank())
             assertTrue("$error sin mensaje", presentation.message.isNotBlank())
         }
+    }
+
+    @Test
+    fun `un token de email vencido invita a verificar el email de nuevo`() {
+        assertEquals(SignUpErrorAction.VERIFY_EMAIL, SignUpError.EmailNotVerified.presentation().action)
     }
 
     @Test

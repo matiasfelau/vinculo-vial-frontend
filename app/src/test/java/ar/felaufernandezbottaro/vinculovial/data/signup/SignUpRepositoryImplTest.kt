@@ -15,6 +15,9 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.MockAttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
 import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
+import ar.felaufernandezbottaro.vinculovial.data.remote.auth.dto.HpkeEnvelopeDto
+import ar.felaufernandezbottaro.vinculovial.data.remote.auth.dto.ResetTokenResponseDto
+import ar.felaufernandezbottaro.vinculovial.data.remote.auth.dto.VerificationTokenResponseDto
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpRequestDto
 import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpError
 import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpResult
@@ -60,6 +63,7 @@ class SignUpRepositoryImplTest {
         email = "usuario@ejemplo.com",
         password = "Password123!",
         selfieBase64 = "c2VsZmll",
+        emailVerificationToken = "token-de-verificacion",
     )
 
     /** Por defecto el modo mock; los tests que necesitan fallar lo reemplazan. */
@@ -183,6 +187,7 @@ class SignUpRepositoryImplTest {
         assertEquals(credentials.email, payload.getString("email"))
         assertEquals(credentials.password, payload.getString("password"))
         assertEquals(credentials.selfieBase64, payload.getString("selfie"))
+        assertEquals(credentials.emailVerificationToken, payload.getString("email_verification_token"))
     }
 
     @Test
@@ -202,7 +207,7 @@ class SignUpRepositoryImplTest {
         // sale del dispositivo en todo el flujo (pivote RENAPER-Ready).
         val payload = JSONObject(String(plaintext))
         assertEquals(
-            setOf("dni", "tramite", "sexo", "email", "password", "selfie"),
+            setOf("dni", "tramite", "sexo", "email", "password", "selfie", "email_verification_token"),
             payload.keys().asSequence().toSet(),
         )
     }
@@ -217,6 +222,22 @@ class SignUpRepositoryImplTest {
         listOf(credentials.dni, credentials.email, credentials.password).forEach {
             assertTrue("el cuerpo filtró '$it'", !raw.contains(it))
         }
+    }
+
+    @Test
+    fun `400 EMAIL_NOT_VERIFIED es un error propio, sin tocar el resto del flujo`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"code":"EMAIL_NOT_VERIFIED"}"""))
+
+        assertEquals(SignUpResult.Failed(SignUpError.EmailNotVerified), repository().signUp(credentials))
+    }
+
+    @Test
+    fun `el token de verificacion no viaja en claro`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201))
+
+        repository().signUp(credentials)
+
+        assertTrue(!server.takeRequest().body.readUtf8().contains(credentials.emailVerificationToken))
     }
 
     @Test
@@ -459,6 +480,21 @@ class SignUpRepositoryImplTest {
             override suspend fun signIn(
                 body: ar.felaufernandezbottaro.vinculovial.data.signin.dto.SignInRequestDto,
             ): Response<ar.felaufernandezbottaro.vinculovial.data.signin.dto.SignInResponseDto> =
+                throw UnsupportedOperationException("no usado en este test")
+
+            override suspend fun requestEmailVerification(body: HpkeEnvelopeDto): Response<Unit> =
+                throw UnsupportedOperationException("no usado en este test")
+
+            override suspend fun confirmEmailVerification(body: HpkeEnvelopeDto): Response<VerificationTokenResponseDto> =
+                throw UnsupportedOperationException("no usado en este test")
+
+            override suspend fun requestPasswordReset(body: HpkeEnvelopeDto): Response<Unit> =
+                throw UnsupportedOperationException("no usado en este test")
+
+            override suspend fun confirmPasswordReset(body: HpkeEnvelopeDto): Response<ResetTokenResponseDto> =
+                throw UnsupportedOperationException("no usado en este test")
+
+            override suspend fun completePasswordReset(body: HpkeEnvelopeDto): Response<Unit> =
                 throw UnsupportedOperationException("no usado en este test")
         }
         val repository = SignUpRepositoryImpl(
