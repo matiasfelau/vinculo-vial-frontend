@@ -40,6 +40,13 @@ fun config(key: String, default: String): String =
             ?: default
         ).trim()
 
+/**
+ * Un valor de `local.properties` como literal de String de `BuildConfig`: sin escapar, una comilla
+ * o una barra en el domicilio rompería la compilación lejos de su causa.
+ */
+fun buildConfigString(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 android {
     namespace = "ar.felaufernandezbottaro.vinculovial"
     compileSdk = 35
@@ -76,6 +83,27 @@ android {
             "\"${config("IA_HPKE_PUBLIC_KEY", "")}\"",
         )
         buildConfigField("String", "APP_ATTESTATION_PSK", "\"${config("APP_ATTESTATION_PSK", "")}\"")
+
+        // US-19: datos del responsable de la base (Ley 25.326) y versión de los Términos. Los
+        // marcadores {{RESPONSABLE}}, {{DOMICILIO}}, {{EMAIL_CONTACTO}} y {{VERSION}} de
+        // res/raw/terminos.md se completan con estos valores. TERMS_VERSION viaja en el signup y
+        // tiene que coincidir con TERMS_CURRENT_VERSION de Identity.
+        buildConfigField(
+            "String",
+            "LEGAL_RESPONSIBLE_NAME",
+            buildConfigString(config("LEGAL_RESPONSIBLE_NAME", "[responsable a completar: LEGAL_RESPONSIBLE_NAME]")),
+        )
+        buildConfigField(
+            "String",
+            "LEGAL_CONTACT_EMAIL",
+            buildConfigString(config("LEGAL_CONTACT_EMAIL", "[email a completar: LEGAL_CONTACT_EMAIL]")),
+        )
+        buildConfigField(
+            "String",
+            "LEGAL_ADDRESS",
+            buildConfigString(config("LEGAL_ADDRESS", "[domicilio a completar: LEGAL_ADDRESS]")),
+        )
+        buildConfigField("String", "TERMS_VERSION", buildConfigString(config("TERMS_VERSION", "1.0")))
         buildConfigField("long", "ATTESTATION_TOKEN_TTL_SECONDS", config("ATTESTATION_TOKEN_TTL_SECONDS", "60") + "L")
         buildConfigField("long", "NETWORK_TIMEOUT_MS", config("NETWORK_TIMEOUT_MS", "15000") + "L")
         // Presupuesto propio para el Task de Play Integrity (prepare + request, en conjunto,

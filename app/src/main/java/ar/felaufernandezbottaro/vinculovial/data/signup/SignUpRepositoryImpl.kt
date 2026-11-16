@@ -23,6 +23,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpError
 import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpRepository
 import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpResult
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.Credentials
+import ar.felaufernandezbottaro.vinculovial.domain.terms.LegalInfo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -45,6 +46,7 @@ class SignUpRepositoryImpl @Inject constructor(
     @IdentityHpkePublicKey private val identityPublicKey: String,
     moshi: Moshi,
     @IoDispatcher private val dispatcher: CoroutineDispatcher,
+    private val legalInfo: LegalInfo,
 ) : SignUpRepository {
 
     private val payloadAdapter: JsonAdapter<SignUpPayloadDto> = moshi.adapter(SignUpPayloadDto::class.java)
@@ -117,6 +119,7 @@ class SignUpRepositoryImpl @Inject constructor(
                     password = credentials.password,
                     selfie = credentials.selfieBase64,
                     emailVerificationToken = credentials.emailVerificationToken,
+                    termsVersion = legalInfo.version,
                 ),
             )
             plaintext = buffer.readByteArray()
@@ -163,6 +166,7 @@ class SignUpRepositoryImpl @Inject constructor(
     private fun SignUpErrorResponseDto.toSignUpError(): SignUpError = when (code) {
         CODE_IDENTITY_NOT_VERIFIED -> SignUpError.IdentityNotVerified
         CODE_EMAIL_NOT_VERIFIED -> SignUpError.EmailNotVerified
+        CODE_TERMS_NOT_ACCEPTED -> SignUpError.TermsNotAccepted
         CODE_INVALID_DATA -> details.orEmpty().toSignUpError()
         // Código de nivel superior no documentado todavía: no se inventa un mapeo específico.
         else -> SignUpError.InvalidData
@@ -242,6 +246,7 @@ class SignUpRepositoryImpl @Inject constructor(
         const val CODE_INVALID_DATA = "datos_invalidos"
         const val CODE_IDENTITY_NOT_VERIFIED = "identidad_no_verificada"
         const val CODE_EMAIL_NOT_VERIFIED = "EMAIL_NOT_VERIFIED"
+        const val CODE_TERMS_NOT_ACCEPTED = "TERMS_NOT_ACCEPTED"
 
         /** Los únicos dos campos que el usuario puede corregir volviendo al formulario. */
         val FORM_FIELDS = setOf("email", "password")

@@ -67,3 +67,14 @@ SESSION_LOCK_AFTER_BACKGROUND_SECONDS=300
 # US-13: segundos de la cuenta regresiva del botón "Reenviar" del código por email. Tiene que
 # coincidir con EMAIL_CODE_RESEND_SECONDS de Identity, que es quien aplica el throttle.
 EMAIL_CODE_RESEND_SECONDS=60
+
+# US-19: datos del responsable de la base de datos (Ley 25.326), que se muestran en los Términos y
+# Condiciones en lugar de {{RESPONSABLE}}, {{DOMICILIO}} y {{EMAIL_CONTACTO}}. Todavía no se
+# conocen: sin completarlos, los Términos muestran un "[... a completar]" bien visible.
+LEGAL_RESPONSIBLE_NAME=
+LEGAL_ADDRESS=
+LEGAL_CONTACT_EMAIL=
+
+# US-19: versión de los Términos que la app manda al registrarse. Tiene que coincidir con
+# TERMS_CURRENT_VERSION de Identity, que rechaza otra con 400 TERMS_NOT_ACCEPTED.
+TERMS_VERSION=1.0

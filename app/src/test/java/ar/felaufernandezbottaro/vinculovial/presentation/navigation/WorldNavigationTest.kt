@@ -97,6 +97,11 @@ class WorldNavigationTest {
     }
 
     @Test
+    fun `los terminos son de todos los mundos y ningun estado de sesion los redirige`() {
+        SessionState.entries.forEach { assertNull("$it", worldRedirect(it, Route.TERMS)) }
+    }
+
+    @Test
     fun `el Splash no se redirige por su cuenta en ningun estado`() {
         SessionState.entries.forEach { assertNull(worldRedirect(it, Route.SPLASH)) }
     }

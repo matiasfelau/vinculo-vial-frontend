@@ -23,6 +23,11 @@ class RegisterUserUseCase @Inject constructor(
         if (CredentialRules.problems(form).isNotEmpty()) {
             return SignUpResult.Failed(SignUpError.InvalidData)
         }
+        // US-19: sin la casilla de los Términos no se sigue; el servidor igual rechazaría el alta.
+        if (!form.termsAccepted) {
+            identityVerification.discardCaptures()
+            return SignUpResult.Failed(SignUpError.TermsNotAccepted)
+        }
         // Sin el token de la verificación del email no se llega a RENAPER: el servidor lo rechazaría.
         if (emailVerificationToken.isBlank()) {
             identityVerification.discardCaptures()

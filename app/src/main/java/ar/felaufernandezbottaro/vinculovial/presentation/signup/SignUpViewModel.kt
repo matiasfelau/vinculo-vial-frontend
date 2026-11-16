@@ -87,11 +87,16 @@ class SignUpViewModel @Inject constructor(
         it.copy(passwordConfirmation = value)
     }
 
-    /** Valida todo el formulario; `true` habilita avanzar al consentimiento. */
+    /** La casilla de los Términos y Condiciones (US-19). Vive acá para sobrevivir a la lectura de los Términos. */
+    fun onTermsAcceptedChange(accepted: Boolean) {
+        _uiState.update { it.copy(form = it.form.copy(termsAccepted = accepted)) }
+    }
+
+    /** Valida todo el formulario, incluida la casilla de los Términos; `true` habilita avanzar al consentimiento. */
     fun validateForm(): Boolean {
         val problems = CredentialRules.problems(_uiState.value.form)
         _uiState.update { it.copy(fieldErrors = problems) }
-        return problems.isEmpty()
+        return problems.isEmpty() && _uiState.value.form.termsAccepted
     }
 
     /**
@@ -178,6 +183,12 @@ class SignUpViewModel @Inject constructor(
                         )
 
                         is SignUpResult.Failed -> it.copy(
+                            // TERMS_NOT_ACCEPTED: "volvé a aceptarlos", así que la casilla queda sin marcar.
+                            form = if (result.error == SignUpError.TermsNotAccepted) {
+                                it.form.copy(termsAccepted = false)
+                            } else {
+                                it.form
+                            },
                             status = SignUpStatus.Failed(result.error),
                             // Las imágenes ya no existen: cualquier reintento vuelve a capturar.
                             completedCaptures = emptySet(),

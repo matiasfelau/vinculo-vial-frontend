@@ -46,6 +46,7 @@ class SignUpViewModelTest {
         onEmailChange("usuario@ejemplo.com")
         onPasswordChange("Password123!")
         onPasswordConfirmationChange("Password123!")
+        onTermsAcceptedChange(true)
         onEmailVerified("usuario@ejemplo.com", TOKEN)
     }
 
@@ -184,6 +185,84 @@ class SignUpViewModelTest {
             CredentialProblem.REQUIRED,
             viewModel.uiState.value.fieldErrors[CredentialField.EMAIL],
         )
+    }
+
+    // --- Términos y Condiciones (US-19) ---
+
+    @Test
+    fun `la casilla de los terminos arranca sin marcar`() {
+        assertFalse(viewModel().uiState.value.form.termsAccepted)
+    }
+
+    @Test
+    fun `con el formulario completo pero sin la casilla no se puede avanzar`() {
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+        viewModel.onTermsAcceptedChange(false)
+
+        assertFalse(viewModel.validateForm())
+    }
+
+    @Test
+    fun `con la casilla marcada y el formulario completo se avanza`() {
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+
+        assertTrue(viewModel.validateForm())
+    }
+
+    @Test
+    fun `solo la casilla no alcanza si el formulario esta incompleto`() {
+        val viewModel = viewModel()
+        viewModel.onTermsAcceptedChange(true)
+
+        assertFalse(viewModel.validateForm())
+    }
+
+    @Test
+    fun `desmarcar la casilla vuelve a bloquear el avance`() {
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+        viewModel.onTermsAcceptedChange(false)
+
+        assertFalse(viewModel.uiState.value.form.termsAccepted)
+    }
+
+    @Test
+    fun `editar otro campo no desmarca la casilla`() {
+        val viewModel = viewModel()
+        viewModel.onTermsAcceptedChange(true)
+
+        viewModel.onEmailChange("usuario@ejemplo.com")
+        viewModel.onPasswordChange("Password123!")
+
+        assertTrue(viewModel.uiState.value.form.termsAccepted)
+    }
+
+    @Test
+    fun `si el servidor rechaza la version la casilla queda sin marcar para aceptarlos de nuevo`() = runTest {
+        repository.result = SignUpResult.Failed(SignUpError.TermsNotAccepted)
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+        viewModel.capturarTodo()
+
+        viewModel.submit()
+
+        assertEquals(SignUpStatus.Failed(SignUpError.TermsNotAccepted), viewModel.uiState.value.status)
+        assertFalse(viewModel.uiState.value.form.termsAccepted)
+        assertFalse(viewModel.validateForm())
+    }
+
+    @Test
+    fun `otro error del registro no toca la casilla`() = runTest {
+        repository.result = SignUpResult.Failed(SignUpError.Network)
+        val viewModel = viewModel()
+        viewModel.completarFormulario()
+        viewModel.capturarTodo()
+
+        viewModel.submit()
+
+        assertTrue(viewModel.uiState.value.form.termsAccepted)
     }
 
     @Test

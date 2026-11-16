@@ -47,6 +47,8 @@ import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionViewMode
 import ar.felaufernandezbottaro.vinculovial.presentation.session.UnlockRoute
 import ar.felaufernandezbottaro.vinculovial.presentation.session.UnlockViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.terms.TermsScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.terms.TermsViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.settings.SettingsViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.signin.SignInScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.signin.SignInStatus
@@ -78,6 +80,9 @@ object Route {
     const val SIGN_IN = "signin"
     const val UNLOCK = "unlock"
     const val SETTINGS = "settings"
+
+    /** Términos y Condiciones (US-19): pública, pero también se llega desde Settings y el chat del dueño. */
+    const val TERMS = "terms"
     const val DELETE_ACCOUNT = "settings/delete-account"
     const val SIGN_UP_GRAPH = "signup"
     const val SIGN_UP_FORM = "signup/form"
@@ -189,6 +194,18 @@ fun VinculoVialNavHost(
             WelcomeScreen(
                 onGoToSignIn = { navController.navigate(Route.SIGN_IN) },
                 onGoToSignUp = { navController.navigate(Route.SIGN_UP_GRAPH) },
+                onOpenTerms = { navController.navigate(Route.TERMS) },
+            )
+        }
+
+        composable(Route.TERMS) { entry ->
+            val viewModel = hiltViewModel<TermsViewModel>(entry)
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+            TermsScreen(
+                state = state,
+                onRetry = viewModel::load,
+                onBack = { navController.popBackStack() },
             )
         }
 
@@ -228,6 +245,7 @@ fun VinculoVialNavHost(
                 onScanPlate = { navController.navigate(Route.SCAN_GRAPH) },
                 onOpenInbox = { navController.navigate(Route.INBOX) },
                 onDeleteAccount = { navController.navigate(Route.DELETE_ACCOUNT) },
+                onOpenTerms = { navController.navigate(Route.TERMS) },
                 onBiometricToggle = viewModel::onBiometricToggle,
                 onBiometricOfferDismissed = viewModel::onBiometricOfferDismissed,
                 onBiometricActivationFailureDismissed = viewModel::onBiometricActivationFailureDismissed,
@@ -384,6 +402,7 @@ fun VinculoVialNavHost(
                     onRetryEvidence = viewModel::retryEvidence,
                     onRate = viewModel::onRate,
                     onReportSender = viewModel::onReportSender,
+                    onOpenTerms = { navController.navigate(Route.TERMS) },
                 )
             }
         }
@@ -526,6 +545,8 @@ fun VinculoVialNavHost(
                     onEmailChange = viewModel::onEmailChange,
                     onPasswordChange = viewModel::onPasswordChange,
                     onPasswordConfirmationChange = viewModel::onPasswordConfirmationChange,
+                    onTermsAcceptedChange = viewModel::onTermsAcceptedChange,
+                    onOpenTerms = { navController.navigate(Route.TERMS) },
                     onValidateIdentity = {
                         if (viewModel.validateForm()) {
                             // Con el email ya verificado (volvió atrás sin tocarlo) no se pide otro código.

@@ -2,6 +2,21 @@
 
 App Android de Vínculo Vial.
 
+## Términos y Condiciones y acceso a los datos (US-19)
+
+Un único documento, **Términos y Condiciones y Política de Privacidad**, versionado. El usuario lo acepta en el alta; Identity guarda la versión aceptada y la fecha, así que el consentimiento queda demostrable (art. 5 de la Ley 25.326). El acceso, la rectificación y la supresión de datos no tienen autoservicio: el documento indica el email de contacto y los plazos (10 días corridos y 5 días hábiles).
+
+- **Texto:** `app/src/main/res/raw/terminos.md`, copiado tal cual del contrato. No se reescribe: se cambia solo con una versión nueva (y `TERMS_VERSION`). Es un borrador; conviene que lo revise alguien con formación jurídica antes de presentarlo.
+- **Datos del responsable:** los marcadores `{{RESPONSABLE}}`, `{{DOMICILIO}}`, `{{EMAIL_CONTACTO}}` y `{{VERSION}}` se completan con `BuildConfig` (`LEGAL_RESPONSIBLE_NAME`, `LEGAL_ADDRESS`, `LEGAL_CONTACT_EMAIL` y `TERMS_VERSION`, "1.0"), configurables por `local.properties` o variables de entorno (ver `local.properties.example`). Sin configurarlos, el documento muestra un "[... a completar]" visible en lugar de inventar un dato.
+- **Renderizador:** `TermsMarkdown` (en `domain`, sin Android) muestra títulos, párrafos, listas, negritas y tablas; lo que no reconoce queda como texto literal. Los marcadores se reemplazan sobre el texto ya parseado, así un valor con `**` o `|` no puede alterar la estructura. Las filas de la tabla de datos personales se dibujan como tarjetas con los títulos de columna, porque tres columnas no entran en un teléfono.
+- **Pantalla `Route.TERMS`:** pública y sin red. Se entra desde la Bienvenida, el formulario del alta y Settings. Es de todos los mundos: `worldRedirect` no la redirige con ningún estado de sesión, y Atrás vuelve a la pantalla de la que se vino.
+- **Alta:** la casilla "Leí y acepto los Términos y Condiciones y la Política de Privacidad" es obligatoria y su texto lleva a la pantalla. Sin marcarla no se puede seguir (el botón queda deshabilitado, `validateForm` y el caso de uso la exigen también). La casilla vive en el ViewModel, así que sobrevive a ir a leer los Términos. `TERMS_VERSION` viaja como `terms_version` dentro del payload HPKE del signup.
+- **`TERMS_NOT_ACCEPTED`** (400, por el `code`): "Actualizamos los términos. Volvé a aceptarlos para seguir"; se vuelve al formulario y la casilla queda sin marcar.
+- **Valoración del dueño:** debajo de los botones de valoración, "Al enviar tu valoración, aceptás que las fotos redactadas se usen para mejorar la validación automática. Ver Términos", con el link.
+- **Fuera de alcance:** pedir de nuevo la aceptación cuando cambie la versión; se informa en la app (sección 13 del documento).
+
+Dependencia de backend: `TERMS_VERSION` tiene que coincidir con `TERMS_CURRENT_VERSION` de Identity. Entre los dos merges, Identity se levanta con `SIGNUP_REQUIRE_TERMS=false`.
+
 ## Evidencia de una alerta: dos fotos (US-15)
 
 Todo tipo de alerta que la app ofrece (`CRASHED` y `PARKED_ON_GARAGE`) pide exactamente dos fotos, en este orden:

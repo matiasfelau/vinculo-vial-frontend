@@ -40,8 +40,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Description
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvBottomBar
 import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionTexts
+import ar.felaufernandezbottaro.vinculovial.presentation.terms.TermsTexts
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VinculoVialTheme
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMint
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMuted
@@ -67,6 +69,7 @@ fun SettingsScreen(
     onBiometricToggle: (Boolean) -> Unit,
     onBiometricOfferDismissed: () -> Unit,
     onBiometricActivationFailureDismissed: () -> Unit,
+    onOpenTerms: () -> Unit = {},
 ) {
     var showLogoutConfirmation by remember { mutableStateOf(false) }
 
@@ -126,6 +129,8 @@ fun SettingsScreen(
                     onCheckedChange = onBiometricToggle,
                 )
             }
+
+            TermsRow(onClick = onOpenTerms)
 
             LogoutRow(
                 enabled = !state.isLoggingOut,
@@ -205,6 +210,28 @@ private fun HomeActionCard(
                 imageVector = Icons.Filled.ChevronRight,
                 contentDescription = null,
                 tint = VvNavy,
+            )
+        }
+    }
+}
+
+/** El acceso a los Términos y Condiciones y la Política de Privacidad (US-19), discreto como el resto de las filas de pie. */
+@Composable
+private fun TermsRow(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(onClick = onClick) {
+            Icon(imageVector = Icons.Filled.Description, contentDescription = null, tint = VvNavy)
+            Text(
+                text = TermsTexts.SCREEN_TITLE,
+                style = MaterialTheme.typography.labelLarge,
+                color = VvNavy,
+                modifier = Modifier.padding(start = 8.dp),
             )
         }
     }
