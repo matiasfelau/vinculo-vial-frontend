@@ -37,7 +37,7 @@ class SettingsScreenBenefitsTest {
                 SettingsScreen(
                     state = SettingsUiState(),
                     onLogout = {},
-                    onLinkVehicle = {},
+                    onOpenVehicles = {},
                     onScanPlate = {},
                     onOpenInbox = { inboxOpened++ },
                     onDeleteAccount = {},
