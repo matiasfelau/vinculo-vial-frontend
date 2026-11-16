@@ -112,3 +112,5 @@ La patente que se escribe vive sólo en el estado del modal abierto: no se logue
 ### Pruebas de pantalla
 
 Las pantallas se prueban con Robolectric y `createComposeRule` (`MyVehiclesScreenTest`). Para eso se sumaron `robolectric` y `ui-test-junit4` a las dependencias de prueba y `ui-test-manifest` a `debug`.
+
+Corren en `testDebugUnitTest`. La `ComponentActivity` que lanza `createComposeRule` la aporta `ui-test-manifest`, que solo está en el manifiesto de `debug`, así que en `testReleaseUnitTest` esas clases no se pueden ejecutar. `app/build.gradle.kts` las excluye de esa tarea leyendo `src/test`: toda clase que use `createComposeRule` o `createAndroidComposeRule` queda afuera sin tocar nada más. En release se corre el resto de las pruebas y la guardia del manifiesto de release (`ReleaseNoGalleryTest`).
