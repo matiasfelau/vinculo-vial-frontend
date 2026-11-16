@@ -32,7 +32,7 @@ class WorldNavigationTest {
     private val authenticatedRoutes = listOf(
         Route.SETTINGS,
         Route.DELETE_ACCOUNT,
-        Route.LINK_VEHICLE,
+        Route.VEHICLES,
         Route.SCAN_GRAPH,
         Route.SCAN_PLATE,
         Route.REPORT_CHAT,

@@ -68,8 +68,8 @@ import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanPlateScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanStatus
 import ar.felaufernandezbottaro.vinculovial.presentation.scan.ScanViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.splash.SplashScreen
-import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.ScanCedulaScreen
-import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.VehicleViewModel
+import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.MyVehiclesScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.vehicle.VehiclesViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.welcome.WelcomeScreen
 
 object Route {
@@ -97,7 +97,7 @@ object Route {
     const val RECOVERY_LIVENESS = "recovery/liveness"
     const val RECOVERY_DONE = "recovery/done"
 
-    const val LINK_VEHICLE = "vehicle/link"
+    const val VEHICLES = "vehicles"
 
     const val SCAN_GRAPH = "scan"
     const val SCAN_PLATE = "scan/plate"
@@ -224,7 +224,7 @@ fun VinculoVialNavHost(
                 // notificaciones: dos diálogos a la vez no se entienden.
                 state = state.copy(showBiometricOffer = state.showBiometricOffer && !justSignedIn),
                 onLogout = viewModel::logout,
-                onLinkVehicle = { navController.navigate(Route.LINK_VEHICLE) },
+                onOpenVehicles = { navController.navigate(Route.VEHICLES) },
                 onScanPlate = { navController.navigate(Route.SCAN_GRAPH) },
                 onOpenInbox = { navController.navigate(Route.INBOX) },
                 onDeleteAccount = { navController.navigate(Route.DELETE_ACCOUNT) },
@@ -388,27 +388,24 @@ fun VinculoVialNavHost(
             }
         }
 
-        composable(Route.LINK_VEHICLE) { entry ->
-            val viewModel = hiltViewModel<VehicleViewModel>(entry)
+        composable(Route.VEHICLES) { entry ->
+            val viewModel = hiltViewModel<VehiclesViewModel>(entry)
             val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-            CameraPermissionGate(
-                onDenied = { navController.popBackStack() },
-                deniedRationale = "Sin cámara no podemos leer el QR de tu cédula. Los cuadros se " +
-                    "analizan en tu dispositivo y se descartan al instante.",
-                permanentlyDeniedRationale = "Activá el permiso de cámara desde los ajustes del " +
-                    "sistema para vincular tu vehículo. Los cuadros se analizan en tu dispositivo " +
-                    "y se descartan al instante.",
-            ) {
-                ScanCedulaScreen(
-                    scanSession = viewModel.qrCedulaScanner,
-                    uiState = state,
-                    onCedulaScanned = viewModel::onCedulaScanned,
-                    onErrorDismissed = viewModel::onErrorDismissed,
-                    onLinked = { navController.popBackStack() },
-                    onCancel = { navController.popBackStack() },
-                )
-            }
+            MyVehiclesScreen(
+                state = state,
+                onBack = { navController.popBackStack() },
+                onLink = viewModel::onLinkClicked,
+                onUnlink = viewModel::onUnlinkClicked,
+                onUnlinkAll = viewModel::onUnlinkAllClicked,
+                onRetry = viewModel::load,
+                onPlateChange = viewModel::onPlateChange,
+                onPlateContinue = viewModel::onPlateContinue,
+                onPlateBack = viewModel::onPlateBack,
+                onPlateConfirm = viewModel::onPlateConfirmed,
+                onUnlinkAllConfirm = viewModel::onUnlinkAllConfirmed,
+                onDialogDismiss = viewModel::onDialogDismissed,
+            )
         }
 
         navigation(startDestination = Route.SCAN_PLATE, route = Route.SCAN_GRAPH) {

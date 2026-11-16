@@ -18,9 +18,9 @@ import javax.inject.Singleton
  * bloqueante.
  * - `/logout` (contrato US-03): el usuario tiene que poder cerrar sesión aunque la
  *   attestation esté rota.
- * - `/vehicles` (contrato US-04): protegido por JWT, no por App Attestation -- Kong nunca
- *   valida este header acá, así que exigirlo sería un punto de falla local sin ninguna
- *   contrapartida de seguridad del lado del servidor.
+ * - `/vehicles` y `/vehicles/unlink` (contratos US-04 y US-14): protegidos por JWT, no por App
+ *   Attestation -- Kong nunca valida este header acá, así que exigirlo sería un punto de falla
+ *   local sin ninguna contrapartida de seguridad del lado del servidor.
  * - `/alerts/attempts` y `/alerts` (contratos US-05 y US-08): misma decisión de velocidad --
  *   se compensan con Rate Limiting estricto en Kong por `X-User-Id`, no con attestation.
  * - `/users/me` (contrato US-11, baja de cuenta): sin `app-attestation`, con el mismo criterio
@@ -61,6 +61,7 @@ class AttestationInterceptor @Inject constructor(
         private val BEST_EFFORT_PATHS = setOf(
             "/api/v1/auth/logout",
             "/api/v1/vehicles",
+            "/api/v1/vehicles/unlink",
             "/api/v1/alerts/attempts",
             "/api/v1/alerts",
             "/api/v1/users/me",

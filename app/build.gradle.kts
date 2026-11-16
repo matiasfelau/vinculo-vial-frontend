@@ -159,6 +159,8 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // Robolectric necesita los recursos y el manifiesto para las pruebas de pantalla (createComposeRule).
+        unitTests.isIncludeAndroidResources = true
     }
 
     packaging {
@@ -172,6 +174,17 @@ android {
 }
 
 /**
+ * Clases de `src/test` que usan `createComposeRule`: se excluyen de `testReleaseUnitTest` (ver abajo).
+ * Se calculan leyendo las fuentes, así una prueba de pantalla nueva queda excluida sin tocar este archivo.
+ */
+val composeScreenTests: List<String> = fileTree("src/test/java") { include("**/*.kt") }.files
+    .filter { file -> file.readText().let { "createComposeRule" in it || "createAndroidComposeRule" in it } }
+    .map { file ->
+        file.relativeTo(File(projectDir, "src/test/java")).path
+            .removeSuffix(".kt").replace(File.separatorChar, '.')
+    }
+
+/**
  * US-08: el manifiesto mergeado de release no puede traer permisos de lectura de medios (la
  * galería sólo existe en `debug`). `ReleaseNoGalleryTest` lo verifica leyendo el manifiesto que
  * AGP genera para release; esta ruta se le pasa como propiedad del sistema.
@@ -182,6 +195,10 @@ androidComponents {
         tasks.withType<Test>().matching { it.name == "testReleaseUnitTest" }.configureEach {
             inputs.file(mergedManifest)
             doFirst { systemProperty("mergedManifestPath", mergedManifest.get().asFile.absolutePath) }
+            // Las pantallas se prueban con Robolectric y createComposeRule dentro de testDebugUnitTest:
+            // la ComponentActivity de prueba (ui-test-manifest) solo está en el manifiesto de debug.
+            // En release se corre el resto, más la guardia del manifiesto (src/testRelease).
+            filter { composeScreenTests.forEach { excludeTestsMatching("$it*") } }
         }
     }
 }
@@ -203,6 +220,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.navigation.compose)
@@ -236,6 +254,9 @@ dependencies {
     implementation(libs.mlkit.text.recognition)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
     testRuntimeOnly(libs.jjwt.impl)
