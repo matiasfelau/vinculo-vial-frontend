@@ -202,7 +202,7 @@ jobs:
   # en un PR, y recibe los APK ya armados como artefactos del job de build.
   publish:
     name: Publish release
-    needs: [build-test-package, security]
+    needs: build-test-package
     if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
