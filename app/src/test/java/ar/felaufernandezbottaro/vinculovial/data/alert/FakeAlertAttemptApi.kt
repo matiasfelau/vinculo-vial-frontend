@@ -1,5 +1,6 @@
 package ar.felaufernandezbottaro.vinculovial.data.alert
 
+import ar.felaufernandezbottaro.vinculovial.data.alert.dto.AlertAttemptRequestDto
 import ar.felaufernandezbottaro.vinculovial.data.alert.dto.AlertAttemptResponseDto
 import retrofit2.Response
 
@@ -13,12 +14,18 @@ class FakeAlertAttemptApi : AlertAttemptApi {
 
     var lastAuthorization: String? = null
         private set
+    var lastBody: AlertAttemptRequestDto? = null
+        private set
     var callCount = 0
         private set
 
-    override suspend fun startAttempt(authorization: String): Response<AlertAttemptResponseDto> {
+    override suspend fun startAttempt(
+        authorization: String,
+        body: AlertAttemptRequestDto,
+    ): Response<AlertAttemptResponseDto> {
         callCount++
         lastAuthorization = authorization
+        lastBody = body
         exceptionToThrow?.let { throw it }
         return response
     }

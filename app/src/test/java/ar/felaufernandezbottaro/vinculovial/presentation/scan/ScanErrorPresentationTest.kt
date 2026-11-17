@@ -69,6 +69,22 @@ class ScanErrorPresentationTest {
         ).forEach { assertEquals(SendAlertRecovery.CLOSE, it.recovery()) }
     }
 
+    private val availableAt = java.time.Instant.parse("2030-01-02T15:30:00Z")
+
+    @Test
+    fun `el cupo diario ocupado solo se cierra, no hay nada que reintentar`() {
+        assertEquals(SendAlertRecovery.CLOSE, SendAlertError.DailyLimit(availableAt).recovery())
+    }
+
+    @Test
+    fun `el mensaje del cupo diario es el mismo en el intento y en el envio, con el dia y la hora argentinos`() {
+        val expected =
+            "Ya enviaste una alerta para esta patente. Vas a poder enviar otra desde el 2 de enero a las 12:30."
+
+        assertEquals(expected, StartAlertAttemptResult.DailyLimit(availableAt).message())
+        assertEquals(expected, SendAlertError.DailyLimit(availableAt).message())
+    }
+
     @Test
     fun `el mensaje de cuenta en revision es el mismo en el intento y en el envio`() {
         assertEquals(

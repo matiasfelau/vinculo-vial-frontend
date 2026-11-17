@@ -3,6 +3,7 @@ package ar.felaufernandezbottaro.vinculovial.presentation.scan
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
 import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
+import java.time.Instant
 
 data class ScanUiState(
     val status: ScanStatus = ScanStatus.Scanning,
@@ -41,6 +42,13 @@ sealed interface ScanStatus {
 
     /** Cifrando la patente y abriendo el intento en `/alerts/attempts`. */
     data object Checking : ScanStatus
+
+    /**
+     * 409 `ALERT_DAILY_LIMIT` en el intento (US-16): el emisor ya alertó esta patente en las
+     * últimas 24 h. Se abre el chat para que ViVIAna lo explique, sin catálogo ni captura de fotos.
+     * [availableAt] es cuándo se libera el cupo.
+     */
+    data class DailyLimitReached(val availableAt: Instant) : ScanStatus
 
     /** 201: se abre el chat con el catálogo cerrado de incidentes. */
     data object AwaitingAlertType : ScanStatus

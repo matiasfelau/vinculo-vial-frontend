@@ -67,3 +67,6 @@ fun Instant.toChatDayStamp(now: Instant = Instant.now(), zone: ZoneId = ZoneId.s
 
 /** "9 de noviembre": hasta cuándo se conserva la evidencia redactada. */
 fun Instant.toLongDate(zone: ZoneId = ZoneId.systemDefault()): String = atZone(zone).format(LONG_DATE_FORMATTER)
+
+/** "14:30": la hora del día, en 24 h. */
+fun Instant.toClockTime(zone: ZoneId = ZoneId.systemDefault()): String = atZone(zone).format(TIME_FORMATTER)

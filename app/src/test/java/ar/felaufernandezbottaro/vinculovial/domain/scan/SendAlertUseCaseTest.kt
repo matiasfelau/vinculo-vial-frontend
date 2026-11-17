@@ -27,6 +27,7 @@ class SendAlertUseCaseTest {
     private val sendAlert = SendAlertUseCase(alertRepository, attemptRepository, clock)
 
     private val patEnc = "pat-enc-guardado"
+    private val availableAt = Instant.parse("2030-01-02T15:30:00Z")
 
     private fun attempt(
         id: String = "attempt-1",
@@ -57,6 +58,7 @@ class SendAlertUseCaseTest {
             SendAlertError.Unavailable,
             SendAlertError.Network,
             SendAlertError.UnderReview,
+            SendAlertError.DailyLimit(availableAt),
             SendAlertError.AttemptNotFound,
             SendAlertError.InvalidEvidence,
             SendAlertError.InvalidData,
@@ -156,6 +158,7 @@ class SendAlertUseCaseTest {
     @Test
     fun `si renovar falla no se envia y el error se traduce`() = runTest {
         val cases = mapOf(
+            StartAlertAttemptResult.DailyLimit(availableAt) to SendAlertError.DailyLimit(availableAt),
             StartAlertAttemptResult.UnderReview to SendAlertError.UnderReview,
             StartAlertAttemptResult.RateLimited to SendAlertError.RateLimited,
             StartAlertAttemptResult.Unavailable to SendAlertError.Unavailable,
@@ -172,6 +175,15 @@ class SendAlertUseCaseTest {
             assertEquals(0, alertRepository.received.size)
             assertEquals("attempt-1", outcome.attempt.attemptId)
         }
+    }
+
+    @Test
+    fun `renovar el intento lleva el mismo pat_enc del envio`() = runTest {
+        alertRepository.queue += expired
+
+        sendAlert(attempt(), patEnc, AlertType.CRASHED, evidence)
+
+        assertEquals(listOf(patEnc), attemptRepository.receivedPatEnc)
     }
 
     @Test

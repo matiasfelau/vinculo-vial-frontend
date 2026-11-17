@@ -5,6 +5,8 @@ import ar.felaufernandezbottaro.vinculovial.domain.scan.StartAlertAttemptResult
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviMessages
 
 fun StartAlertAttemptResult.Failure.message(): String = when (this) {
+    is StartAlertAttemptResult.DailyLimit -> ViviMessages.senderDailyLimit(availableAt)
+
     StartAlertAttemptResult.UnderReview ->
         "Tu cuenta está en revisión. Por ahora no podés enviar alertas."
 
@@ -36,6 +38,8 @@ fun SendAlertError.message(): String = when (this) {
 
     SendAlertError.UnderReview ->
         "Tu cuenta está en revisión. Por ahora no podés enviar alertas."
+
+    is SendAlertError.DailyLimit -> ViviMessages.senderDailyLimit(availableAt)
 
     SendAlertError.AttemptNotFound ->
         "Se perdió el reporte en curso. Volvé a empezar."
@@ -82,6 +86,7 @@ fun SendAlertError.recovery(): SendAlertRecovery = when (this) {
 
 
     SendAlertError.PossiblySent,
+    is SendAlertError.DailyLimit,
     SendAlertError.InvalidEvidence,
     SendAlertError.AlertTypeDisabled,
     SendAlertError.InvalidAlertType,
