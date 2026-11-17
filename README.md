@@ -158,3 +158,71 @@ Las pantallas se prueban con Robolectric y `createComposeRule` (`MyVehiclesScree
 Se verifica el estado que muestran y los callbacks que disparan. Los tests de pantalla usan `@Config(qualifiers = "w411dp-h1600dp-xhdpi")` para que el contenido quede a la vista sin scrollear.
 
 Corren en `testDebugUnitTest`. La `ComponentActivity` que lanza `createComposeRule` la aporta `ui-test-manifest`, que solo está en el manifiesto de `debug`, así que en `testReleaseUnitTest` esas clases no se pueden ejecutar. `app/build.gradle.kts` las excluye de esa tarea leyendo `src/test`: toda clase que use `createComposeRule` o `createAndroidComposeRule` queda afuera sin tocar nada más. En release se corre el resto de las pruebas y la guardia del manifiesto de release (`ReleaseNoGalleryTest`).
+
+## CI
+
+`.github/workflows/android-release.yml` corre en todo `pull_request` hacia `dev` o `main`, en `push` a
+esas ramas y en los tags `vX.Y.Z`. Tiene tres jobs:
+
+| Job | Qué hace | ¿Corta? |
+|---|---|---|
+| `build-test-package` | pruebas JVM de `debug` y `release` con cobertura (Kover), `diff-cover`, APK de debug y, en un tag, el de release | Sí |
+| `security` | Trivy `fs` sobre `app/gradle.lockfile` y Semgrep | Trivy sí; Semgrep no (informativo, pasa a gate en v0.14) |
+| `publish` | publica el release con los APK ya armados | Solo corre en un tag o un push a `main`, nunca en un PR |
+
+El workflow declara `permissions: contents: read`. Solo `publish` tiene permiso de escritura, para que
+el token con escritura no esté disponible mientras corre el build de un PR. Las acciones de terceros
+están fijadas por SHA de commit (la versión va en un comentario). Dependabot actualiza semanalmente
+`gradle` y `github-actions`.
+
+### Cobertura
+
+- **Se mide con Kover** sobre las pruebas de `testDebugUnitTest` (unitarias y de pantalla con
+  Robolectric), con `./gradlew koverXmlReportDebug`. El reporte sale en formato JaCoCo en
+  `app/build/reports/kover/reportDebug.xml` y es el que lee `diff-cover`.
+- **Gate sobre el código nuevo:** `diff-cover` exige 85 % o más de las líneas que el PR agrega o cambia
+  respecto de la rama base (`--src-roots app/src/main/java`).
+- **Cobertura total:** se publica en el resumen del job y como artefacto `coverage`, sin cortar. El gate
+  sobre el total entra con el PR de cobertura. Hoy mide 56,9 % de las líneas.
+- **Exclusiones:** solo el código generado, en el bloque `kover` de `app/build.gradle.kts`: lo que
+  producen Hilt y Dagger (`*_Factory`, `*_MembersInjector`, `*_HiltModules*`, `Hilt_*`, `Dagger*`,
+  `*_GeneratedInjector`), `BuildConfig`, `R` y los `ComposableSingletons` del compilador de Compose. No
+  se excluye ninguna clase escrita a mano.
+- Las pruebas de pantalla (`createComposeRule`) no corren en `testReleaseUnitTest` (ver *Pruebas de
+  pantalla*), así que la cobertura sale solo de `testDebugUnitTest`.
+
+### Dependencias bloqueadas
+
+`app/gradle.lockfile` fija la versión resuelta de cada dependencia. Lo lee Trivy (sin lockfile no puede
+resolver el árbol de Gradle) y hace reproducible el build. **Después de cualquier cambio de
+dependencias hay que regenerarlo y commitearlo**:
+
+```bash
+./gradlew :app:resolveAndLockAll --write-locks
+```
+
+Dependabot no lo regenera: en sus PRs hay que correr ese comando. El bloqueo es estricto: si una versión
+declarada no coincide con la del lockfile, Gradle no resuelve esa dependencia y el build falla.
+
+### Seguridad
+
+Trivy falla ante HIGH o CRITICAL con corrección disponible. Las excepciones viven solo en
+`.trivyignore`, cada una con su motivo y su fecha de revisión. Hoy hay 23 IDs, todos de `guava`,
+`protobuf`, `netty` y `bouncycastle` que aparecen solo en configuraciones de herramientas de build
+(la plataforma de pruebas instrumentadas de AGP y los procesadores de anotaciones) y de pruebas
+unitarias en la JVM. Ninguno está en `debugRuntimeClasspath`, `releaseRuntimeClasspath` ni en los
+`CompileClasspath` de producción, o sea que ninguno llega al APK.
+
+### Correr en local
+
+```bash
+# Pruebas de las dos variantes y reporte de cobertura
+./gradlew testDebugUnitTest testReleaseUnitTest koverXmlReportDebug
+
+# Gate sobre el código nuevo (con los cambios commiteados y origin/dev actualizado)
+pip install diff-cover==11.0.2
+diff-cover app/build/reports/kover/reportDebug.xml --compare-branch=origin/dev   --src-roots app/src/main/java --fail-under=85
+
+# Seguridad
+docker run --rm -v "$PWD:/src" aquasec/trivy:latest fs --scanners vuln,secret,misconfig   --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /src/.trivyignore /src
+```

@@ -1,0 +1,42 @@
+# Excepciones de Trivy. Solo se admiten acá, y cada una lleva un comentario con el
+# motivo y la fecha de revisión, en la línea anterior:
+#
+#   # Motivo: <por qué no aplica o no tiene corrección> | Revisar: AAAA-MM-DD
+#   CVE-AAAA-NNNN
+#
+# Trivy lee app/gradle.lockfile, que lista cada dependencia con las configuraciones de Gradle en las que
+# aparece. Las vulnerabilidades de abajo están SOLO en configuraciones de herramientas de build y de
+# pruebas; ninguna está en debugRuntimeClasspath, releaseRuntimeClasspath ni en los CompileClasspath
+# de producción, así que ninguna llega al APK.
+
+# Motivo: guava 32.0.1, protobuf 3.24.4 y netty 4.1.93 vienen de las configuraciones _internal-unified-test-platform-*
+# de AGP (pruebas instrumentadas y dispositivos gestionados). Corren en la máquina de desarrollo, no se usan en el
+# CI (solo corre pruebas JVM) y no entran al APK; se actualizan con AGP. CVE-2026-102554 (guava) cubre además la 33.0.0
+# de los procesadores de anotaciones (KSP e Hilt), que corren solo en tiempo de compilación | Revisar: 2026-12-16
+CVE-2026-102554
+CVE-2024-7254
+CVE-2026-42583
+CVE-2026-59901
+CVE-2026-33870
+CVE-2026-42584
+CVE-2026-42587
+CVE-2026-55831
+CVE-2026-55833
+CVE-2026-56745
+CVE-2025-55163
+CVE-2026-33871
+CVE-2026-56819
+GHSA-xpw8-rcwv-8f8p
+CVE-2026-75595
+CVE-2025-24970
+CVE-2026-44249
+CVE-2026-45416
+CVE-2026-50010
+
+# Motivo: bouncycastle (bcprov-jdk18on 1.78.1) y guava 33.3.1 están solo en las configuraciones de pruebas unitarias
+# (debugUnitTest y releaseUnitTest). Corren en la JVM del CI y de desarrollo, nunca en el dispositivo ni en el APK
+# | Revisar: 2026-12-16
+CVE-2025-14813
+CVE-2026-8763
+CVE-2026-13506
+CVE-2026-5598

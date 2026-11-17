@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.kover)
 }
 
 /**
@@ -189,6 +190,9 @@ android {
         unitTests.isReturnDefaultValues = true
         // Robolectric necesita los recursos y el manifiesto para las pruebas de pantalla (createComposeRule).
         unitTests.isIncludeAndroidResources = true
+        // Con las pantallas Compose corriendo en Robolectric y la instrumentación de Kover, el JVM de
+        // pruebas por defecto (512 MB) se queda sin heap hacia el final de la suite.
+        unitTests.all { it.maxHeapSize = "2g" }
     }
 
     packaging {
@@ -293,4 +297,65 @@ dependencies {
 
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
+}
+
+/**
+ * Cobertura (Kover): se mide con todas las pruebas de `testDebugUnitTest` y se exporta como XML con
+ * `koverXmlReportDebug` (formato JaCoCo, que es el que lee diff-cover). Se excluye únicamente el código
+ * generado, sin ninguna clase escrita a mano; cada exclusión está en el README con su motivo.
+ */
+kover {
+    reports {
+        filters {
+            excludes {
+                classes(
+                    // Hilt y Dagger.
+                    "*_*Factory",
+                    "*_*Factory\$*",
+                    "*_MembersInjector",
+                    "*_HiltModules*",
+                    "*_LazyMapKey*",
+                    "Hilt_*",
+                    "*.Hilt_*",
+                    "Dagger*",
+                    "*.Dagger*",
+                    "hilt_aggregated_deps.*",
+                    "dagger.hilt.internal.aggregatedroot.codegen.*",
+                    "*_GeneratedInjector",
+                    // Recursos y configuración de build, y lo que genera el compilador de Compose.
+                    "ar.felaufernandezbottaro.vinculovial.BuildConfig",
+                    "ar.felaufernandezbottaro.vinculovial.R",
+                    "ar.felaufernandezbottaro.vinculovial.R\$*",
+                    "*.ComposableSingletons\$*",
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Bloqueo de dependencias: `app/gradle.lockfile` fija la versión resuelta de cada dependencia. Es lo que
+ * lee Trivy para escanear vulnerabilidades (sin lockfile no puede resolver el árbol de Gradle) y hace
+ * reproducible el build. Después de cualquier cambio de dependencias hay que regenerarlo:
+ *
+ *     ./gradlew :app:resolveAndLockAll --write-locks
+ *
+ * Dependabot no regenera el lockfile: en sus PRs hay que correr ese comando.
+ */
+dependencyLocking {
+    lockAllConfigurations()
+}
+
+tasks.register("resolveAndLockAll") {
+    notCompatibleWithConfigurationCache("Resuelve todas las configuraciones en tiempo de ejecución")
+    doFirst {
+        require(gradle.startParameter.isWriteDependencyLocks) {
+            "resolveAndLockAll solo corre con --write-locks: ./gradlew :app:resolveAndLockAll --write-locks"
+        }
+    }
+    doLast {
+        // Solo el grafo de dependencias, que es lo que se bloquea: resolver los archivos falla en
+        // configuraciones de Android que no se pueden materializar (por ejemplo, las de androidTest).
+        configurations.filter { it.isCanBeResolved }.forEach { it.incoming.resolutionResult.root }
+    }
 }
