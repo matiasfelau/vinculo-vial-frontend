@@ -19,7 +19,7 @@ data class SendAlertOutcome(
  * un `pat_enc` nuevo, sólo reenviar el que recibe (la patente en claro ya no existe en este punto).
  *
  * Si el intento ya venció antes de enviar, o el servidor responde 410 `ATTEMPT_EXPIRED`, lo
- * renueva repitiendo la llamada 1 y reenvía **una sola vez**: nunca hay un bucle de renovaciones.
+ * renueva repitiendo la llamada 1 (con el mismo `pat_enc`) y reenvía **una sola vez**: nunca hay un bucle de renovaciones.
  * El repositorio cifra las fotos con el `attempt_id` que recibe, así que el reenvío sale
  * re-cifrado con el intento nuevo.
  */
@@ -39,7 +39,7 @@ class SendAlertUseCase @Inject constructor(
         var renewed = false
 
         if (!current.expiresAt.isAfter(clock.instant())) {
-            when (val renewal = renew()) {
+            when (val renewal = renew(patEnc)) {
                 is Renewal.Renewed -> current = renewal.attempt
                 is Renewal.Failed -> return SendAlertOutcome(SendAlertResult.Failed(renewal.error), current)
             }
@@ -49,7 +49,7 @@ class SendAlertUseCase @Inject constructor(
         var result = repository.sendAlert(current.attemptId, patEnc, alertType, evidence)
 
         if (result == SendAlertResult.Failed(SendAlertError.AttemptExpired) && !renewed) {
-            when (val renewal = renew()) {
+            when (val renewal = renew(patEnc)) {
                 is Renewal.Renewed -> {
                     current = renewal.attempt
                     result = repository.sendAlert(current.attemptId, patEnc, alertType, evidence)
@@ -61,9 +61,10 @@ class SendAlertUseCase @Inject constructor(
         return SendAlertOutcome(result, current)
     }
 
-    private suspend fun renew(): Renewal =
-        when (val result = attemptRepository.startAttempt()) {
+    private suspend fun renew(patEnc: String): Renewal =
+        when (val result = attemptRepository.startAttempt(patEnc)) {
             is StartAlertAttemptResult.Started -> Renewal.Renewed(result)
+            is StartAlertAttemptResult.DailyLimit -> Renewal.Failed(SendAlertError.DailyLimit(result.availableAt))
             StartAlertAttemptResult.UnderReview -> Renewal.Failed(SendAlertError.UnderReview)
             StartAlertAttemptResult.RateLimited -> Renewal.Failed(SendAlertError.RateLimited)
             StartAlertAttemptResult.Unavailable -> Renewal.Failed(SendAlertError.Unavailable)

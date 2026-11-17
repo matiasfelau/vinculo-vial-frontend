@@ -464,9 +464,10 @@ fun VinculoVialNavHost(
                 // El intento contra /alerts/attempts terminó: el catálogo de incidentes y el
                 // envío del reporte viven en ReportChatScreen, no en un menú flotante sobre
                 // la cámara. Se saca ScanPlateScreen del back stack al navegar: no tiene
-                // sentido volver a la cámara en vivo una vez identificado el vehículo.
+                // sentido volver a la cámara en vivo una vez identificado el vehículo. Con el cupo
+                // diario ocupado (US-16) también se abre el chat: ViVIAna lo explica ahí.
                 LaunchedEffect(state.status) {
-                    if (state.status is ScanStatus.AwaitingAlertType) {
+                    if (state.status is ScanStatus.AwaitingAlertType || state.status is ScanStatus.DailyLimitReached) {
                         navController.navigate(Route.REPORT_CHAT) {
                             popUpTo(Route.SCAN_PLATE) { inclusive = true }
                         }

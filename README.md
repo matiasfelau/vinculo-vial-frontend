@@ -2,6 +2,17 @@
 
 App Android de Vínculo Vial.
 
+## Una alerta por patente cada 24 h (US-16)
+
+Un emisor puede enviar como máximo una alerta por patente dentro de una ventana móvil de 24 h. Las alertas rechazadas por la IA y las vencidas sin respuesta no ocupan el cupo. La regla es igual con dueño o sin él: la app nunca se entera de si la patente tiene dueños.
+
+- **Intento:** `POST /alerts/attempts` lleva el body `{ "pat_enc": "<base64>" }`, la patente cifrada con HPKE contra Vehicle, el mismo criptograma que viaja en el envío. Se manda apenas el usuario confirma la patente escaneada o tipeada. La patente en claro nunca sale del teléfono y `Alert` no la ve. Si el intento hay que renovarlo porque venció, se vuelve a pedir con el mismo `pat_enc`.
+- **`409 ALERT_DAILY_LIMIT`:** llega con `available_at` (RFC 3339), cuándo se libera el cupo. Se mapea por el `code`, no por el status; un 409 con otro `code`, o sin un `available_at` legible, es un error inesperado.
+  - **En el intento:** se abre el chat con ViVIAna, que dice: "Ya enviaste una alerta para esta patente. Vas a poder enviar otra desde el 2 de enero a las 12:30." No se ofrecen los mensajes ni se abre la captura de fotos. El único botón es "Cerrar".
+  - **En el envío:** el mismo mensaje aparece en el chat (por ejemplo, si el cupo se ocupó entre el intento y el envío). Se descartan las fotos y no hay reintento: el botón es "Cerrar".
+- **Fecha y hora:** siempre en `America/Argentina/Buenos_Aires`, sin importar la zona del teléfono.
+- **Control del servidor:** si Alert no pudo controlar el cupo en el intento (por ejemplo, Vehicle no respondió), el intento sigue con un 201 y el control definitivo lo hace el envío, que puede responder el 409.
+
 ## Beneficios de partners (US-18)
 
 Un partner (por ejemplo, una petrolera) entrega códigos de descuento de un solo uso; Vínculo Vial le asigna uno por persona y por campaña. La app solo los muestra: no los genera ni los valida.
@@ -17,10 +28,6 @@ Un partner (por ejemplo, una petrolera) entrega códigos de descuento de un solo
 - **Regla del servidor que se nota en la app:** una campaña es visible si hay códigos disponibles o si el usuario ya tiene uno asignado. Un usuario sin código no ve una campaña agotada; solo ve el `NO_CODES_LEFT` si el pool se agota mientras tiene abierto el detalle.
 
 Para probarlo contra Benefits de verdad: `docker compose --profile seed run --rm vinculo-vial-benefits-seed` en `vinculo-vial-benefits` carga "Estación de prueba" (100 códigos falsos y un banner generado) y una campaña vencida que no debe aparecer.
-
-### Pruebas de pantalla
-
-Las pantallas Compose se prueban en la JVM con Robolectric y `createComposeRule` (dentro de `testDebugUnitTest`). Se verifica el estado que muestran y los callbacks que disparan. Los tests de pantalla usan `@Config(qualifiers = "w411dp-h1600dp-xhdpi")` para que el contenido quede a la vista sin scrollear.
 
 ## Evidencia de una alerta: dos fotos (US-15)
 
@@ -132,5 +139,7 @@ La patente que se escribe vive sólo en el estado del modal abierto: no se logue
 ### Pruebas de pantalla
 
 Las pantallas se prueban con Robolectric y `createComposeRule` (`MyVehiclesScreenTest`). Para eso se sumaron `robolectric` y `ui-test-junit4` a las dependencias de prueba y `ui-test-manifest` a `debug`.
+
+Se verifica el estado que muestran y los callbacks que disparan. Los tests de pantalla usan `@Config(qualifiers = "w411dp-h1600dp-xhdpi")` para que el contenido quede a la vista sin scrollear.
 
 Corren en `testDebugUnitTest`. La `ComponentActivity` que lanza `createComposeRule` la aporta `ui-test-manifest`, que solo está en el manifiesto de `debug`, así que en `testReleaseUnitTest` esas clases no se pueden ejecutar. `app/build.gradle.kts` las excluye de esa tarea leyendo `src/test`: toda clase que use `createComposeRule` o `createAndroidComposeRule` queda afuera sin tocar nada más. En release se corre el resto de las pruebas y la guardia del manifiesto de release (`ReleaseNoGalleryTest`).

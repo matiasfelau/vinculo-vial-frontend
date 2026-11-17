@@ -4,6 +4,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertItem
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackRating
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.SentAlertState
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
+import ar.felaufernandezbottaro.vinculovial.presentation.inbox.toClockTime
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.toLongDate
 import java.time.Instant
 import java.time.ZoneId
@@ -68,6 +69,16 @@ object ViviMessages {
     const val SENDER_NO_RESPONSE = "Tu alerta no tuvo respuesta."
 
     const val SENDER_POSSIBLY_SENT = "No pudimos confirmar el envío. Puede que tu alerta se haya enviado."
+
+    /**
+     * El cupo de una alerta por emisor y patente cada 24 h está ocupado (US-16). [availableAt] es
+     * cuándo se libera; se muestra siempre en hora argentina, sin importar la zona del teléfono.
+     */
+    fun senderDailyLimit(availableAt: Instant, zone: ZoneId = BUENOS_AIRES): String =
+        "Ya enviaste una alerta para esta patente. " +
+            "Vas a poder enviar otra desde el ${availableAt.toLongDate(zone)} a las ${availableAt.toClockTime(zone)}."
+
+    private val BUENOS_AIRES: ZoneId = ZoneId.of("America/Argentina/Buenos_Aires")
 
     /** La intro de la captura guiada: todo tipo de alerta pide las mismas dos fotos. */
     const val SENDER_PHOTOS_INTRO =
