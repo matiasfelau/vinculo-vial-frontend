@@ -104,6 +104,13 @@ fun SignUpError.presentation(): SignUpErrorPresentation = when (this) {
         action = SignUpErrorAction.VERIFY_EMAIL,
     )
 
+    // US-19: el texto es el del contrato. Se vuelve al formulario, donde la casilla quedó sin marcar.
+    SignUpError.TermsNotAccepted -> SignUpErrorPresentation(
+        title = "Términos y Condiciones",
+        message = "Actualizamos los términos. Volvé a aceptarlos para seguir",
+        action = SignUpErrorAction.EDIT_FORM,
+    )
+
     SignUpError.AttestationRejected -> SignUpErrorPresentation(
         title = "No pudimos validar la app",
         message = "Por seguridad sólo aceptamos registros desde una instalación oficial de ViVi " +

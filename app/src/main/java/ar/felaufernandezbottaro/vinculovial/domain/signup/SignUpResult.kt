@@ -66,6 +66,12 @@ sealed interface SignUpError {
      */
     data object EmailNotVerified : SignUpError
 
+    /**
+     * 400 (`TERMS_NOT_ACCEPTED`): la versión de los Términos que viajó no es la vigente en Identity,
+     * o no se aceptaron. La salida es volver al formulario a aceptarlos de nuevo.
+     */
+    data object TermsNotAccepted : SignUpError
+
     /** 403: el Gateway rechazó la App Attestation. */
     data object AttestationRejected : SignUpError
 

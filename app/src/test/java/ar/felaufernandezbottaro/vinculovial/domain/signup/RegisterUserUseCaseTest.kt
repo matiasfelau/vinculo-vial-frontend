@@ -23,6 +23,7 @@ class RegisterUserUseCaseTest {
         email = "usuario@ejemplo.com",
         password = "Password123!",
         passwordConfirmation = "Password123!",
+        termsAccepted = true,
     )
 
     @Test
@@ -39,6 +40,22 @@ class RegisterUserUseCaseTest {
             assertEquals("c2VsZmll", selfieBase64)
             assertEquals(TOKEN, emailVerificationToken)
         }
+    }
+
+    @Test
+    fun `sin aceptar los terminos no se llega al edge ni al backend`() = runTest {
+        val result = useCase(form.copy(termsAccepted = false), TOKEN)
+
+        assertEquals(SignUpResult.Failed(SignUpError.TermsNotAccepted), result)
+        assertEquals(0, verification.verifications)
+        assertTrue(repository.received.isEmpty())
+    }
+
+    @Test
+    fun `sin aceptar los terminos se descartan las capturas pendientes`() = runTest {
+        useCase(form.copy(termsAccepted = false), TOKEN)
+
+        assertEquals(1, verification.discards)
     }
 
     @Test

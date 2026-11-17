@@ -17,6 +17,7 @@ class SignUpErrorPresentationTest {
         SignUpError.PasswordRejected,
         SignUpError.IdentityNotVerified,
         SignUpError.EmailNotVerified,
+        SignUpError.TermsNotAccepted,
         SignUpError.AttestationRejected,
         SignUpError.DeviceNotTrusted,
         SignUpError.AttestationUnavailable,
@@ -85,6 +86,15 @@ class SignUpErrorPresentationTest {
         assertEquals(SignUpErrorAction.EDIT_FORM, SignUpError.InvalidData.presentation().action)
         assertEquals(SignUpErrorAction.EDIT_FORM, SignUpError.PasswordRejected.presentation().action)
         assertEquals(SignUpErrorAction.EDIT_FORM, SignUpError.AlreadyRegistered.presentation().action)
+        assertEquals(SignUpErrorAction.EDIT_FORM, SignUpError.TermsNotAccepted.presentation().action)
+    }
+
+    @Test
+    fun `el aviso de terminos desactualizados es el texto del contrato`() {
+        assertEquals(
+            "Actualizamos los términos. Volvé a aceptarlos para seguir",
+            SignUpError.TermsNotAccepted.presentation().message,
+        )
     }
 
     @Test

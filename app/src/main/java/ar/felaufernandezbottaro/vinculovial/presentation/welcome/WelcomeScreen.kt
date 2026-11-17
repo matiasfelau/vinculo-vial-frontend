@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvBottomBar
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvPrimaryButton
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvWordmark
+import ar.felaufernandezbottaro.vinculovial.presentation.terms.TermsLinkText
+import ar.felaufernandezbottaro.vinculovial.presentation.terms.TermsTexts
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VinculoVialTheme
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMuted
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
@@ -37,6 +39,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 fun WelcomeScreen(
     onGoToSignIn: () -> Unit,
     onGoToSignUp: () -> Unit,
+    onOpenTerms: () -> Unit = {},
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -68,6 +71,16 @@ fun WelcomeScreen(
             Spacer(Modifier.height(20.dp))
 
             SignUpLink(onGoToSignUp = onGoToSignUp)
+
+            Spacer(Modifier.height(24.dp))
+
+            TermsLinkText(
+                before = "",
+                link = TermsTexts.LINK,
+                onOpenTerms = onOpenTerms,
+                style = MaterialTheme.typography.bodySmall.copy(textAlign = TextAlign.Center),
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
