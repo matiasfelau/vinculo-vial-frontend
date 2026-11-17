@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,6 +43,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Description
+import ar.felaufernandezbottaro.vinculovial.domain.benefits.Benefit
+import ar.felaufernandezbottaro.vinculovial.presentation.benefits.BenefitsCarousel
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvBottomBar
 import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionTexts
 import ar.felaufernandezbottaro.vinculovial.presentation.terms.TermsTexts
@@ -70,6 +74,10 @@ fun SettingsScreen(
     onBiometricOfferDismissed: () -> Unit,
     onBiometricActivationFailureDismissed: () -> Unit,
     onOpenTerms: () -> Unit = {},
+    /** Las promociones vigentes (US-18). Vacía: el carrusel no se muestra. */
+    benefits: List<Benefit> = emptyList(),
+    loadBanner: suspend (String) -> ByteArray? = { null },
+    onOpenBenefit: (String) -> Unit = {},
 ) {
     var showLogoutConfirmation by remember { mutableStateOf(false) }
 
@@ -81,6 +89,7 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -118,6 +127,13 @@ fun SettingsScreen(
                 subtitle = "Revisá los incidentes reportados",
                 enabled = !state.isLoggingOut,
                 onClick = onOpenInbox,
+            )
+
+            // Debajo de "Mis alertas" (US-18). Sin promociones no ocupa lugar.
+            BenefitsCarousel(
+                benefits = benefits,
+                loadBanner = loadBanner,
+                onOpenBenefit = onOpenBenefit,
             )
 
             Spacer(Modifier.height(8.dp))

@@ -6,6 +6,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -26,6 +28,9 @@ import ar.felaufernandezbottaro.vinculovial.presentation.account.DeleteAccountVi
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.CameraPermissionGate
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.DocumentScanScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.LivenessCaptureScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.benefits.BenefitActions
+import ar.felaufernandezbottaro.vinculovial.presentation.benefits.BenefitDetailScreen
+import ar.felaufernandezbottaro.vinculovial.presentation.benefits.BenefitsViewModel
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxDetailScreen
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxEvent
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.InboxScreen
@@ -112,6 +117,8 @@ object Route {
     const val INBOX = "inbox"
     const val INBOX_DETAIL = "inbox/detail"
     const val SENT_CHAT = "inbox/sent-chat"
+
+    const val BENEFIT_DETAIL = "benefits/detail"
 }
 
 @Composable
@@ -235,6 +242,15 @@ fun VinculoVialNavHost(
         composable(Route.SETTINGS) { entry ->
             val viewModel = hiltViewModel<SettingsViewModel>(entry)
             val state by viewModel.uiState.collectAsStateWithLifecycle()
+            val benefitsViewModel = hiltViewModel<BenefitsViewModel>(entry)
+            val benefits by benefitsViewModel.uiState.collectAsStateWithLifecycle()
+
+            // Cada vez que se vuelve al Home la lista se actualiza: pudo vencer una promoción, o
+            // se pidió un código en el detalle.
+            LifecycleResumeEffect(benefitsViewModel) {
+                benefitsViewModel.refresh()
+                onPauseOrDispose {}
+            }
 
             SettingsScreen(
                 // El ofrecimiento de la huella espera a que termine el pedido de permiso de
@@ -249,11 +265,42 @@ fun VinculoVialNavHost(
                 onBiometricToggle = viewModel::onBiometricToggle,
                 onBiometricOfferDismissed = viewModel::onBiometricOfferDismissed,
                 onBiometricActivationFailureDismissed = viewModel::onBiometricActivationFailureDismissed,
+                benefits = benefits.benefits,
+                loadBanner = benefitsViewModel::banner,
+                onOpenBenefit = { id ->
+                    benefitsViewModel.open(id)
+                    navController.navigate(Route.BENEFIT_DETAIL)
+                },
             )
 
             if (justSignedIn) {
                 NotificationPermissionRequester(onFinished = { justSignedIn = false })
             }
+        }
+
+        composable(Route.BENEFIT_DETAIL) {
+            // El mismo `BenefitsViewModel` que el carrusel, atado a la entrada de Home.
+            val parentEntry = remember(it) { navController.getBackStackEntry(Route.SETTINGS) }
+            val viewModel = hiltViewModel<BenefitsViewModel>(parentEntry)
+            val state by viewModel.uiState.collectAsStateWithLifecycle()
+            val actions = BenefitActions(LocalContext.current)
+
+            // Sin promoción abierta (p. ej. tras recrearse el proceso) no hay nada que mostrar.
+            LaunchedEffect(state.selected == null) {
+                if (state.selected == null) navController.popBackStack()
+            }
+
+            BenefitDetailScreen(
+                state = state,
+                loadBanner = viewModel::banner,
+                onGetCode = viewModel::claim,
+                onCopy = actions::copyCode,
+                onOpen = { url -> actions.open(url) },
+                onBack = {
+                    viewModel.closeDetail()
+                    navController.popBackStack()
+                },
+            )
         }
 
         composable(Route.DELETE_ACCOUNT) { entry ->
