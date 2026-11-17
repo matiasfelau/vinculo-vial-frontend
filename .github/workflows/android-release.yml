@@ -53,7 +53,7 @@ jobs:
       - name: Run unit tests (JVM) with coverage
         run: ./gradlew testDebugUnitTest testReleaseUnitTest koverXmlReportDebug --console=plain
 
-      # Se publica en el resumen del job. El gate sobre el total entra con el PR de cobertura.
+      # Se publica en el resumen del job, aunque las pruebas hayan fallado.
       - name: Publish total coverage
         if: always()
         run: |
@@ -69,6 +69,13 @@ jobs:
           print(f"- Líneas (Kover): **{100 * cov / (cov + mis):.2f} %** ({cov} de {cov + mis})")
           PY
           fi
+
+      # Segundo gate, sobre el total del repo: koverVerifyDebug falla si las líneas cubiertas bajan de 85 %
+      # (regla `verify` en el bloque kover de app/build.gradle.kts), además del de diff-cover sobre el código
+      # nuevo. Ninguna rama puede bajar el total de 85 %. Las exclusiones (hardware y servicios de Google) están
+      # marcadas con @ExcludeFromCoverage y listadas en el README.
+      - name: Coverage gate (>= 85 % lines)
+        run: ./gradlew :app:koverVerifyDebug --console=plain
 
       - name: Upload coverage report
         if: always()
