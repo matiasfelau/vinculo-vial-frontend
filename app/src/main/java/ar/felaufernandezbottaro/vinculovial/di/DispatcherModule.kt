@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import javax.inject.Qualifier
 import javax.inject.Singleton
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
@@ -28,6 +29,7 @@ annotation class DefaultDispatcher
 @Retention(AnnotationRetention.BINARY)
 annotation class ApplicationScope
 
+@ExcludeFromCoverage(reason = "Módulo de Hilt: solo cableado de dependencias, sin lógica propia")
 @Module
 @InstallIn(SingletonComponent::class)
 object DispatcherModule {

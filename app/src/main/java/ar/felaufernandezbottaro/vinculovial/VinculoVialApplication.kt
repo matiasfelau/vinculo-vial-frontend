@@ -10,6 +10,7 @@ import ar.felaufernandezbottaro.vinculovial.data.session.SessionLockLifecycleObs
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
+@ExcludeFromCoverage(reason = "Application: arranque del proceso y cableado de Hilt; la lógica vive en LegacySessionMigration, SessionLockLifecycleObserver y TokenSyncManager")
 @HiltAndroidApp
 class VinculoVialApplication : Application() {
 

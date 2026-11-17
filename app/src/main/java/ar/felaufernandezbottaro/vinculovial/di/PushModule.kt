@@ -17,11 +17,13 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Qualifier
 import javax.inject.Singleton
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class PushPreferences
 
+@ExcludeFromCoverage(reason = "Módulo de Hilt: solo cableado de dependencias, sin lógica propia")
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class PushModule {

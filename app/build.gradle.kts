@@ -301,13 +301,20 @@ dependencies {
 
 /**
  * Cobertura (Kover): se mide con todas las pruebas de `testDebugUnitTest` y se exporta como XML con
- * `koverXmlReportDebug` (formato JaCoCo, que es el que lee diff-cover). Se excluye únicamente el código
- * generado, sin ninguna clase escrita a mano; cada exclusión está en el README con su motivo.
+ * `koverXmlReportDebug` (formato JaCoCo, que es el que lee diff-cover). Se excluye únicamente lo que no se
+ * puede ejecutar en la JVM -- cámara, Keystore, ML Kit, Play Integrity, FCM, `Application`, `MainActivity` y
+ * módulos de Hilt --, marcado con `@ExcludeFromCoverage(reason = ...)`, más las funciones `@Preview` y el
+ * código generado (Hilt, Dagger, `BuildConfig`, `R`, `ComposableSingletons`). El README lista cada clase
+ * excluida con su motivo.
  */
 kover {
     reports {
         filters {
             excludes {
+                annotatedBy(
+                    "ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage",
+                    "androidx.compose.ui.tooling.preview.Preview",
+                )
                 classes(
                     // Hilt y Dagger.
                     "*_*Factory",
@@ -328,6 +335,12 @@ kover {
                     "ar.felaufernandezbottaro.vinculovial.R\$*",
                     "*.ComposableSingletons\$*",
                 )
+            }
+        }
+        // Gate sobre el total: ninguna rama puede bajar de 85 % de líneas cubiertas (CONTRATO-cobertura).
+        verify {
+            rule("Cobertura total de líneas") {
+                minBound(85)
             }
         }
     }

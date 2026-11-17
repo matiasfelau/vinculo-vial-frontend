@@ -14,6 +14,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Qualifier
 import javax.inject.Singleton
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 
 /**
  * Segundos de la cuenta regresiva del botón "Reenviar" del código por email. Es el mismo
@@ -24,6 +25,7 @@ import javax.inject.Singleton
 annotation class EmailCodeResendSeconds
 
 /** Verificación del email en el alta y recuperación de contraseña (US-13): cableado. */
+@ExcludeFromCoverage(reason = "Módulo de Hilt: solo cableado de dependencias, sin lógica propia")
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class AuthFlowModule {

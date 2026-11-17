@@ -182,14 +182,33 @@ están fijadas por SHA de commit (la versión va en un comentario). Dependabot a
   `app/build/reports/kover/reportDebug.xml` y es el que lee `diff-cover`.
 - **Gate sobre el código nuevo:** `diff-cover` exige 85 % o más de las líneas que el PR agrega o cambia
   respecto de la rama base (`--src-roots app/src/main/java`).
-- **Cobertura total:** se publica en el resumen del job y como artefacto `coverage`, sin cortar. El gate
-  sobre el total entra con el PR de cobertura. Hoy mide 56,9 % de las líneas.
-- **Exclusiones:** solo el código generado, en el bloque `kover` de `app/build.gradle.kts`: lo que
-  producen Hilt y Dagger (`*_Factory`, `*_MembersInjector`, `*_HiltModules*`, `Hilt_*`, `Dagger*`,
-  `*_GeneratedInjector`), `BuildConfig`, `R` y los `ComposableSingletons` del compilador de Compose. No
-  se excluye ninguna clase escrita a mano.
+- **Gate sobre el total:** `./gradlew :app:koverVerifyDebug` falla si las líneas cubiertas bajan de 85 %.
+  Hoy mide **88,2 %** de las líneas (71,8 % de las ramas). Se publica además en el resumen del job y como
+  artefacto `coverage`. Ninguna rama puede bajar el total de ese mínimo.
 - Las pruebas de pantalla (`createComposeRule`) no corren en `testReleaseUnitTest` (ver *Pruebas de
   pantalla*), así que la cobertura sale solo de `testDebugUnitTest`.
+
+#### Qué se excluye
+
+Solo se deja afuera lo que no se puede ejecutar en la JVM porque necesita hardware real o servicios de
+Google. Cada clase lleva `@ExcludeFromCoverage(reason = "...")` (el motivo es obligatorio; la anotación está
+en `ExcludeFromCoverage.kt`) y Kover la omite con `annotatedBy`. Si una clase excluida tiene lógica, esa
+lógica vive en una clase aparte que sí se prueba y la excluida queda como un adaptador fino.
+
+| Excluido | Motivo | Lo que sí se prueba |
+|---|---|---|
+| `ScanPlateScreen`, `EvidenceCaptureScreen`, `DocumentScanScreen`, `LivenessCaptureScreen` (solo el anfitrión de CameraX) | Bindean `Preview`, `ImageAnalysis` o `ImageCapture`: necesitan una cámara real | Sus overlays (`ScanPlateOverlay`, `EvidenceCaptureOverlay`, `DocumentScanOverlay`, `LivenessCaptureOverlay`) y el estado |
+| `CameraInternals` (captura en memoria, lectura del `ImageProxy`, `ProcessCameraProvider`) | CameraX | La rotación y el submuestreo del JPEG (`JpegOrientationTest`) y la conversión NV21 (`Nv21ConverterTest`) |
+| `MlKitDocumentScanSession`, `MlKitLivenessSession`, `MLKitRecognitionStrategy` | Clientes de ML Kit (servicios de Google) | `DocumentScanEvaluator`, `LivenessEvaluator` y `PlateRegexFilter` |
+| `KeystoreSessionKeyVault` | Android Keystore | La interfaz `SessionKeyVault`, su fake y la máquina de estados de la sesión |
+| `BiometricUnlockPrompter`, `UnlockRoute` | `BiometricPrompt` necesita la Activity y la biometría | `toPromptFailure`, `UnlockScreen` y `UnlockViewModel` |
+| `VvcMessagingService` | `FirebaseMessagingService` lo instancia el sistema | `PushNotificationPlanner` (qué notificación publicar) |
+| `VinculoVialApplication`, `MainActivity` | Arranque del proceso y framework de Android | `LegacySessionMigration`, `SessionLockCoordinator` y `parsePushTarget` |
+| Módulos de Hilt (`di/*Module`, 17) | Solo cableado | |
+
+También quedan fuera del reporte, sin anotación, las funciones `@Preview` y el código que generan Hilt,
+Dagger y el compilador (`*_Factory`, `*_HiltModules*`, `Hilt_*`, `Dagger*`, `*_GeneratedInjector`,
+`BuildConfig`, `R`, `ComposableSingletons`). No se excluye ninguna otra clase escrita a mano.
 
 ### Dependencias bloqueadas
 
