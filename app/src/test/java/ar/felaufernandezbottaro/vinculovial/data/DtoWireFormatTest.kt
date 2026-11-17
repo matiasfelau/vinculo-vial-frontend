@@ -34,8 +34,8 @@ import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpErrorDetailDto
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpErrorResponseDto
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpPayloadDto
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpRequestDto
-import ar.felaufernandezbottaro.vinculovial.data.vehicle.dto.LinkVehicleRequestDto
 import ar.felaufernandezbottaro.vinculovial.data.vehicle.dto.VehiclePayloadDto
+import ar.felaufernandezbottaro.vinculovial.data.vehicle.dto.VehicleRequestDto
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import org.junit.Assert.assertEquals
@@ -247,15 +247,16 @@ class DtoWireFormatTest {
     }
 
     @Test
-    fun `la vinculacion de vehiculo cifra chasis y patente con los nombres del contrato`() {
-        val payload = VehiclePayloadDto(chasisBase64 = "CHASIS64", patenteBase64 = "PAT64")
-        val request = LinkVehicleRequestDto(payloadEnc = "ENC")
+    fun `la vinculacion de vehiculo cifra solo la patente con los nombres del contrato`() {
+        val payload = VehiclePayloadDto(patenteBase64 = "PAT64")
+        val request = VehicleRequestDto(payloadEnc = "ENC")
 
-        assertEquals(mapOf("chasis" to "CHASIS64", "patente" to "PAT64"), json(payload))
+        // US-14: el payload no lleva chasis, solo la patente que el usuario escribio.
+        assertEquals(mapOf("patente" to "PAT64"), json(payload))
         assertEquals(mapOf("payload_enc" to "ENC"), json(request))
-        assertEquals(payload, parse<VehiclePayloadDto>("""{"chasis":"CHASIS64","patente":"PAT64"}"""))
-        assertEquals(request, parse<LinkVehicleRequestDto>("""{"payload_enc":"ENC"}"""))
-        assertMasked(payload, "CHASIS64", "PAT64")
+        assertEquals(payload, parse<VehiclePayloadDto>("""{"patente":"PAT64"}"""))
+        assertEquals(request, parse<VehicleRequestDto>("""{"payload_enc":"ENC"}"""))
+        assertMasked(payload, "PAT64")
         assertMasked(request, "ENC")
     }
 

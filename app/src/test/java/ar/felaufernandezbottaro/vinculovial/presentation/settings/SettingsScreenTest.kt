@@ -35,7 +35,7 @@ class SettingsScreenTest {
                 SettingsScreen(
                     state = state,
                     onLogout = { calls += "logout" },
-                    onLinkVehicle = { calls += "link" },
+                    onOpenVehicles = { calls += "vehicles" },
                     onScanPlate = { calls += "scan" },
                     onOpenInbox = { calls += "inbox" },
                     onDeleteAccount = { calls += "delete" },
@@ -52,11 +52,11 @@ class SettingsScreenTest {
     fun `las tarjetas principales abren su flujo`() {
         show()
 
-        compose.onNodeWithText("Vincular vehículo").performClick()
+        compose.onNodeWithText("Mis vehículos").performClick()
         compose.onNodeWithText("Escanear patente").performClick()
         compose.onNodeWithText("Mis alertas").performClick()
 
-        assertEquals(listOf("link", "scan", "inbox"), calls)
+        assertEquals(listOf("vehicles", "scan", "inbox"), calls)
     }
 
     @Test
@@ -132,7 +132,7 @@ class SettingsScreenTest {
     fun `mientras cierra la sesion se bloquean las acciones`() {
         show(SettingsUiState(isLoggingOut = true, isBiometricAvailable = true))
 
-        compose.onNodeWithText("Vincular vehículo").assertIsNotEnabled()
+        compose.onNodeWithText("Mis vehículos").assertIsNotEnabled()
         compose.onNodeWithText("Escanear patente").assertIsNotEnabled()
         compose.onNodeWithText("Mis alertas").assertIsNotEnabled()
         compose.onNodeWithText("Eliminar cuenta").performScrollTo().assertIsNotEnabled()
