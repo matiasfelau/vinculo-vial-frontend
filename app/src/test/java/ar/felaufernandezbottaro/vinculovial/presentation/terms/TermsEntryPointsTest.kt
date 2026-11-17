@@ -41,7 +41,7 @@ class TermsEntryPointsTest {
                 SettingsScreen(
                     state = SettingsUiState(),
                     onLogout = {},
-                    onLinkVehicle = {},
+                    onOpenVehicles = {},
                     onScanPlate = {},
                     onOpenInbox = {},
                     onDeleteAccount = {},
