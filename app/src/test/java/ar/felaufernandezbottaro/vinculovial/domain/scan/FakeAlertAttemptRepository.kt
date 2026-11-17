@@ -15,8 +15,12 @@ class FakeAlertAttemptRepository(
     var calls = 0
         private set
 
-    override suspend fun startAttempt(): StartAlertAttemptResult {
+    /** El `pat_enc` de cada llamada, en orden. */
+    val receivedPatEnc = mutableListOf<String>()
+
+    override suspend fun startAttempt(patEnc: String): StartAlertAttemptResult {
         calls++
+        receivedPatEnc += patEnc
         return result
     }
 

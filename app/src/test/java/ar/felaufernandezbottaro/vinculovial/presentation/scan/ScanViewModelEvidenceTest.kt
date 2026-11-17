@@ -569,6 +569,37 @@ class ScanViewModelEvidenceTest {
     }
 
     @Test
+    fun `el cupo diario ocupado en el envio descarta las fotos y no deja reintentar`() = runTest {
+        val availableAt = Instant.parse("2030-01-02T15:30:00Z")
+        alertRepository.result = SendAlertResult.Failed(SendAlertError.DailyLimit(availableAt))
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onReportRequested()
+
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.DailyLimit(availableAt)), viewModel.uiState.value.status)
+        assertTrue(rasterFactory.allWiped())
+
+        viewModel.onAlertRetry()
+
+        assertEquals(1, alertRepository.received.size)
+    }
+
+    @Test
+    fun `si al renovar un intento vencido el cupo diario quedo ocupado se descartan las fotos`() = runTest {
+        val availableAt = Instant.parse("2030-01-02T15:30:00Z")
+        alertRepository.queue += expired
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        attemptRepository.result = StartAlertAttemptResult.DailyLimit(availableAt)
+
+        viewModel.onReportRequested()
+
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.DailyLimit(availableAt)), viewModel.uiState.value.status)
+        assertTrue(rasterFactory.allWiped())
+    }
+
+    @Test
     fun `un error de evidencia conserva las fotos hasta que el usuario cierra`() = runTest {
         alertRepository.result = SendAlertResult.Failed(SendAlertError.InvalidEvidence)
         val viewModel = withAttempt().capturing(AlertType.CRASHED)

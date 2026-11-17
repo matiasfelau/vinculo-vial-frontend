@@ -216,22 +216,54 @@ class AlertWireContractTest {
         assertEquals(SendAlertResult.Failed(SendAlertError.InvalidData), result)
     }
 
-    // -- 410: el reintento del intento vuelve a pedir uno, sin body ---------------------------
+    // -- 410: el reintento del intento vuelve a pedir uno, con el mismo pat_enc ----------------
 
     @Test
-    fun `renovar el intento es la misma llamada sin body y devuelve el attempt_id nuevo`() = runTest {
+    fun `renovar el intento es la misma llamada con el pat_enc y devuelve el attempt_id nuevo`() = runTest {
         server.enqueue(
             MockResponse().setResponseCode(201)
                 .setBody("""{"attempt_id":"nuevo-attempt","expires_at":"2030-01-01T00:10:00Z"}"""),
         )
 
-        val result = attemptRepository.startAttempt()
+        val result = attemptRepository.startAttempt(patEnc)
 
         val request = server.takeRequest()
         assertEquals("/api/v1/alerts/attempts", request.path)
-        assertEquals(0L, request.bodySize)
+        assertEquals("""{"pat_enc":"$patEnc"}""", request.body.readUtf8())
         assertTrue(result is StartAlertAttemptResult.Started)
         assertEquals("nuevo-attempt", (result as StartAlertAttemptResult.Started).attemptId)
+    }
+
+    // -- 409 ALERT_DAILY_LIMIT (US-16): el cuerpo real del Gateway, en el intento y en el envio --
+
+    private fun dailyLimitResponse() = MockResponse()
+        .setResponseCode(409)
+        .setHeader("Content-Type", "application/json")
+        .setBody(
+            """{"error":"ya enviaste una alerta para esta patente","code":"ALERT_DAILY_LIMIT","available_at":"2030-01-02T12:30:00-03:00"}""",
+        )
+
+    @Test
+    fun `el 409 del intento llega como DailyLimit y el intento viajo con el pat_enc`() = runTest {
+        server.enqueue(dailyLimitResponse())
+
+        val result = attemptRepository.startAttempt(patEnc)
+
+        val request = server.takeRequest()
+        assertEquals("""{"pat_enc":"$patEnc"}""", request.body.readUtf8())
+        assertEquals(StartAlertAttemptResult.DailyLimit(java.time.Instant.parse("2030-01-02T15:30:00Z")), result)
+    }
+
+    @Test
+    fun `el 409 del envio llega como DailyLimit`() = runTest {
+        server.enqueue(dailyLimitResponse())
+
+        val result = alertRepository.sendAlert(attemptId, patEnc, AlertType.CRASHED, crashed())
+
+        assertEquals(
+            SendAlertResult.Failed(SendAlertError.DailyLimit(java.time.Instant.parse("2030-01-02T15:30:00Z"))),
+            result,
+        )
     }
 
     @Test
@@ -290,13 +322,13 @@ class AlertWireContractTest {
     @Test
     fun `un 504 nativo de Kong al abrir el intento es Unavailable, igual que un 502 y un 503`() = runTest {
         server.enqueue(kongGatewayTimeout())
-        val gatewayTimeout = attemptRepository.startAttempt()
+        val gatewayTimeout = attemptRepository.startAttempt(patEnc)
 
         server.enqueue(jsonUnavailable(503))
-        val unavailable = attemptRepository.startAttempt()
+        val unavailable = attemptRepository.startAttempt(patEnc)
 
         server.enqueue(jsonUnavailable(502))
-        val badGateway = attemptRepository.startAttempt()
+        val badGateway = attemptRepository.startAttempt(patEnc)
 
         assertEquals(StartAlertAttemptResult.Unavailable, gatewayTimeout)
         assertEquals(unavailable, gatewayTimeout)

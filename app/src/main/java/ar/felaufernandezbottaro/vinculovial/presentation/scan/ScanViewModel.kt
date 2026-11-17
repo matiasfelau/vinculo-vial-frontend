@@ -179,12 +179,15 @@ class ScanViewModel @Inject constructor(
                 return@launch
             }
 
-            when (val result = startAlertAttempt()) {
+            when (val result = startAlertAttempt(patEnc)) {
                 is StartAlertAttemptResult.Started -> {
                     pendingAttempt = result
                     pendingPlateEnc = patEnc
                     _uiState.update { it.copy(status = ScanStatus.AwaitingAlertType) }
                 }
+                // Cupo ocupado: el chat lo explica y no hay nada que enviar, así que no se guarda el pat_enc.
+                is StartAlertAttemptResult.DailyLimit ->
+                    _uiState.update { it.copy(status = ScanStatus.DailyLimitReached(result.availableAt)) }
                 is StartAlertAttemptResult.Failure ->
                     _uiState.update { it.copy(status = ScanStatus.CheckFailed(result)) }
             }
@@ -410,6 +413,12 @@ class ScanViewModel @Inject constructor(
                                 pendingPlateEnc = null
                             }
                             SendAlertError.UnderReview -> evidenceBuffers.clear()
+                            // Cupo ocupado: el servidor no va a aceptar este envío, las fotos ya no sirven.
+                            is SendAlertError.DailyLimit -> {
+                                evidenceBuffers.clear()
+                                pendingAttempt = null
+                                pendingPlateEnc = null
+                            }
                             else -> Unit
                         }
                         _uiState.update { it.copy(status = ScanStatus.AlertFailed(error)) }

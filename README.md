@@ -2,6 +2,17 @@
 
 App Android de Vínculo Vial.
 
+## Una alerta por patente cada 24 h (US-16)
+
+Un emisor puede enviar como máximo una alerta por patente dentro de una ventana móvil de 24 h. Las alertas rechazadas por la IA y las vencidas sin respuesta no ocupan el cupo. La regla es igual con dueño o sin él: la app nunca se entera de si la patente tiene dueños.
+
+- **Intento:** `POST /alerts/attempts` lleva el body `{ "pat_enc": "<base64>" }`, la patente cifrada con HPKE contra Vehicle, el mismo criptograma que viaja en el envío. Se manda apenas el usuario confirma la patente escaneada o tipeada. La patente en claro nunca sale del teléfono y `Alert` no la ve. Si el intento hay que renovarlo porque venció, se vuelve a pedir con el mismo `pat_enc`.
+- **`409 ALERT_DAILY_LIMIT`:** llega con `available_at` (RFC 3339), cuándo se libera el cupo. Se mapea por el `code`, no por el status; un 409 con otro `code`, o sin un `available_at` legible, es un error inesperado.
+  - **En el intento:** se abre el chat con ViVIAna, que dice: "Ya enviaste una alerta para esta patente. Vas a poder enviar otra desde el 2 de enero a las 12:30." No se ofrecen los mensajes ni se abre la captura de fotos. El único botón es "Cerrar".
+  - **En el envío:** el mismo mensaje aparece en el chat (por ejemplo, si el cupo se ocupó entre el intento y el envío). Se descartan las fotos y no hay reintento: el botón es "Cerrar".
+- **Fecha y hora:** siempre en `America/Argentina/Buenos_Aires`, sin importar la zona del teléfono.
+- **Control del servidor:** si Alert no pudo controlar el cupo en el intento (por ejemplo, Vehicle no respondió), el intento sigue con un 201 y el control definitivo lo hace el envío, que puede responder el 409.
+
 ## Evidencia de una alerta: dos fotos (US-15)
 
 Todo tipo de alerta que la app ofrece (`CRASHED` y `PARKED_ON_GARAGE`) pide exactamente dos fotos, en este orden:

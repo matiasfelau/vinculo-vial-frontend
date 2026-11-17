@@ -170,6 +170,8 @@ private fun SenderChatFooter(
         when {
             status is ScanStatus.AlertSent -> VvPrimaryButton(text = "Cerrar", onClick = onFinished)
 
+            status is ScanStatus.DailyLimitReached -> VvPrimaryButton(text = "Cerrar", onClick = onClose)
+
             status is ScanStatus.AlertFailed -> when (status.error.recovery()) {
                 SendAlertRecovery.RETRY -> VvPrimaryButton(text = "Reintentar", onClick = onRetry)
                 SendAlertRecovery.RESTART -> VvPrimaryButton(text = "Volver a empezar", onClick = onRestart)
