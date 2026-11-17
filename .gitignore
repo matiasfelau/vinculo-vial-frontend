@@ -24,3 +24,7 @@ CONTRATO-*.md
 hs_err_pid*.log
 replay_pid*.log
 *.stackdump
+
+# Reportes del CI (ver el README)
+diff-cover.md
+semgrep.json
