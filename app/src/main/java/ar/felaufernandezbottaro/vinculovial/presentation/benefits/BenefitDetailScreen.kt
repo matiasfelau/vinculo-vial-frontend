@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,7 +51,7 @@ import kotlinx.coroutines.launch
 
 /**
  * El detalle de una promoción: banner, partner, vigencia, descripción y condiciones; sin código,
- * "Obtener código"; con código, el código en grande con "Copiar" y "Abrir <partner>". La pantalla
+ * "Obtener código"; con código, el código en grande con "Copiar" y "Abrir". La pantalla
  * solo muestra el estado y emite eventos: copiar y abrir los resuelve quien la compone.
  */
 @Composable
@@ -214,15 +215,17 @@ private fun ClaimSection(
             onClick = { onCopy(code) },
             shape = RoundedCornerShape(10.dp),
             border = BorderStroke(1.5.dp, VvNavy),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .height(52.dp),
         ) {
             Text(BenefitTexts.COPY, color = VvNavy)
         }
         if (benefit.canOpen) {
             VvPrimaryButton(
-                text = BenefitTexts.open(benefit.partnerName),
+                text = BenefitTexts.OPEN,
                 onClick = { onOpen(benefit.openUrl) },
-                modifier = Modifier.weight(2f),
+                modifier = Modifier.weight(1f),
             )
         }
     }
