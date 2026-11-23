@@ -76,8 +76,8 @@ class AlertApiTest {
             binary.toRequestBody("application/octet-stream".toMediaType()),
         ),
         MultipartBody.Part.createFormData(
-            "detail",
-            "detail-0.bin",
+            "plate",
+            "plate-0.bin",
             binary.toRequestBody("application/octet-stream".toMediaType()),
         ),
     )
@@ -102,7 +102,7 @@ class AlertApiTest {
         api.sendAlert("Bearer access-abc", parts)
 
         val wire = server.takeRequest().parseMultipartWire()
-        assertEquals(listOf("metadata", "general", "detail"), wire.map { it.name })
+        assertEquals(listOf("metadata", "general", "plate"), wire.map { it.name })
         assertEquals(
             listOf("application/json", "application/octet-stream", "application/octet-stream"),
             wire.map { it.contentType },

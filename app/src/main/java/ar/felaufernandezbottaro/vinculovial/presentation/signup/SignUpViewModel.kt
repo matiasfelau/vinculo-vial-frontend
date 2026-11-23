@@ -51,12 +51,32 @@ class SignUpViewModel @Inject constructor(
     /** Barrera sincrónica contra un doble tap en "Verificar y registrarme". Ver [submit]. */
     private val submitInFlight = AtomicBoolean(false)
 
+    /**
+     * `verification_token` de US-13: prueba que el email es de quien se registra. Vive sólo acá,
+     * en memoria, y viaja dentro del payload HPKE del signup. Nunca va a [uiState], a un log ni a
+     * disco; se descarta al cambiar el email, al usarlo o si el servidor lo rechaza.
+     */
+    private var emailVerificationToken: String? = null
+
     fun onDniChange(value: String) = updateForm(CredentialField.DNI) {
         it.copy(dni = value.filter(Char::isDigit).take(8))
     }
 
-    fun onEmailChange(value: String) = updateForm(CredentialField.EMAIL) {
-        it.copy(email = value.trim())
+    fun onEmailChange(value: String) {
+        updateForm(CredentialField.EMAIL) { it.copy(email = value.trim()) }
+        // Otro email, otra verificación: el token es de un email puntual.
+        if (_uiState.value.verifiedEmail != _uiState.value.form.email.trim()) discardEmailVerification()
+    }
+
+    /** El email del formulario ya se confirmó con el código: queda el token en memoria. */
+    fun onEmailVerified(email: String, token: String) {
+        emailVerificationToken = token
+        _uiState.update { it.copy(verifiedEmail = email.trim()) }
+    }
+
+    private fun discardEmailVerification() {
+        emailVerificationToken = null
+        _uiState.update { it.copy(verifiedEmail = null) }
     }
 
     fun onPasswordChange(value: String) = updateForm(CredentialField.PASSWORD) {
@@ -67,11 +87,16 @@ class SignUpViewModel @Inject constructor(
         it.copy(passwordConfirmation = value)
     }
 
-    /** Valida todo el formulario; `true` habilita avanzar al consentimiento. */
+    /** La casilla de los Términos y Condiciones (US-19). Vive acá para sobrevivir a la lectura de los Términos. */
+    fun onTermsAcceptedChange(accepted: Boolean) {
+        _uiState.update { it.copy(form = it.form.copy(termsAccepted = accepted)) }
+    }
+
+    /** Valida todo el formulario, incluida la casilla de los Términos; `true` habilita avanzar al consentimiento. */
     fun validateForm(): Boolean {
         val problems = CredentialRules.problems(_uiState.value.form)
         _uiState.update { it.copy(fieldErrors = problems) }
-        return problems.isEmpty()
+        return problems.isEmpty() && _uiState.value.form.termsAccepted
     }
 
     /**
@@ -143,7 +168,11 @@ class SignUpViewModel @Inject constructor(
             try {
                 _uiState.update { it.copy(status = SignUpStatus.Submitting) }
 
-                val result = registerUser(state.form)
+                val result = registerUser(state.form, emailVerificationToken.orEmpty())
+
+                // El token se consume en el servidor al crear la cuenta, o se rechazó: en los dos
+                // casos no sirve para un segundo intento.
+                if (result is SignUpResult.Registered || result.isEmailNotVerified()) discardEmailVerification()
 
                 _uiState.update {
                     when (result) {
@@ -154,6 +183,12 @@ class SignUpViewModel @Inject constructor(
                         )
 
                         is SignUpResult.Failed -> it.copy(
+                            // TERMS_NOT_ACCEPTED: "volvé a aceptarlos", así que la casilla queda sin marcar.
+                            form = if (result.error == SignUpError.TermsNotAccepted) {
+                                it.form.copy(termsAccepted = false)
+                            } else {
+                                it.form
+                            },
                             status = SignUpStatus.Failed(result.error),
                             // Las imágenes ya no existen: cualquier reintento vuelve a capturar.
                             completedCaptures = emptySet(),
@@ -165,6 +200,9 @@ class SignUpViewModel @Inject constructor(
             }
         }
     }
+
+    private fun SignUpResult.isEmailNotVerified(): Boolean =
+        this is SignUpResult.Failed && error == SignUpError.EmailNotVerified
 
     /** Cierra el error y deja la pantalla lista para reintentar. */
     fun onErrorDismissed() {
@@ -185,6 +223,7 @@ class SignUpViewModel @Inject constructor(
 
     /** Si la pantalla muere con capturas pendientes, las imágenes no quedan vivas. */
     override fun onCleared() {
+        emailVerificationToken = null
         identityVerification.discardCaptures()
         super.onCleared()
     }

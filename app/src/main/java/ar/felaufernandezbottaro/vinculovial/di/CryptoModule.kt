@@ -17,6 +17,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Qualifier
 import javax.inject.Singleton
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 
 /** Public Key HPKE de `vinculo-vial-identity`, usada por `/signup` y `/signin`. */
 @Qualifier
@@ -33,6 +34,7 @@ annotation class VehicleHpkePublicKey
 @Retention(AnnotationRetention.BINARY)
 annotation class IaHpkePublicKey
 
+@ExcludeFromCoverage(reason = "Módulo de Hilt: solo cableado de dependencias, sin lógica propia")
 @Module
 @InstallIn(SingletonComponent::class)
 object CryptoModule {

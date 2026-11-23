@@ -7,7 +7,6 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,12 +41,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -56,6 +51,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 import ar.felaufernandezbottaro.vinculovial.data.edge.SecureBitmap
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.awaitCameraProviderInternal
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.captureRawJpegInternal
@@ -73,6 +69,7 @@ import kotlinx.coroutines.withContext
  * cámara in-app (`ImageCapture` en memoria); en `debug`, [galleryEvidenceSource] suma la opción
  * de elegir de la galería, que en release no existe.
  */
+@ExcludeFromCoverage(reason = "Captura con CameraX (ImageCapture): necesita cámara real; la instrucción, el obturador, la revisión y el diálogo viven en EvidenceCaptureOverlay, que sí se prueba")
 @Composable
 fun EvidenceCaptureScreen(
     state: EvidenceCaptureState,
@@ -94,7 +91,6 @@ fun EvidenceCaptureScreen(
     var showCancelDialog by remember { mutableStateOf(false) }
 
     val busy = state.phase == EvidencePhase.PROCESSING
-    val step = state.currentStep
 
     BackHandler(enabled = !busy) { showCancelDialog = true }
 
@@ -137,16 +133,71 @@ fun EvidenceCaptureScreen(
 
     val pickGalleryImage = galleryEvidenceSource.rememberPickerLauncher { bytes -> onPhotoCaptured(bytes, 0) }
 
+    EvidenceCaptureOverlay(
+        state = state,
+        cameraFailure = cameraFailure,
+        reviewBitmap = reviewBitmap,
+        shutterEnabled = cameraProvider != null && !capturing,
+        showCancelDialog = showCancelDialog,
+        onBack = { showCancelDialog = true },
+        onCancelDialogDismissed = { showCancelDialog = false },
+        onCancelConfirmed = {
+            showCancelDialog = false
+            onCancel()
+        },
+        onShutter = {
+            capturing = true
+            imageCapture.captureRawJpegInternal(
+                context = context,
+                onJpeg = { jpeg, rotationDegrees ->
+                    capturing = false
+                    onPhotoCaptured(jpeg, rotationDegrees)
+                },
+                onFailure = {
+                    capturing = false
+                    onPhotoCaptureFailed()
+                },
+            )
+        },
+        onPickFromGallery = pickGalleryImage,
+        onPhotoRetake = onPhotoRetake,
+        onAddAnotherPhoto = onAddAnotherPhoto,
+        onStepConfirmed = onStepConfirmed,
+        preview = { AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize()) },
+    )
+}
+
+/**
+ * Lo que se ve sobre la cámara en la captura de evidencia: la instrucción del paso, el obturador,
+ * la revisión de la foto y el diálogo de salida. Separado del anfitrión de CameraX
+ * ([EvidenceCaptureScreen]) para poder probarlo sin cámara; [preview] es el hueco del `PreviewView`.
+ */
+@Composable
+internal fun EvidenceCaptureOverlay(
+    state: EvidenceCaptureState,
+    cameraFailure: String?,
+    reviewBitmap: Bitmap?,
+    shutterEnabled: Boolean,
+    showCancelDialog: Boolean,
+    onBack: () -> Unit,
+    onCancelDialogDismissed: () -> Unit,
+    onCancelConfirmed: () -> Unit,
+    onShutter: () -> Unit,
+    onPickFromGallery: (() -> Unit)?,
+    onPhotoRetake: () -> Unit,
+    onAddAnotherPhoto: () -> Unit,
+    onStepConfirmed: () -> Unit,
+    preview: @Composable () -> Unit,
+) {
+    val busy = state.phase == EvidencePhase.PROCESSING
+    val step = state.currentStep
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black),
     ) {
-        AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-
-        step?.overlayHint?.let { hint ->
-            if (state.phase == EvidencePhase.CAPTURING) FramingGuide(hint = hint)
-        }
+        preview()
 
         reviewBitmap?.let { bitmap ->
             Image(
@@ -170,7 +221,7 @@ fun EvidenceCaptureScreen(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Volver al chat",
                 enabled = !busy,
-                onClick = { showCancelDialog = true },
+                onClick = onBack,
             )
 
             if (step != null) {
@@ -212,24 +263,8 @@ fun EvidenceCaptureScreen(
 
             when (state.phase) {
                 EvidencePhase.CAPTURING -> {
-                    ShutterButton(
-                        enabled = cameraProvider != null && !capturing,
-                        onClick = {
-                            capturing = true
-                            imageCapture.captureRawJpegInternal(
-                                context = context,
-                                onJpeg = { jpeg, rotationDegrees ->
-                                    capturing = false
-                                    onPhotoCaptured(jpeg, rotationDegrees)
-                                },
-                                onFailure = {
-                                    capturing = false
-                                    onPhotoCaptureFailed()
-                                },
-                            )
-                        },
-                    )
-                    pickGalleryImage?.let { launch ->
+                    ShutterButton(enabled = shutterEnabled, onClick = onShutter)
+                    onPickFromGallery?.let { launch ->
                         TextButton(onClick = launch) {
                             Text(text = "Elegir de la galería", color = Color.White)
                         }
@@ -255,26 +290,21 @@ fun EvidenceCaptureScreen(
 
     if (showCancelDialog) {
         AlertDialog(
-            onDismissRequest = { showCancelDialog = false },
+            onDismissRequest = onCancelDialogDismissed,
             title = { Text("¿Volver al chat?") },
             text = { Text("Las fotos que sacaste se descartan y vas a tener que sacarlas de nuevo.") },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        showCancelDialog = false
-                        onCancel()
-                    },
-                ) { Text("Sí, volver", color = VvOrange) }
+                TextButton(onClick = onCancelConfirmed) { Text("Sí, volver", color = VvOrange) }
             },
             dismissButton = {
-                TextButton(onClick = { showCancelDialog = false }) { Text("Seguir sacando", color = VvNavy) }
+                TextButton(onClick = onCancelDialogDismissed) { Text("Seguir sacando", color = VvNavy) }
             },
         )
     }
 }
 
 @Composable
-private fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
+internal fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         enabled = enabled,
@@ -312,53 +342,15 @@ private fun ReviewActions(
     }
 }
 
-/** Marco guía del encuadre de un paso, con la indicación sobre cómo tiene que entrar la escena. */
-@Composable
-private fun FramingGuide(hint: String) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width * FRAME_WIDTH_FRACTION
-            val height = size.height * FRAME_HEIGHT_FRACTION
-            drawRoundRect(
-                color = Color.White.copy(alpha = 0.9f),
-                topLeft = Offset((size.width - width) / 2f, size.height * FRAME_TOP_FRACTION),
-                size = Size(width, height),
-                cornerRadius = CornerRadius(FRAME_CORNER_PX, FRAME_CORNER_PX),
-                style = Stroke(width = FRAME_STROKE_PX),
-            )
-        }
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = Color.Black.copy(alpha = 0.6f),
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(horizontal = 40.dp),
-        ) {
-            Text(
-                text = hint,
-                style = MaterialTheme.typography.titleSmall,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            )
-        }
-    }
-}
-
-private fun stepCounter(state: EvidenceCaptureState): String {
+internal fun stepCounter(state: EvidenceCaptureState): String {
     val step = state.currentStep ?: return ""
     val base = "Paso ${state.stepIndex + 1} de ${state.steps.size}"
     return if (step.maxPhotos > 1) "$base · foto ${state.photoIndex + 1} de hasta ${step.maxPhotos}" else base
 }
 
-private fun EvidenceError.message(): String = when (this) {
+internal fun EvidenceError.message(): String = when (this) {
     EvidenceError.CAPTURE_FAILED -> "No pudimos sacar la foto. Intentá de nuevo."
     EvidenceError.UNREADABLE -> "No pudimos leer la imagen. Probá con otra foto."
     EvidenceError.TOO_LARGE -> "La foto es demasiado pesada. Sacala de nuevo."
 }
 
-private const val FRAME_WIDTH_FRACTION = 0.86f
-private const val FRAME_HEIGHT_FRACTION = 0.34f
-private const val FRAME_TOP_FRACTION = 0.42f
-private const val FRAME_CORNER_PX = 48f
-private const val FRAME_STROKE_PX = 4f

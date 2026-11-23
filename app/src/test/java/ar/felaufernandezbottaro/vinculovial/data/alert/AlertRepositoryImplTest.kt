@@ -37,6 +37,7 @@ import org.junit.Test
 import retrofit2.Response
 import java.io.IOException
 import java.security.GeneralSecurityException
+import java.time.Instant
 import java.util.Base64
 
 /**
@@ -92,37 +93,24 @@ class AlertRepositoryImplTest {
         }
     }
 
-    private fun crashedEvidence(details: Int = 1) = evidence(
-        EvidenceRole.GENERAL to 1,
-        EvidenceRole.PLATE to 1,
-        EvidenceRole.DETAIL to details,
-    )
+    private fun crashedEvidence() = evidence(EvidenceRole.GENERAL to 1, EvidenceRole.PLATE to 1)
 
-    private fun garageEvidence() = evidence(
-        EvidenceRole.GENERAL to 1,
-        EvidenceRole.PLATE to 1,
-        EvidenceRole.CONTEXT to 1,
-    )
+    private fun garageEvidence() = evidence(EvidenceRole.GENERAL to 1, EvidenceRole.PLATE to 1)
 
     // -- Partes según el tipo ---------------------------------------------------------------
 
     @Test
-    fun `CRASHED lleva metadata, general, plate y de 1 a 3 detail`() = runTest {
-        listOf(1, 2, 3).forEach { details ->
-            repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence(details))
+    fun `CRASHED lleva metadata, general y plate`() = runTest {
+        repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence())
 
-            assertEquals(
-                listOf("metadata", "general", "plate") + List(details) { "detail" },
-                api.lastParts.map { it.partName() },
-            )
-        }
+        assertEquals(listOf("metadata", "general", "plate"), api.lastParts.map { it.partName() })
     }
 
     @Test
-    fun `PARKED_ON_GARAGE lleva metadata, general, plate y context`() = runTest {
+    fun `PARKED_ON_GARAGE lleva metadata, general y plate`() = runTest {
         repository().sendAlert(attemptId, patEnc, AlertType.PARKED_ON_GARAGE, garageEvidence())
 
-        assertEquals(listOf("metadata", "general", "plate", "context"), api.lastParts.map { it.partName() })
+        assertEquals(listOf("metadata", "general", "plate"), api.lastParts.map { it.partName() })
     }
 
     @Test
@@ -140,10 +128,10 @@ class AlertRepositoryImplTest {
 
     @Test
     fun `las fotos van como application octet-stream`() = runTest {
-        repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence(2))
+        repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence())
 
         assertEquals(
-            List(4) { "application/octet-stream" },
+            List(2) { "application/octet-stream" },
             api.lastParts.drop(1).map { it.partContentType() },
         )
     }
@@ -159,14 +147,12 @@ class AlertRepositoryImplTest {
 
     @Test
     fun `cada foto se cifra para IA con el attempt_id como info y descifra a la foto original`() = runTest {
-        repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence(2))
+        repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence())
 
         val photos = api.lastParts.drop(1)
         val expected = listOf(
             jpeg(EvidenceRole.GENERAL, 0),
             jpeg(EvidenceRole.PLATE, 0),
-            jpeg(EvidenceRole.DETAIL, 0),
-            jpeg(EvidenceRole.DETAIL, 1),
         )
         photos.zip(expected).forEach { (part, original) ->
             assertArrayEquals(original, decrypt(iaKeyset, part.partBytes(), attemptId))
@@ -212,7 +198,7 @@ class AlertRepositoryImplTest {
 
     @Test
     fun `si falta una foto del tipo no llama a la red`() = runTest {
-        val missingPlate = evidence(EvidenceRole.GENERAL to 1, EvidenceRole.DETAIL to 1)
+        val missingPlate = evidence(EvidenceRole.GENERAL to 1)
 
         val result = repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, missingPlate)
 
@@ -221,8 +207,10 @@ class AlertRepositoryImplTest {
     }
 
     @Test
-    fun `si sobran fotos de daño no llama a la red`() = runTest {
-        val result = repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, crashedEvidence(details = 4))
+    fun `si sobra una segunda foto de un rol no llama a la red`() = runTest {
+        val twoPlates = evidence(EvidenceRole.GENERAL to 1, EvidenceRole.PLATE to 2)
+
+        val result = repository().sendAlert(attemptId, patEnc, AlertType.CRASHED, twoPlates)
 
         assertEquals(SendAlertResult.Failed(SendAlertError.Unexpected), result)
         assertEquals(0, api.callCount)
@@ -319,6 +307,33 @@ class AlertRepositoryImplTest {
 
         api.response = errorResponse(410, """{"error":"x","code":"EVIDENCE_EXPIRED"}""")
         assertEquals(SendAlertResult.Failed(SendAlertError.Unexpected), send())
+    }
+
+    @Test
+    fun `409 ALERT_DAILY_LIMIT es DailyLimit con el available_at`() = runTest {
+        api.response = errorResponse(
+            409,
+            """{"error":"ya enviaste una alerta para esta patente","code":"ALERT_DAILY_LIMIT","available_at":"2030-01-02T15:30:00Z"}""",
+        )
+
+        assertEquals(
+            SendAlertResult.Failed(SendAlertError.DailyLimit(Instant.parse("2030-01-02T15:30:00Z"))),
+            send(),
+        )
+    }
+
+    @Test
+    fun `409 con otro code, sin available_at o con uno ilegible es inesperado`() = runTest {
+        listOf(
+            """{"error":"x","code":"OTRO","available_at":"2030-01-02T15:30:00Z"}""",
+            """{"error":"x","code":"ALERT_DAILY_LIMIT"}""",
+            """{"error":"x","code":"ALERT_DAILY_LIMIT","available_at":"manana"}""",
+            "",
+        ).forEach { body ->
+            api.response = errorResponse(409, body)
+
+            assertEquals(body, SendAlertResult.Failed(SendAlertError.Unexpected), send())
+        }
     }
 
     @Test

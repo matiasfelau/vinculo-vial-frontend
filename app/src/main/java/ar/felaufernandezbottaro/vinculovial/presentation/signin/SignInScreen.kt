@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +46,7 @@ fun SignInScreen(
     onPasswordChange: (String) -> Unit,
     onSubmit: () -> Unit,
     onGoToSignUp: () -> Unit,
+    onForgotPassword: () -> Unit = {},
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -126,6 +128,10 @@ fun SignInScreen(
                 enabled = !state.isSubmitting,
                 loading = state.isSubmitting,
             )
+
+            TextButton(onClick = onForgotPassword, enabled = !state.isSubmitting) {
+                Text(text = "¿Olvidaste tu contraseña?", color = VvNavy)
+            }
         }
     }
 }

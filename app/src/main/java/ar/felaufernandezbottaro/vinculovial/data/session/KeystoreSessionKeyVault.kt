@@ -15,6 +15,7 @@ import java.security.ProviderException
 import java.security.UnrecoverableKeyException
 import java.security.spec.X509EncodedKeySpec
 import javax.crypto.Cipher
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 
 /**
  * La clave de desbloqueo en el Android Keystore: RSA 2048, sólo para descifrar, con
@@ -24,6 +25,7 @@ import javax.crypto.Cipher
  * La pública se reconstruye fuera del Keystore antes de cifrar: así cifrar no pasa por el
  * proveedor del Keystore, que exigiría la autenticación que esta clave pide sólo para descifrar.
  */
+@ExcludeFromCoverage(reason = "Implementación del Android Keystore: necesita el hardware del dispositivo (la interfaz SessionKeyVault y su fake sí se prueban)")
 class KeystoreSessionKeyVault : SessionKeyVault {
 
     override fun createKey() {

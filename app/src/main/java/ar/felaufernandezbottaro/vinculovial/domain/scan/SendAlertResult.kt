@@ -1,5 +1,7 @@
 package ar.felaufernandezbottaro.vinculovial.domain.scan
 
+import java.time.Instant
+
 /**
  * Resultado de `POST /alerts` visto desde el dominio. `presentation` nunca ve un código HTTP ni
  * una excepción cruda: sólo estos casos.
@@ -47,6 +49,12 @@ sealed interface SendAlertError {
 
     /** 410 `ATTEMPT_EXPIRED` que persiste tras renovar el intento una vez. */
     data object AttemptExpired : SendAlertError
+
+    /**
+     * 409 `ALERT_DAILY_LIMIT`: el emisor ya tiene una alerta para esta patente dentro de la
+     * ventana de 24 h. [availableAt] es cuándo se libera el cupo. No hay reintento posible.
+     */
+    data class DailyLimit(val availableAt: Instant) : SendAlertError
 
     /** 429: límite de Kong alcanzado. No reintentar automático. */
     data object RateLimited : SendAlertError

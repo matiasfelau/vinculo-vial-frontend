@@ -93,7 +93,7 @@ class ScanViewModelEvidenceTest {
         assertEquals(AlertType.CRASHED, viewModel.uiState.value.selectedAlertType)
         assertEquals(EvidencePhase.READY, viewModel.evidence.phase)
         assertEquals(
-            listOf(EvidenceRole.GENERAL, EvidenceRole.PLATE, EvidenceRole.DETAIL),
+            listOf(EvidenceRole.GENERAL, EvidenceRole.PLATE),
             viewModel.evidence.steps.map { it.role },
         )
         assertEquals(EvidenceRole.GENERAL, viewModel.evidence.currentStep?.role)
@@ -158,7 +158,7 @@ class ScanViewModelEvidenceTest {
         assertEquals(EvidencePhase.READY, viewModel.evidence.phase)
         assertEquals(AlertType.CRASHED, viewModel.uiState.value.selectedAlertType)
         assertEquals(0, viewModel.evidence.stepIndex)
-        assertEquals(3, viewModel.evidence.steps.size)
+        assertEquals(2, viewModel.evidence.steps.size)
         assertTrue(rasterFactory.allWiped())
     }
 
@@ -341,10 +341,6 @@ class ScanViewModelEvidenceTest {
         viewModel.takePhoto()
         viewModel.onStepConfirmed()
         assertEquals(EvidenceRole.PLATE, viewModel.evidence.currentStep?.role)
-
-        viewModel.takePhoto()
-        viewModel.onStepConfirmed()
-        assertEquals(EvidenceRole.CONTEXT, viewModel.evidence.currentStep?.role)
         assertTrue(viewModel.evidence.isLastStep)
 
         viewModel.takePhoto()
@@ -353,23 +349,25 @@ class ScanViewModelEvidenceTest {
     }
 
     @Test
-    fun `CRASHED pide exactamente una foto de daño y no ofrece agregar otra`() = runTest {
-        val viewModel = withAttempt().capturing(AlertType.CRASHED)
-        repeat(2) {
+    fun `cada tipo completa la captura con exactamente dos fotos, general y patente`() = runTest {
+        listOf(AlertType.CRASHED, AlertType.PARKED_ON_GARAGE).forEach { alertType ->
+            val viewModel = withAttempt().capturing(alertType)
+            assertEquals(EvidenceRole.GENERAL, viewModel.evidence.currentStep?.role)
+
             viewModel.takePhoto()
             viewModel.onStepConfirmed()
+            assertEquals(EvidenceRole.PLATE, viewModel.evidence.currentStep?.role)
+
+            viewModel.takePhoto()
+            assertFalse(viewModel.evidence.canAddAnother)
+            viewModel.onAddAnotherPhoto()
+            assertEquals(0, viewModel.evidence.photoIndex)
+            assertEquals(EvidencePhase.REVIEWING, viewModel.evidence.phase)
+
+            viewModel.onStepConfirmed()
+            assertEquals("$alertType", EvidencePhase.COMPLETE, viewModel.evidence.phase)
+            assertEquals("$alertType", 2, viewModel.evidence.photoCount())
         }
-        assertEquals(EvidenceRole.DETAIL, viewModel.evidence.currentStep?.role)
-
-        viewModel.takePhoto()
-        assertFalse(viewModel.evidence.canAddAnother)
-        viewModel.onAddAnotherPhoto()
-        assertEquals(0, viewModel.evidence.photoIndex)
-        assertEquals(EvidencePhase.REVIEWING, viewModel.evidence.phase)
-
-        viewModel.onStepConfirmed()
-        assertEquals(EvidencePhase.COMPLETE, viewModel.evidence.phase)
-        assertEquals(3, viewModel.evidence.photoCount())
     }
 
     @Test
@@ -567,6 +565,37 @@ class ScanViewModelEvidenceTest {
         viewModel.onReportRequested()
 
         assertEquals(ScanStatus.AlertFailed(SendAlertError.UnderReview), viewModel.uiState.value.status)
+        assertTrue(rasterFactory.allWiped())
+    }
+
+    @Test
+    fun `el cupo diario ocupado en el envio descarta las fotos y no deja reintentar`() = runTest {
+        val availableAt = Instant.parse("2030-01-02T15:30:00Z")
+        alertRepository.result = SendAlertResult.Failed(SendAlertError.DailyLimit(availableAt))
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+
+        viewModel.onReportRequested()
+
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.DailyLimit(availableAt)), viewModel.uiState.value.status)
+        assertTrue(rasterFactory.allWiped())
+
+        viewModel.onAlertRetry()
+
+        assertEquals(1, alertRepository.received.size)
+    }
+
+    @Test
+    fun `si al renovar un intento vencido el cupo diario quedo ocupado se descartan las fotos`() = runTest {
+        val availableAt = Instant.parse("2030-01-02T15:30:00Z")
+        alertRepository.queue += expired
+        val viewModel = withAttempt().capturing(AlertType.CRASHED)
+        viewModel.completeEvidence()
+        attemptRepository.result = StartAlertAttemptResult.DailyLimit(availableAt)
+
+        viewModel.onReportRequested()
+
+        assertEquals(ScanStatus.AlertFailed(SendAlertError.DailyLimit(availableAt)), viewModel.uiState.value.status)
         assertTrue(rasterFactory.allWiped())
     }
 

@@ -11,6 +11,11 @@ data class SignUpForm(
     val email: String = "",
     val password: String = "",
     val passwordConfirmation: String = "",
+    /**
+     * US-19: la casilla "Leí y acepto los Términos y Condiciones y la Política de Privacidad".
+     * Sin ella no se avanza, y la versión aceptada viaja en el payload del signup.
+     */
+    val termsAccepted: Boolean = false,
 ) {
     /** Nunca exponer credenciales en logs ni en reportes de crash. */
     override fun toString(): String = "SignUpForm(dni=***, email=***, password=***)"

@@ -103,7 +103,7 @@ class AlertRepositoryImpl @Inject constructor(
         for (step in steps) {
             val partName = step.role.name.lowercase()
             val count = evidence.count(step.role)
-            if (count !in 1..EvidencePlan.contractMaxPhotos(step.role)) return null
+            if (count != 1) return null
 
             for (index in 0 until count) {
                 val ciphertext = evidence.read(step.role, index) { jpeg -> evidenceEncryptor.encrypt(jpeg, attemptId) }
@@ -127,12 +127,24 @@ class AlertRepositoryImpl @Inject constructor(
             status == HTTP_FORBIDDEN && apiErrorCode(errorAdapter) == CODE_ISSUER_UNDER_REVIEW -> SendAlertError.UnderReview
             status == HTTP_NOT_FOUND && apiErrorCode(errorAdapter) == CODE_ATTEMPT_NOT_FOUND -> SendAlertError.AttemptNotFound
             status == HTTP_GONE && apiErrorCode(errorAdapter) == CODE_ATTEMPT_EXPIRED -> SendAlertError.AttemptExpired
+            status == HTTP_CONFLICT -> conflictError()
             status == HTTP_PAYLOAD_TOO_LARGE -> SendAlertError.EvidenceTooLarge
             status == HTTP_TOO_MANY_REQUESTS -> SendAlertError.RateLimited
             status.isTransientUpstreamFailure() -> SendAlertError.Unavailable
             else -> SendAlertError.Unexpected
         }
         return SendAlertResult.Failed(error)
+    }
+
+    /** Un 409 sólo es el cupo diario si trae ese `code` y un `available_at` legible; si no, es inesperado. */
+    private fun Response<Unit>.conflictError(): SendAlertError {
+        val error = apiError(errorAdapter)
+        val availableAt = error?.availableAtInstant()
+        return if (error?.code == CODE_ALERT_DAILY_LIMIT && availableAt != null) {
+            SendAlertError.DailyLimit(availableAt)
+        } else {
+            SendAlertError.Unexpected
+        }
     }
 
     private fun badRequestError(code: String?): SendAlertError = when (code) {

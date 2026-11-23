@@ -27,6 +27,7 @@ fun SignUpErrorDialog(
     error: SignUpError,
     onDismiss: () -> Unit,
     onEditForm: () -> Unit,
+    onVerifyEmail: () -> Unit = {},
 ) {
     val presentation = error.presentation()
 
@@ -62,6 +63,10 @@ fun SignUpErrorDialog(
 
                 SignUpErrorAction.EDIT_FORM -> TextButton(onClick = onEditForm) {
                     Text("Revisar mis datos", color = VvNavy)
+                }
+
+                SignUpErrorAction.VERIFY_EMAIL -> TextButton(onClick = onVerifyEmail) {
+                    Text("Verificar mi email", color = VvNavy)
                 }
 
                 SignUpErrorAction.DISMISS -> TextButton(onClick = onDismiss) {

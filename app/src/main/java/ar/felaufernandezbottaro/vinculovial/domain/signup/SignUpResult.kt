@@ -60,6 +60,18 @@ sealed interface SignUpError {
      */
     data object IdentityNotVerified : SignUpError
 
+    /**
+     * 400 (`EMAIL_NOT_VERIFIED`): el token de verificación del email falta, venció, ya se usó o
+     * es de otro email. La salida es volver a verificar el email.
+     */
+    data object EmailNotVerified : SignUpError
+
+    /**
+     * 400 (`TERMS_NOT_ACCEPTED`): la versión de los Términos que viajó no es la vigente en Identity,
+     * o no se aceptaron. La salida es volver al formulario a aceptarlos de nuevo.
+     */
+    data object TermsNotAccepted : SignUpError
+
     /** 403: el Gateway rechazó la App Attestation. */
     data object AttestationRejected : SignUpError
 

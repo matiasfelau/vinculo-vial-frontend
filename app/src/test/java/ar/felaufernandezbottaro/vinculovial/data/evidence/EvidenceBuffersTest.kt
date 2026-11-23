@@ -56,8 +56,8 @@ class EvidenceBuffersTest {
         val buffers = EvidenceBuffers()
         val all = listOf(photo(1), photo(2), photo(3))
         buffers.put(EvidenceRole.GENERAL, 0, SecureImageBuffer.wrap(all[0]))
-        buffers.put(EvidenceRole.DETAIL, 0, SecureImageBuffer.wrap(all[1]))
-        buffers.put(EvidenceRole.DETAIL, 1, SecureImageBuffer.wrap(all[2]))
+        buffers.put(EvidenceRole.PLATE, 0, SecureImageBuffer.wrap(all[1]))
+        buffers.put(EvidenceRole.PLATE, 1, SecureImageBuffer.wrap(all[2]))
 
         buffers.clear()
         buffers.clear()
@@ -69,13 +69,13 @@ class EvidenceBuffersTest {
     @Test
     fun `las fotos de un rol salen ordenadas por indice`() {
         val buffers = EvidenceBuffers()
-        buffers.put(EvidenceRole.DETAIL, 2, SecureImageBuffer.wrap(photo(3)))
-        buffers.put(EvidenceRole.DETAIL, 0, SecureImageBuffer.wrap(photo(1)))
+        buffers.put(EvidenceRole.PLATE, 2, SecureImageBuffer.wrap(photo(3)))
+        buffers.put(EvidenceRole.PLATE, 0, SecureImageBuffer.wrap(photo(1)))
         buffers.put(EvidenceRole.GENERAL, 0, SecureImageBuffer.wrap(photo(9)))
-        buffers.put(EvidenceRole.DETAIL, 1, SecureImageBuffer.wrap(photo(2)))
+        buffers.put(EvidenceRole.PLATE, 1, SecureImageBuffer.wrap(photo(2)))
 
-        val detail = buffers.photos(EvidenceRole.DETAIL).map { it.read { bytes -> bytes[0] } }
+        val plate = buffers.photos(EvidenceRole.PLATE).map { it.read { bytes -> bytes[0] } }
 
-        assertEquals(listOf<Byte>(1, 2, 3), detail)
+        assertEquals(listOf<Byte>(1, 2, 3), plate)
     }
 }

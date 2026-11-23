@@ -6,6 +6,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.scan.SendAlertError
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 
 class SenderChatTest {
 
@@ -33,6 +34,36 @@ class SenderChatTest {
         )
     }
 
+    private val availableAt = Instant.parse("2030-01-02T15:30:00Z")
+    private val dailyLimitText =
+        "Ya enviaste una alerta para esta patente. Vas a poder enviar otra desde el 2 de enero a las 12:30."
+
+    @Test
+    fun `con el cupo diario ocupado en el intento ViVIAna lo explica y no ofrece mensajes ni fotos`() {
+        val items = senderChatItems(stateOf(alertType = null, status = ScanStatus.DailyLimitReached(availableAt)))
+
+        assertEquals(
+            listOf(
+                SenderChatItem.Vivi("Hola, soy ViVIAna. Ya tengo la patente."),
+                SenderChatItem.Vivi(dailyLimitText, isWarning = true),
+            ),
+            items,
+        )
+    }
+
+    @Test
+    fun `con el cupo diario ocupado en el envio ViVIAna lo dice tras las fotos`() {
+        val items = senderChatItems(
+            stateOf(
+                AlertType.CRASHED,
+                status = ScanStatus.AlertFailed(SendAlertError.DailyLimit(availableAt)),
+                evidence = completedEvidence(AlertType.CRASHED),
+            ),
+        )
+
+        assertEquals(SenderChatItem.Vivi(dailyLimitText, isWarning = true), items.last())
+    }
+
     private fun readyEvidence(alertType: AlertType) =
         EvidenceCaptureState(steps = EvidencePlan.stepsFor(alertType), phase = EvidencePhase.READY)
 
@@ -43,12 +74,20 @@ class SenderChatTest {
         assertEquals(SenderChatItem.User("Tu auto fue chocado."), items[1])
         assertEquals(
             SenderChatItem.Vivi(
-                "Para avisarle necesito fotos. Te guío con la cámara: el auto con la patente visible, " +
-                    "la patente de cerca y una foto del daño.",
+                "Para avisarle necesito dos fotos. Te guío con la cámara: el auto con la patente visible " +
+                    "y la patente de cerca.",
             ),
             items[2],
         )
         assertEquals(3, items.size)
+    }
+
+    @Test
+    fun `la explicacion de las fotos es la misma para los dos tipos`() {
+        val crashed = senderChatItems(stateOf(AlertType.CRASHED, evidence = readyEvidence(AlertType.CRASHED)))
+        val garage = senderChatItems(stateOf(AlertType.PARKED_ON_GARAGE, evidence = readyEvidence(AlertType.PARKED_ON_GARAGE)))
+
+        assertEquals(crashed[2], garage[2])
     }
 
     @Test
@@ -76,23 +115,23 @@ class SenderChatTest {
 
         val attachments = items.filterIsInstance<SenderChatItem.Attachment>()
         assertEquals(1, attachments.size)
-        assertEquals("3 fotos cifradas adjuntas", attachments.single().summary)
+        assertEquals("2 fotos cifradas adjuntas", attachments.single().summary)
         assertEquals(false, attachments.single().sent)
     }
 
     @Test
-    fun `el adjunto cuenta 3 fotos en todos los tipos, CRASHED pide una sola de daño`() {
-        assertEquals(3, completedEvidence(AlertType.CRASHED).photoCount())
-        assertEquals(3, completedEvidence(AlertType.PARKED_ON_GARAGE).photoCount())
+    fun `el adjunto cuenta 2 fotos en todos los tipos`() {
+        assertEquals(2, completedEvidence(AlertType.CRASHED).photoCount())
+        assertEquals(2, completedEvidence(AlertType.PARKED_ON_GARAGE).photoCount())
     }
 
     @Test
-    fun `PARKED_ON_GARAGE adjunta 3 fotos cifradas`() {
+    fun `PARKED_ON_GARAGE adjunta 2 fotos cifradas`() {
         val items = senderChatItems(stateOf(AlertType.PARKED_ON_GARAGE, evidence = completedEvidence(AlertType.PARKED_ON_GARAGE)))
 
         val attachment = items.last() as SenderChatItem.Attachment
-        assertEquals(3, attachment.photoCount)
-        assertEquals("3 fotos cifradas adjuntas", attachment.summary)
+        assertEquals(2, attachment.photoCount)
+        assertEquals("2 fotos cifradas adjuntas", attachment.summary)
     }
 
     @Test

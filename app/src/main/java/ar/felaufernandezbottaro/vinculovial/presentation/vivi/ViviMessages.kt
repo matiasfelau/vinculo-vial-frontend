@@ -4,6 +4,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.inbox.AlertItem
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.FeedbackRating
 import ar.felaufernandezbottaro.vinculovial.domain.inbox.SentAlertState
 import ar.felaufernandezbottaro.vinculovial.domain.scan.AlertType
+import ar.felaufernandezbottaro.vinculovial.presentation.inbox.toClockTime
 import ar.felaufernandezbottaro.vinculovial.presentation.inbox.toLongDate
 import java.time.Instant
 import java.time.ZoneId
@@ -69,15 +70,20 @@ object ViviMessages {
 
     const val SENDER_POSSIBLY_SENT = "No pudimos confirmar el envío. Puede que tu alerta se haya enviado."
 
-    /** La intro de la captura guiada: qué fotos se piden según el tipo. */
-    fun senderPhotosIntro(alertType: AlertType): String = when (alertType) {
-        AlertType.CRASHED ->
-            "Para avisarle necesito fotos. Te guío con la cámara: el auto con la patente visible, " +
-                "la patente de cerca y una foto del daño."
-        else ->
-            "Para avisarle necesito fotos. Te guío con la cámara: el auto con la patente visible, " +
-                "la patente de cerca y el auto junto a la rampa, desde la vereda."
-    }
+    /**
+     * El cupo de una alerta por emisor y patente cada 24 h está ocupado (US-16). [availableAt] es
+     * cuándo se libera; se muestra siempre en hora argentina, sin importar la zona del teléfono.
+     */
+    fun senderDailyLimit(availableAt: Instant, zone: ZoneId = BUENOS_AIRES): String =
+        "Ya enviaste una alerta para esta patente. " +
+            "Vas a poder enviar otra desde el ${availableAt.toLongDate(zone)} a las ${availableAt.toClockTime(zone)}."
+
+    private val BUENOS_AIRES: ZoneId = ZoneId.of("America/Argentina/Buenos_Aires")
+
+    /** La intro de la captura guiada: todo tipo de alerta pide las mismas dos fotos. */
+    const val SENDER_PHOTOS_INTRO =
+        "Para avisarle necesito dos fotos. Te guío con la cámara: el auto con la patente visible " +
+            "y la patente de cerca."
 
     const val SENDER_TAKE_PHOTOS = "Tomar fotos"
 
@@ -151,15 +157,13 @@ fun evidenceNote(expiresAt: Instant?, zone: ZoneId = ZoneId.systemDefault()): St
     }
 
 /**
- * La etiqueta de una foto de evidencia: "General", "Patente", "Contexto" y "Daño" (con número si
- * hay varias, "Daño 1"). Un rol que la app no conoce todavía se llama "Foto".
+ * La etiqueta de una foto de evidencia: "General" o "Patente" (con número si hubiera varias del
+ * mismo rol). Un rol que la app no conoce se llama "Foto".
  */
 fun evidenceTileLabel(role: String, index: Int, countInRole: Int): String {
     val base = when (role) {
         "GENERAL" -> "General"
         "PLATE" -> "Patente"
-        "DETAIL" -> "Daño"
-        "CONTEXT" -> "Contexto"
         else -> "Foto"
     }
     return if (countInRole > 1) "$base ${index + 1}" else base

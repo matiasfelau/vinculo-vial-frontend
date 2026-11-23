@@ -4,9 +4,14 @@ import ar.felaufernandezbottaro.vinculovial.data.session.SessionState
 
 /*
  * La regla de mundos (#9). La app tiene tres:
- * - público: Splash, Bienvenida, Login y Alta;
+ * - público: Splash, Bienvenida, Login, Alta y Recuperación;
  * - desbloqueo: `Route.UNLOCK`, un mundo propio;
  * - autenticado: Home (`Route.SETTINGS`) y todo lo demás.
+ *
+ * Los Términos y Condiciones (`Route.TERMS`, US-19) son de todos los mundos: se llega desde la
+ * Bienvenida y el Alta (público) y desde Settings y el chat del dueño (autenticado). Como se abre
+ * con un `navigate` común y vuelve con Back a la pantalla de la que se vino, no cruza de mundo:
+ * [worldRedirect] la deja en paz con cualquier estado de sesión.
  *
  * Toda transición entre mundos usa `popUpTo(0) { inclusive = true }`, así Back en Home o en
  * Desbloqueo nunca muestra una pantalla de otro mundo. Las funciones de este archivo deciden
@@ -19,7 +24,8 @@ internal fun isPublicRoute(route: String?): Boolean =
         route == Route.SPLASH ||
         route == Route.WELCOME ||
         route == Route.SIGN_IN ||
-        route.startsWith(Route.SIGN_UP_GRAPH)
+        route.startsWith(Route.SIGN_UP_GRAPH) ||
+        route.startsWith(Route.RECOVERY_GRAPH)
 
 /**
  * La baja de cuenta (US-11) borra la sesión local ella misma, y el destino de ese momento no es
@@ -54,7 +60,7 @@ fun splashDestination(state: SessionState): String = when (state) {
  * El Splash decide por su cuenta ([splashDestination]).
  */
 fun worldRedirect(state: SessionState, route: String?): String? {
-    if (route == null || route == Route.SPLASH) return null
+    if (route == null || route == Route.SPLASH || route == Route.TERMS) return null
     return when (state) {
         SessionState.NONE ->
             if (isPublicRoute(route) || managesOwnSessionLoss(route)) null else Route.SIGN_IN

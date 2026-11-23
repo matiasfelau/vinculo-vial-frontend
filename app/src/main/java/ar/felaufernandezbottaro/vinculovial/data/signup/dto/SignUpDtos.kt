@@ -33,6 +33,17 @@ data class SignUpPayloadDto(
     @Json(name = "password") val password: String,
     /** JPEG redimensionado a 800x800 máx. y recomprimido, codificado en Base64. */
     @Json(name = "selfie") val selfie: String,
+    /**
+     * US-13: lo emitió `email-verifications/confirm` para este mismo email. Identity lo valida
+     * antes de RENAPER y lo consume al crear la cuenta.
+     */
+    @Json(name = "email_verification_token") val emailVerificationToken: String,
+    /**
+     * US-19: la versión de los Términos y Condiciones que el usuario aceptó (`TERMS_VERSION`).
+     * Identity la compara con `TERMS_CURRENT_VERSION` antes de llamar a RENAPER y guarda la
+     * versión y la fecha en el alta, como prueba del consentimiento.
+     */
+    @Json(name = "terms_version") val termsVersion: String,
 ) {
     override fun toString(): String = "SignUpPayloadDto(***)"
 }

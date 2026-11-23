@@ -236,6 +236,75 @@ class ScanViewModelTest {
     }
 
     @Test
+    fun `el intento se abre con el pat_enc, no con la patente en claro`() = runTest {
+        plateEncryptor.result = "pat-enc-cifrado"
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+
+        viewModel.onPlateConfirmed()
+
+        assertEquals(listOf("pat-enc-cifrado"), checkRepository.receivedPatEnc)
+        assertTrue(patente !in checkRepository.receivedPatEnc)
+    }
+
+    @Test
+    fun `si la patente no se pudo cifrar no se abre el intento`() = runTest {
+        plateEncryptor.result = null
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+
+        viewModel.onPlateConfirmed()
+
+        assertEquals(ScanStatus.CheckFailed(StartAlertAttemptResult.Unexpected), viewModel.uiState.value.status)
+        assertEquals(0, checkRepository.calls)
+    }
+
+    @Test
+    fun `el cupo diario ocupado en el intento deja el estado en DailyLimitReached con available_at`() = runTest {
+        val availableAt = Instant.parse("2030-01-02T15:30:00Z")
+        checkRepository.result = StartAlertAttemptResult.DailyLimit(availableAt)
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+
+        viewModel.onPlateConfirmed()
+
+        assertEquals(ScanStatus.DailyLimitReached(availableAt), viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun `con el cupo diario ocupado no se elige tipo, no se abre la captura ni se envia nada`() = runTest {
+        checkRepository.result = StartAlertAttemptResult.DailyLimit(Instant.parse("2030-01-02T15:30:00Z"))
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+        viewModel.onPlateConfirmed()
+
+        viewModel.onAlertTypeSelected(AlertType.CRASHED)
+        viewModel.onCaptureStarted()
+        viewModel.onReportRequested()
+        viewModel.onAlertRetry()
+
+        val state = viewModel.uiState.value
+        assertEquals(null, state.selectedAlertType)
+        assertEquals(EvidenceCaptureState(), state.evidence)
+        assertEquals(emptyList<Any>(), alertRepository.received)
+    }
+
+    @Test
+    fun `tras el cupo ocupado se puede volver a intentar una patente nueva`() = runTest {
+        checkRepository.result = StartAlertAttemptResult.DailyLimit(Instant.parse("2030-01-02T15:30:00Z"))
+        val viewModel = viewModel()
+        viewModel.onPlateFound(patente)
+        viewModel.onPlateConfirmed()
+
+        viewModel.onFlowRestarted()
+        checkRepository.result = FakeAlertAttemptRepository.started()
+        viewModel.onPlateFound("AB123CD")
+        viewModel.onPlateConfirmed()
+
+        assertEquals(ScanStatus.AwaitingAlertType, viewModel.uiState.value.status)
+    }
+
+    @Test
     fun `una cuenta en revision tras confirmar deja el estado en CheckFailed con UnderReview`() = runTest {
         checkRepository.result = StartAlertAttemptResult.UnderReview
         val viewModel = viewModel()

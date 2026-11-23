@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.kover)
 }
 
 /**
@@ -39,6 +40,13 @@ fun config(key: String, default: String): String =
             ?: System.getenv(key)?.takeIf { it.isNotBlank() }
             ?: default
         ).trim()
+
+/**
+ * Un valor de `local.properties` como literal de String de `BuildConfig`: sin escapar, una comilla
+ * o una barra en el domicilio rompería la compilación lejos de su causa.
+ */
+fun buildConfigString(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
     namespace = "ar.felaufernandezbottaro.vinculovial"
@@ -76,6 +84,27 @@ android {
             "\"${config("IA_HPKE_PUBLIC_KEY", "")}\"",
         )
         buildConfigField("String", "APP_ATTESTATION_PSK", "\"${config("APP_ATTESTATION_PSK", "")}\"")
+
+        // US-19: datos del responsable de la base (Ley 25.326) y versión de los Términos. Los
+        // marcadores {{RESPONSABLE}}, {{DOMICILIO}}, {{EMAIL_CONTACTO}} y {{VERSION}} de
+        // res/raw/terminos.md se completan con estos valores. TERMS_VERSION viaja en el signup y
+        // tiene que coincidir con TERMS_CURRENT_VERSION de Identity.
+        buildConfigField(
+            "String",
+            "LEGAL_RESPONSIBLE_NAME",
+            buildConfigString(config("LEGAL_RESPONSIBLE_NAME", "[responsable a completar: LEGAL_RESPONSIBLE_NAME]")),
+        )
+        buildConfigField(
+            "String",
+            "LEGAL_CONTACT_EMAIL",
+            buildConfigString(config("LEGAL_CONTACT_EMAIL", "[email a completar: LEGAL_CONTACT_EMAIL]")),
+        )
+        buildConfigField(
+            "String",
+            "LEGAL_ADDRESS",
+            buildConfigString(config("LEGAL_ADDRESS", "[domicilio a completar: LEGAL_ADDRESS]")),
+        )
+        buildConfigField("String", "TERMS_VERSION", buildConfigString(config("TERMS_VERSION", "1.0")))
         buildConfigField("long", "ATTESTATION_TOKEN_TTL_SECONDS", config("ATTESTATION_TOKEN_TTL_SECONDS", "60") + "L")
         buildConfigField("long", "NETWORK_TIMEOUT_MS", config("NETWORK_TIMEOUT_MS", "15000") + "L")
         // Presupuesto propio para el Task de Play Integrity (prepare + request, en conjunto,
@@ -103,6 +132,10 @@ android {
             "SESSION_LOCK_AFTER_BACKGROUND_SECONDS",
             config("SESSION_LOCK_AFTER_BACKGROUND_SECONDS", "300") + "L",
         )
+
+        // US-13: cuenta regresiva del botón "Reenviar" del código por email. Tiene que coincidir con
+        // EMAIL_CODE_RESEND_SECONDS de Identity, que es quien aplica el throttle de verdad.
+        buildConfigField("int", "EMAIL_CODE_RESEND_SECONDS", config("EMAIL_CODE_RESEND_SECONDS", "60"))
 
         // Pivote RENAPER-Ready: ya no hay umbral de similitud coseno ni modelo .tflite que
         // configurar acá — la verificación de identidad (comparar la selfie contra el
@@ -155,6 +188,11 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // Robolectric necesita los recursos y el manifiesto para las pruebas de pantalla (createComposeRule).
+        unitTests.isIncludeAndroidResources = true
+        // Con las pantallas Compose corriendo en Robolectric y la instrumentación de Kover, el JVM de
+        // pruebas por defecto (512 MB) se queda sin heap hacia el final de la suite.
+        unitTests.all { it.maxHeapSize = "2g" }
     }
 
     packaging {
@@ -168,6 +206,17 @@ android {
 }
 
 /**
+ * Clases de `src/test` que usan `createComposeRule`: se excluyen de `testReleaseUnitTest` (ver abajo).
+ * Se calculan leyendo las fuentes, así una prueba de pantalla nueva queda excluida sin tocar este archivo.
+ */
+val composeScreenTests: List<String> = fileTree("src/test/java") { include("**/*.kt") }.files
+    .filter { file -> file.readText().let { "createComposeRule" in it || "createAndroidComposeRule" in it } }
+    .map { file ->
+        file.relativeTo(File(projectDir, "src/test/java")).path
+            .removeSuffix(".kt").replace(File.separatorChar, '.')
+    }
+
+/**
  * US-08: el manifiesto mergeado de release no puede traer permisos de lectura de medios (la
  * galería sólo existe en `debug`). `ReleaseNoGalleryTest` lo verifica leyendo el manifiesto que
  * AGP genera para release; esta ruta se le pasa como propiedad del sistema.
@@ -178,6 +227,10 @@ androidComponents {
         tasks.withType<Test>().matching { it.name == "testReleaseUnitTest" }.configureEach {
             inputs.file(mergedManifest)
             doFirst { systemProperty("mergedManifestPath", mergedManifest.get().asFile.absolutePath) }
+            // Las pantallas se prueban con Robolectric y createComposeRule dentro de testDebugUnitTest:
+            // la ComponentActivity de prueba (ui-test-manifest) solo está en el manifiesto de debug.
+            // En release se corre el resto, más la guardia del manifiesto (src/testRelease).
+            filter { composeScreenTests.forEach { excludeTestsMatching("$it*") } }
         }
     }
 }
@@ -199,6 +252,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.navigation.compose)
@@ -232,9 +286,89 @@ dependencies {
     implementation(libs.mlkit.text.recognition)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
     testRuntimeOnly(libs.jjwt.impl)
     testRuntimeOnly(libs.jjwt.orgjson)
     testRuntimeOnly(libs.json)
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+}
+
+/**
+ * Cobertura (Kover): se mide con todas las pruebas de `testDebugUnitTest` y se exporta como XML con
+ * `koverXmlReportDebug` (formato JaCoCo, que es el que lee diff-cover). Se excluye únicamente lo que no se
+ * puede ejecutar en la JVM -- cámara, Keystore, ML Kit, Play Integrity, FCM, `Application`, `MainActivity` y
+ * módulos de Hilt --, marcado con `@ExcludeFromCoverage(reason = ...)`, más las funciones `@Preview` y el
+ * código generado (Hilt, Dagger, `BuildConfig`, `R`, `ComposableSingletons`). El README lista cada clase
+ * excluida con su motivo.
+ */
+kover {
+    reports {
+        filters {
+            excludes {
+                annotatedBy(
+                    "ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage",
+                    "androidx.compose.ui.tooling.preview.Preview",
+                )
+                classes(
+                    // Hilt y Dagger.
+                    "*_*Factory",
+                    "*_*Factory\$*",
+                    "*_MembersInjector",
+                    "*_HiltModules*",
+                    "*_LazyMapKey*",
+                    "Hilt_*",
+                    "*.Hilt_*",
+                    "Dagger*",
+                    "*.Dagger*",
+                    "hilt_aggregated_deps.*",
+                    "dagger.hilt.internal.aggregatedroot.codegen.*",
+                    "*_GeneratedInjector",
+                    // Recursos y configuración de build, y lo que genera el compilador de Compose.
+                    "ar.felaufernandezbottaro.vinculovial.BuildConfig",
+                    "ar.felaufernandezbottaro.vinculovial.R",
+                    "ar.felaufernandezbottaro.vinculovial.R\$*",
+                    "*.ComposableSingletons\$*",
+                )
+            }
+        }
+        // Gate sobre el total: ninguna rama puede bajar de 85 % de líneas cubiertas (CONTRATO-cobertura).
+        verify {
+            rule("Cobertura total de líneas") {
+                minBound(85)
+            }
+        }
+    }
+}
+
+/**
+ * Bloqueo de dependencias: `app/gradle.lockfile` fija la versión resuelta de cada dependencia. Es lo que
+ * lee Trivy para escanear vulnerabilidades (sin lockfile no puede resolver el árbol de Gradle) y hace
+ * reproducible el build. Después de cualquier cambio de dependencias hay que regenerarlo:
+ *
+ *     ./gradlew :app:resolveAndLockAll --write-locks
+ *
+ * Dependabot no regenera el lockfile: en sus PRs hay que correr ese comando.
+ */
+dependencyLocking {
+    lockAllConfigurations()
+}
+
+tasks.register("resolveAndLockAll") {
+    notCompatibleWithConfigurationCache("Resuelve todas las configuraciones en tiempo de ejecución")
+    doFirst {
+        require(gradle.startParameter.isWriteDependencyLocks) {
+            "resolveAndLockAll solo corre con --write-locks: ./gradlew :app:resolveAndLockAll --write-locks"
+        }
+    }
+    doLast {
+        // Solo el grafo de dependencias, que es lo que se bloquea: resolver los archivos falla en
+        // configuraciones de Android que no se pueden materializar (por ejemplo, las de androidTest).
+        configurations.filter { it.isCanBeResolved }.forEach { it.incoming.resolutionResult.root }
+    }
 }

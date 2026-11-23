@@ -16,6 +16,8 @@ data class Credentials(
     val email: String,
     val password: String,
     val selfieBase64: String,
+    /** `verification_token` de US-13: prueba que el email es de quien se registra. Sólo en memoria. */
+    val emailVerificationToken: String,
 ) {
     override fun toString(): String = "Credentials(***)"
 }

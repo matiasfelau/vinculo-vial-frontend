@@ -15,10 +15,14 @@ import ar.felaufernandezbottaro.vinculovial.data.crypto.MockAttestationProvider
 import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
 import ar.felaufernandezbottaro.vinculovial.data.remote.AuthApiService
 import ar.felaufernandezbottaro.vinculovial.data.remote.CircuitBreakerOpenException
+import ar.felaufernandezbottaro.vinculovial.data.remote.auth.dto.HpkeEnvelopeDto
+import ar.felaufernandezbottaro.vinculovial.data.remote.auth.dto.ResetTokenResponseDto
+import ar.felaufernandezbottaro.vinculovial.data.remote.auth.dto.VerificationTokenResponseDto
 import ar.felaufernandezbottaro.vinculovial.data.signup.dto.SignUpRequestDto
 import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpError
 import ar.felaufernandezbottaro.vinculovial.domain.signup.SignUpResult
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.Credentials
+import ar.felaufernandezbottaro.vinculovial.domain.terms.LegalInfo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
@@ -60,6 +64,7 @@ class SignUpRepositoryImplTest {
         email = "usuario@ejemplo.com",
         password = "Password123!",
         selfieBase64 = "c2VsZmll",
+        emailVerificationToken = "token-de-verificacion",
     )
 
     /** Por defecto el modo mock; los tests que necesitan fallar lo reemplazan. */
@@ -118,13 +123,38 @@ class SignUpRepositoryImplTest {
         server.shutdown()
     }
 
-    private fun TestScope.repository(publicKey: String = identityPublicKeyBase64) = SignUpRepositoryImpl(
+    private val legalInfo = LegalInfo(
+        responsibleName = "Responsable de prueba",
+        contactEmail = "contacto@ejemplo.com",
+        address = "Calle Falsa 123",
+        version = "1.0",
+    )
+
+    private fun TestScope.repository(
+        publicKey: String = identityPublicKeyBase64,
+        legal: LegalInfo = legalInfo,
+    ) = SignUpRepositoryImpl(
         api = api,
         encryptor = HpkeEncryptor(),
         identityPublicKey = publicKey,
         moshi = Moshi.Builder().build(),
         dispatcher = UnconfinedTestDispatcher(testScheduler),
+        legalInfo = legal,
     )
+
+    /** El payload interno, ya descifrado como lo haría Identity. */
+    private fun decryptedPayload(): JSONObject {
+        val body = JSONObject(server.takeRequest().body.readUtf8())
+        val enc = Base64.getDecoder().decode(body.getString("ephemeral_public_key"))
+        val ciphertext = Base64.getDecoder().decode(body.getString("ciphertext"))
+        return JSONObject(
+            String(
+                identityKeyset
+                    .getPrimitive(RegistryConfiguration.get(), HybridDecrypt::class.java)
+                    .decrypt(enc + ciphertext, ByteArray(0)),
+            ),
+        )
+    }
 
     @Test
     fun `201 registra al usuario`() = runTest {
@@ -183,6 +213,7 @@ class SignUpRepositoryImplTest {
         assertEquals(credentials.email, payload.getString("email"))
         assertEquals(credentials.password, payload.getString("password"))
         assertEquals(credentials.selfieBase64, payload.getString("selfie"))
+        assertEquals(credentials.emailVerificationToken, payload.getString("email_verification_token"))
     }
 
     @Test
@@ -202,9 +233,43 @@ class SignUpRepositoryImplTest {
         // sale del dispositivo en todo el flujo (pivote RENAPER-Ready).
         val payload = JSONObject(String(plaintext))
         assertEquals(
-            setOf("dni", "tramite", "sexo", "email", "password", "selfie"),
+            setOf("dni", "tramite", "sexo", "email", "password", "selfie", "email_verification_token", "terms_version"),
             payload.keys().asSequence().toSet(),
         )
+    }
+
+    @Test
+    fun `el payload lleva la version de los terminos`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201))
+
+        repository().signUp(credentials)
+
+        assertEquals("1.0", decryptedPayload().getString("terms_version"))
+    }
+
+    @Test
+    fun `la version que viaja es la configurada, no un valor fijo`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201))
+
+        repository(legal = legalInfo.copy(version = "2.3")).signUp(credentials)
+
+        assertEquals("2.3", decryptedPayload().getString("terms_version"))
+    }
+
+    @Test
+    fun `la version de los terminos no viaja en claro`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201))
+
+        repository(legal = legalInfo.copy(version = "7.7.7")).signUp(credentials)
+
+        assertTrue(!server.takeRequest().body.readUtf8().contains("7.7.7"))
+    }
+
+    @Test
+    fun `400 TERMS_NOT_ACCEPTED es un error propio`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"code":"TERMS_NOT_ACCEPTED"}"""))
+
+        assertEquals(SignUpResult.Failed(SignUpError.TermsNotAccepted), repository().signUp(credentials))
     }
 
     @Test
@@ -217,6 +282,22 @@ class SignUpRepositoryImplTest {
         listOf(credentials.dni, credentials.email, credentials.password).forEach {
             assertTrue("el cuerpo filtró '$it'", !raw.contains(it))
         }
+    }
+
+    @Test
+    fun `400 EMAIL_NOT_VERIFIED es un error propio, sin tocar el resto del flujo`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"code":"EMAIL_NOT_VERIFIED"}"""))
+
+        assertEquals(SignUpResult.Failed(SignUpError.EmailNotVerified), repository().signUp(credentials))
+    }
+
+    @Test
+    fun `el token de verificacion no viaja en claro`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(201))
+
+        repository().signUp(credentials)
+
+        assertTrue(!server.takeRequest().body.readUtf8().contains(credentials.emailVerificationToken))
     }
 
     @Test
@@ -460,6 +541,21 @@ class SignUpRepositoryImplTest {
                 body: ar.felaufernandezbottaro.vinculovial.data.signin.dto.SignInRequestDto,
             ): Response<ar.felaufernandezbottaro.vinculovial.data.signin.dto.SignInResponseDto> =
                 throw UnsupportedOperationException("no usado en este test")
+
+            override suspend fun requestEmailVerification(body: HpkeEnvelopeDto): Response<Unit> =
+                throw UnsupportedOperationException("no usado en este test")
+
+            override suspend fun confirmEmailVerification(body: HpkeEnvelopeDto): Response<VerificationTokenResponseDto> =
+                throw UnsupportedOperationException("no usado en este test")
+
+            override suspend fun requestPasswordReset(body: HpkeEnvelopeDto): Response<Unit> =
+                throw UnsupportedOperationException("no usado en este test")
+
+            override suspend fun confirmPasswordReset(body: HpkeEnvelopeDto): Response<ResetTokenResponseDto> =
+                throw UnsupportedOperationException("no usado en este test")
+
+            override suspend fun completePasswordReset(body: HpkeEnvelopeDto): Response<Unit> =
+                throw UnsupportedOperationException("no usado en este test")
         }
         val repository = SignUpRepositoryImpl(
             api = cancelada,
@@ -467,6 +563,7 @@ class SignUpRepositoryImplTest {
             identityPublicKey = identityPublicKeyBase64,
             moshi = Moshi.Builder().build(),
             dispatcher = UnconfinedTestDispatcher(testScheduler),
+            legalInfo = legalInfo,
         )
 
         assertThrows(CancellationException::class.java) {

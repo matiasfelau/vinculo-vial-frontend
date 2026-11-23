@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -40,8 +42,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Description
+import ar.felaufernandezbottaro.vinculovial.domain.benefits.Benefit
+import ar.felaufernandezbottaro.vinculovial.presentation.benefits.BenefitsCarousel
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvBottomBar
 import ar.felaufernandezbottaro.vinculovial.presentation.session.SessionTexts
+import ar.felaufernandezbottaro.vinculovial.presentation.terms.TermsTexts
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VinculoVialTheme
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMint
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvMuted
@@ -60,13 +66,18 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrangeDark
 fun SettingsScreen(
     state: SettingsUiState,
     onLogout: () -> Unit,
-    onLinkVehicle: () -> Unit,
+    onOpenVehicles: () -> Unit,
     onScanPlate: () -> Unit,
     onOpenInbox: () -> Unit,
     onDeleteAccount: () -> Unit,
     onBiometricToggle: (Boolean) -> Unit,
     onBiometricOfferDismissed: () -> Unit,
     onBiometricActivationFailureDismissed: () -> Unit,
+    onOpenTerms: () -> Unit = {},
+    /** Las promociones vigentes (US-18). Vacía: el carrusel no se muestra. */
+    benefits: List<Benefit> = emptyList(),
+    loadBanner: suspend (String) -> ByteArray? = { null },
+    onOpenBenefit: (String) -> Unit = {},
 ) {
     var showLogoutConfirmation by remember { mutableStateOf(false) }
 
@@ -78,6 +89,7 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -95,10 +107,10 @@ fun SettingsScreen(
 
             HomeActionCard(
                 icon = Icons.Filled.DirectionsCar,
-                title = "Vincular vehículo",
-                subtitle = "Sumá un auto a tu cuenta",
+                title = "Mis vehículos",
+                subtitle = "Vinculá o desvinculá tus autos",
                 enabled = !state.isLoggingOut,
-                onClick = onLinkVehicle,
+                onClick = onOpenVehicles,
             )
 
             HomeActionCard(
@@ -117,6 +129,13 @@ fun SettingsScreen(
                 onClick = onOpenInbox,
             )
 
+            // Debajo de "Mis alertas" (US-18). Sin promociones no ocupa lugar.
+            BenefitsCarousel(
+                benefits = benefits,
+                loadBanner = loadBanner,
+                onOpenBenefit = onOpenBenefit,
+            )
+
             Spacer(Modifier.height(8.dp))
 
             if (state.isBiometricAvailable) {
@@ -127,13 +146,21 @@ fun SettingsScreen(
                 )
             }
 
-            LogoutRow(
-                enabled = !state.isLoggingOut,
-                loading = state.isLoggingOut,
-                onClick = { showLogoutConfirmation = true },
-            )
+            // Las tres filas de pie van juntas: cada TextButton ya garantiza 48 dp de área táctil.
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(0.dp),
+            ) {
+                TermsRow(onClick = onOpenTerms)
 
-            DeleteAccountRow(enabled = !state.isLoggingOut, onClick = onDeleteAccount)
+                LogoutRow(
+                    enabled = !state.isLoggingOut,
+                    loading = state.isLoggingOut,
+                    onClick = { showLogoutConfirmation = true },
+                )
+
+                DeleteAccountRow(enabled = !state.isLoggingOut, onClick = onDeleteAccount)
+            }
         }
     }
 
@@ -210,6 +237,26 @@ private fun HomeActionCard(
     }
 }
 
+/** El acceso a los Términos y Condiciones y la Política de Privacidad (US-19), discreto como el resto de las filas de pie. */
+@Composable
+private fun TermsRow(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(onClick = onClick) {
+            Icon(imageVector = Icons.Filled.Description, contentDescription = null, tint = VvNavy)
+            Text(
+                text = TermsTexts.SCREEN_TITLE,
+                style = MaterialTheme.typography.labelLarge,
+                color = VvNavy,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+    }
+}
+
 /** El interruptor del desbloqueo con huella (US-12): activarlo envuelve el refresh actual; apagarlo borra blob y clave. */
 @Composable
 private fun BiometricRow(checked: Boolean, enabled: Boolean, onCheckedChange: (Boolean) -> Unit) {
@@ -252,9 +299,7 @@ private fun BiometricOfferDialog(onAccept: () -> Unit, onDismiss: () -> Unit) {
 @Composable
 private fun LogoutRow(enabled: Boolean, loading: Boolean, onClick: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -281,9 +326,7 @@ private fun LogoutRow(enabled: Boolean, loading: Boolean, onClick: () -> Unit) {
 @Composable
 private fun DeleteAccountRow(enabled: Boolean, onClick: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -321,7 +364,7 @@ private fun SettingsScreenPreview() {
         SettingsScreen(
             state = SettingsUiState(),
             onLogout = {},
-            onLinkVehicle = {},
+            onOpenVehicles = {},
             onScanPlate = {},
             onOpenInbox = {},
             onDeleteAccount = {},

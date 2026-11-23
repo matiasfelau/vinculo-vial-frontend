@@ -11,7 +11,7 @@ interface AlertApi {
 
     /**
      * Llamada 2 del flujo de alertas (US-08): multipart con la parte `metadata` (JSON) y las
-     * fotos cifradas para IA (`general`, `plate`, `detail` o `context`, como
+     * dos fotos cifradas para IA (`general` y `plate`, una de cada una, como
      * `application/octet-stream`). Protegido por JWT (Kong) + Rate Limiting por `X-User-Id`, no
      * por App Attestation -- `AttestationInterceptor` trata este path en modo best-effort, igual
      * que `/alerts/attempts`.

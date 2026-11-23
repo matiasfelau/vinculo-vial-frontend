@@ -142,7 +142,7 @@ class InboxApiTest {
                   "items": [{
                     "id": "uuid-1", "alert_type": "CRASHED", "created_at": "2026-08-18T10:00:00Z",
                     "requires_review": true,
-                    "evidence": [{"role": "GENERAL", "index": 0}, {"role": "DETAIL", "index": 1}],
+                    "evidence": [{"role": "GENERAL", "index": 0}, {"role": "PLATE", "index": 0}],
                     "evidence_expires_at": "2026-09-17T10:00:00Z",
                     "my_feedback": "UP",
                     "reported": true
@@ -156,7 +156,7 @@ class InboxApiTest {
         val item = api.getInbox("Bearer access-abc").body()!!.items.single()
 
         assertEquals(true, item.requiresReview)
-        assertEquals(listOf("GENERAL" to 0, "DETAIL" to 1), item.evidence!!.map { it.role to it.index })
+        assertEquals(listOf("GENERAL" to 0, "PLATE" to 0), item.evidence!!.map { it.role to it.index })
         assertEquals("2026-09-17T10:00:00Z", item.evidenceExpiresAt)
         assertEquals("UP", item.myFeedback)
         assertEquals(true, item.reported)

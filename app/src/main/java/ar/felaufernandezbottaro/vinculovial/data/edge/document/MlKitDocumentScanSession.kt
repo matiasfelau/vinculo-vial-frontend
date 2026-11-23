@@ -6,11 +6,10 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.ZoomSuggestionOptions
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 import ar.felaufernandezbottaro.vinculovial.domain.signup.DocumentScanSession
 import ar.felaufernandezbottaro.vinculovial.domain.signup.ZoomController
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.CameraFrame
-import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DocumentIdentity
-import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DocumentScanStage
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.DocumentScanState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +36,7 @@ import javax.inject.Singleton
  * la cámara se acerca sola hasta leerlo. No hay obturador, no hay que quedarse quieto y no
  * hay foto: los cuadros se analizan y se sueltan.
  */
+@ExcludeFromCoverage(reason = "Cliente de ML Kit Barcode Scanning con auto-zoom: necesita los servicios de Google; la decisión de etapa vive en DocumentScanEvaluator")
 @Singleton
 class MlKitDocumentScanSession @Inject constructor(
     private val interpreter: DniBarcodeInterpreter,
@@ -122,42 +122,10 @@ class MlKitDocumentScanSession @Inject constructor(
         scanner = null
     }
 
-    /**
-     * El orden importa: entre varios códigos en el cuadro gana el que dé un DNI utilizable.
-     * Recién si ninguno sirve se reporta el motivo más informativo de los que haya.
-     */
-    private fun evaluate(barcodes: List<Barcode>): DocumentScanState {
-        if (barcodes.isEmpty()) return DocumentScanState(DocumentScanStage.SEARCHING)
-
-        val readings = barcodes.map(interpreter::interpret)
-
-        readings.filterIsInstance<DniBarcodeInterpreter.Reading.Dni>().forEach { reading ->
-            val procedureNumber = reading.value.procedureNumber
-                ?: return DocumentScanState(DocumentScanStage.MISSING_PROCEDURE_NUMBER)
-
-            return DocumentScanState(
-                stage = DocumentScanStage.DECODED,
-                document = DocumentIdentity(
-                    number = reading.value.number,
-                    sex = reading.value.sex,
-                    procedureNumber = procedureNumber,
-                ),
-            )
-        }
-
-        return when {
-            readings.any { it is DniBarcodeInterpreter.Reading.UnsupportedDocument } ->
-                DocumentScanState(DocumentScanStage.UNSUPPORTED_DOCUMENT)
-
-            // `rawValue` nulo es justamente lo que reporta enableAllPotentialBarcodes():
-            // hay un código en el cuadro, todavía no se pudo leer. ML Kit ya está pidiendo
-            // zoom por su cuenta; acá sólo se refleja en la UI para que el usuario lo sepa.
-            barcodes.any { it.rawValue == null } ->
-                DocumentScanState(DocumentScanStage.CODE_DETECTED)
-
-            else -> DocumentScanState(DocumentScanStage.NOT_A_DNI)
-        }
-    }
+    private fun evaluate(barcodes: List<Barcode>): DocumentScanState = DocumentScanEvaluator.evaluate(
+        readings = barcodes.map(interpreter::interpret),
+        hasUndecodedCode = barcodes.any { it.rawValue == null },
+    )
 
     private fun CameraFrame.toInputImage(): InputImage =
         InputImage.fromByteArray(nv21, width, height, rotationDegrees, InputImage.IMAGE_FORMAT_NV21)

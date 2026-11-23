@@ -47,6 +47,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -68,6 +69,8 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvNavy
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrange
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrangeDark
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvTile
+import ar.felaufernandezbottaro.vinculovial.presentation.terms.TermsLinkText
+import ar.felaufernandezbottaro.vinculovial.presentation.terms.TermsTexts
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.DayChip
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviBubble
 import ar.felaufernandezbottaro.vinculovial.presentation.vivi.ViviCard
@@ -93,6 +96,7 @@ fun InboxDetailScreen(
     onRetryEvidence: (EvidenceRef) -> Unit,
     onRate: (FeedbackRating) -> Unit,
     onReportSender: (ReportReason) -> Unit,
+    onOpenTerms: () -> Unit = {},
 ) {
     var showReportDialog by remember { mutableStateOf(false) }
     val item = detail.item
@@ -125,6 +129,7 @@ fun InboxDetailScreen(
             detail = detail,
             onRate = onRate,
             onReportClick = { showReportDialog = true },
+            onOpenTerms = onOpenTerms,
         )
     }
 
@@ -298,7 +303,12 @@ private fun EvidenceImage(bytes: ByteArray) {
 }
 
 @Composable
-private fun ChatFooter(detail: AlertDetailUiState, onRate: (FeedbackRating) -> Unit, onReportClick: () -> Unit) {
+private fun ChatFooter(
+    detail: AlertDetailUiState,
+    onRate: (FeedbackRating) -> Unit,
+    onReportClick: () -> Unit,
+    onOpenTerms: () -> Unit,
+) {
     val reported = detail.item.reported
     val sending = detail.report == ReportUiState.Sending
 
@@ -356,8 +366,19 @@ private fun ChatFooter(detail: AlertDetailUiState, onRate: (FeedbackRating) -> U
                 )
             }
         }
+
+        // US-19: la valoración también autoriza el uso de las fotos redactadas para mejorar la validación.
+        TermsLinkText(
+            before = TermsTexts.FEEDBACK_BEFORE,
+            link = TermsTexts.FEEDBACK_LINK,
+            onOpenTerms = onOpenTerms,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.testTag(FEEDBACK_TERMS_TAG),
+        )
     }
 }
+
+internal const val FEEDBACK_TERMS_TAG = "feedback_terms_line"
 
 @Composable
 private fun RatingButton(

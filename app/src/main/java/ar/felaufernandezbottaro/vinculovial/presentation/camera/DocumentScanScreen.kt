@@ -67,6 +67,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvGreen
 import ar.felaufernandezbottaro.vinculovial.presentation.theme.VvOrange
 import kotlinx.coroutines.delay
 import java.util.concurrent.Executors
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 
 /**
  * Escaneo del DNI: **en vivo, sin obturador y sin foto**.
@@ -100,6 +101,7 @@ import java.util.concurrent.Executors
  * Del documento no se guarda ni se transmite ninguna imagen. Los cuadros se analizan y se
  * sueltan; lo único que sobrevive al escaneo son tres campos de texto.
  */
+@ExcludeFromCoverage(reason = "Captura con CameraX y analizador de ML Kit: necesita cámara real; el overlay vive en DocumentScanOverlay y el estado en DocumentScanSession, que sí se prueban")
 @Composable
 fun DocumentScanScreen(
     scanSession: DocumentScanSession,
@@ -228,14 +230,38 @@ fun DocumentScanScreen(
         }
     }
 
+    DocumentScanOverlay(
+        stage = scanState.stage,
+        failure = failure,
+        torchOn = torchOn,
+        onTorchToggle = { torchOn = !torchOn },
+        onCancel = onCancel,
+        preview = { AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize()) },
+    )
+}
+
+/**
+ * Lo que se ve sobre la cámara en el escaneo del DNI: visor, linterna, titular y detalle de cada
+ * etapa. Separado del anfitrión de CameraX ([DocumentScanScreen]) para poder probarlo sin cámara;
+ * [preview] es el hueco del `PreviewView`.
+ */
+@Composable
+internal fun DocumentScanOverlay(
+    stage: DocumentScanStage,
+    failure: String?,
+    torchOn: Boolean,
+    onTorchToggle: () -> Unit,
+    onCancel: () -> Unit,
+    preview: @Composable () -> Unit,
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black),
     ) {
-        AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+        preview()
 
-        ScannerViewfinder(stage = scanState.stage)
+        ScannerViewfinder(stage = stage)
 
         Box(
             modifier = Modifier
@@ -263,7 +289,7 @@ fun DocumentScanScreen(
                 VvCircleIconButton(
                     icon = if (torchOn) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
                     contentDescription = if (torchOn) "Apagar la luz" else "Encender la luz",
-                    onClick = { torchOn = !torchOn },
+                    onClick = onTorchToggle,
                 )
             }
         }
@@ -278,11 +304,11 @@ fun DocumentScanScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = failure ?: scanState.stage.headline(),
+                text = failure ?: stage.headline(),
                 style = MaterialTheme.typography.headlineSmall,
                 color = when {
                     failure != null -> VvOrange
-                    scanState.stage == DocumentScanStage.DECODED -> VvGreen
+                    stage == DocumentScanStage.DECODED -> VvGreen
                     else -> Color.White
                 },
                 textAlign = TextAlign.Center,
@@ -291,12 +317,12 @@ fun DocumentScanScreen(
             // El detalle sólo aparece cuando hay algo accionable que decir, para que el
             // estado normal quede limpio en vez de saturado de instrucciones.
             AnimatedVisibility(
-                visible = failure == null && scanState.stage.detail() != null,
+                visible = failure == null && stage.detail() != null,
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
                 Text(
-                    text = scanState.stage.detail().orEmpty(),
+                    text = stage.detail().orEmpty(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.75f),
                     textAlign = TextAlign.Center,
@@ -316,7 +342,7 @@ fun DocumentScanScreen(
  * mostrando, y anunciarlas como error generaba falsos positivos que confundían más de lo
  * que ayudaban.
  */
-private fun DocumentScanStage.headline(): String = when (this) {
+internal fun DocumentScanStage.headline(): String = when (this) {
     DocumentScanStage.SEARCHING,
     DocumentScanStage.NOT_A_DNI,
     DocumentScanStage.UNSUPPORTED_DOCUMENT,
@@ -326,7 +352,7 @@ private fun DocumentScanStage.headline(): String = when (this) {
     DocumentScanStage.DECODED -> "¡Listo!"
 }
 
-private fun DocumentScanStage.detail(): String? = when (this) {
+internal fun DocumentScanStage.detail(): String? = when (this) {
     DocumentScanStage.SEARCHING,
     DocumentScanStage.NOT_A_DNI,
     DocumentScanStage.UNSUPPORTED_DOCUMENT,

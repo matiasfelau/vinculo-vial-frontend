@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # Dependabot no regenera app/gradle.lockfile: en sus PRs hay que correr
+  #   ./gradlew :app:resolveAndLockAll --write-locks
+  # y commitear el resultado (ver el README).
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

@@ -5,6 +5,7 @@ import ar.felaufernandezbottaro.vinculovial.BuildConfig
 import ar.felaufernandezbottaro.vinculovial.data.account.AccountApi
 import ar.felaufernandezbottaro.vinculovial.data.alert.AlertApi
 import ar.felaufernandezbottaro.vinculovial.data.alert.AlertAttemptApi
+import ar.felaufernandezbottaro.vinculovial.data.benefits.BenefitsApi
 import ar.felaufernandezbottaro.vinculovial.data.inbox.InboxApi
 import ar.felaufernandezbottaro.vinculovial.data.notifications.NotificationsApi
 import ar.felaufernandezbottaro.vinculovial.data.remote.AttestationInterceptor
@@ -26,6 +27,7 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 import java.util.concurrent.TimeUnit
 import javax.inject.Qualifier
 import javax.inject.Singleton
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 
 /**
  * Cliente de `/refresh` y `/logout`, sin [TokenAuthenticator] instalado -- por diseño, no por
@@ -37,6 +39,7 @@ import javax.inject.Singleton
 @Retention(AnnotationRetention.BINARY)
 annotation class RefreshHttpClient
 
+@ExcludeFromCoverage(reason = "Módulo de Hilt: solo cableado de dependencias, sin lógica propia")
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
@@ -192,6 +195,12 @@ object NetworkModule {
     @Singleton
     fun provideNotificationsApi(retrofit: Retrofit): NotificationsApi =
         retrofit.create(NotificationsApi::class.java)
+
+    /** Mismo cliente que `InboxApi`: `/benefits` es autenticado por JWT, no por attestation. */
+    @Provides
+    @Singleton
+    fun provideBenefitsApi(retrofit: Retrofit): BenefitsApi =
+        retrofit.create(BenefitsApi::class.java)
 
     @Provides
     @Singleton

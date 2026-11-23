@@ -7,11 +7,9 @@ import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 import ar.felaufernandezbottaro.vinculovial.MainActivity
 import ar.felaufernandezbottaro.vinculovial.R
-import ar.felaufernandezbottaro.vinculovial.data.inbox.mapAlertTypeToDisplay
-import ar.felaufernandezbottaro.vinculovial.presentation.push.PUSH_TYPE_INBOX_UPDATED
-import ar.felaufernandezbottaro.vinculovial.presentation.push.PUSH_TYPE_SENT_UPDATED
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import dagger.hilt.android.AndroidEntryPoint
@@ -34,6 +32,7 @@ import javax.inject.Inject
  * datos): sin capturar `onNewToken`, el dispositivo deja de recibir notificaciones en
  * silencio, sin que el usuario tenga forma de notarlo.
  */
+@ExcludeFromCoverage(reason = "FirebaseMessagingService: lo instancia el sistema con FCM; la decisión de qué notificar vive en PushNotificationPlanner")
 @AndroidEntryPoint
 class VvcMessagingService : FirebaseMessagingService() {
 
@@ -47,53 +46,28 @@ class VvcMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
 
-        val alertId = message.data[EXTRA_ALERT_ID]?.takeIf { it.isNotBlank() }
-        val pushType = message.data[EXTRA_PUSH_TYPE]
-        val isSentUpdate = pushType == PUSH_TYPE_SENT_UPDATED
-        val isInboxUpdate = pushType == PUSH_TYPE_INBOX_UPDATED
-        val alertType = message.data[EXTRA_ALERT_TYPE]
-        if (!isSentUpdate && !isInboxUpdate && alertType == null) return
-
-        val title: String
-        val body: String
-        when {
-            isSentUpdate -> {
-                title = message.notification?.title ?: SENT_UPDATE_TITLE
-                body = message.notification?.body ?: SENT_UPDATE_BODY
-            }
-            isInboxUpdate -> {
-                title = message.notification?.title ?: INBOX_UPDATE_TITLE
-                body = message.notification?.body ?: INBOX_UPDATE_BODY
-            }
-            else -> {
-                title = mapAlertTypeToDisplay(alertType.orEmpty()).label
-                body = GENERIC_BODY
-            }
-        }
-
-        // Un id por alerta: las novedades de una misma alerta se reemplazan entre sí y las de
-        // alertas distintas conviven. El requestCode del PendingIntent sigue al id: con el mismo
-        // código, `FLAG_UPDATE_CURRENT` pisaría los extras de la notificación anterior. El aviso
-        // de alertas sin leer no trae `alert_id` y tiene su propio id, para no pisar a los demás.
-        val notificationId = alertId?.hashCode() ?: if (isInboxUpdate) INBOX_NOTIFICATION_ID else NOTIFICATION_ID
+        val plan = PushNotificationPlanner.plan(
+            data = message.data,
+            notificationTitle = message.notification?.title,
+            notificationBody = message.notification?.body,
+        ) ?: return
 
         val contentIntent = PendingIntent.getActivity(
             this,
-            notificationId,
+            plan.notificationId,
             Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                if (isSentUpdate) putExtra(EXTRA_PUSH_TYPE, PUSH_TYPE_SENT_UPDATED)
-                if (isInboxUpdate) putExtra(EXTRA_PUSH_TYPE, PUSH_TYPE_INBOX_UPDATED)
-                alertType?.let { putExtra(EXTRA_ALERT_TYPE, it) }
-                alertId?.let { putExtra(EXTRA_ALERT_ID, it) }
+                plan.pushTypeExtra?.let { putExtra(EXTRA_PUSH_TYPE, it) }
+                plan.alertType?.let { putExtra(EXTRA_ALERT_TYPE, it) }
+                plan.alertId?.let { putExtra(EXTRA_ALERT_ID, it) }
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
         val notification = NotificationCompat.Builder(this, ALERTS_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(body)
+            .setContentTitle(plan.title)
+            .setContentText(plan.body)
             .setAutoCancel(true)
             .setContentIntent(contentIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -105,17 +79,7 @@ class VvcMessagingService : FirebaseMessagingService() {
         val hasPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         if (hasPermission) {
-            NotificationManagerCompat.from(this).notify(notificationId, notification)
+            NotificationManagerCompat.from(this).notify(plan.notificationId, notification)
         }
-    }
-
-    private companion object {
-        const val NOTIFICATION_ID = 1
-        const val INBOX_NOTIFICATION_ID = 2
-        const val INBOX_UPDATE_TITLE = "ViVIAna"
-        const val INBOX_UPDATE_BODY = "Tenés alertas sin leer en el buzón."
-        const val GENERIC_BODY = "Tenés una alerta nueva sobre uno de tus vehículos vinculados."
-        const val SENT_UPDATE_TITLE = "ViVIAna"
-        const val SENT_UPDATE_BODY = "Tu alerta tuvo novedades."
     }
 }

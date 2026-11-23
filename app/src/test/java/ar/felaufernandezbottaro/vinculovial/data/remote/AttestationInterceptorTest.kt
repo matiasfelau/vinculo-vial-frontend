@@ -86,6 +86,16 @@ class AttestationInterceptorTest {
     }
 
     @Test
+    fun `si la attestation falla en vehicles unlink la request sigue sin el header`() {
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        val response = clientWith(failingProvider()).newCall(requestTo("/api/v1/vehicles/unlink")).execute()
+
+        assertEquals(200, response.code)
+        assertNull(server.takeRequest().getHeader(AttestationInterceptor.HEADER))
+    }
+
+    @Test
     fun `si la attestation falla en alerts attempts la request sigue sin el header`() {
         server.enqueue(MockResponse().setResponseCode(200))
 

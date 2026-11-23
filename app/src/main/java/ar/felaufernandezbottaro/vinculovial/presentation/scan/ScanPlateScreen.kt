@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
 import ar.felaufernandezbottaro.vinculovial.domain.scan.model.OverlayRect
 import ar.felaufernandezbottaro.vinculovial.presentation.camera.awaitCameraProviderInternal
 import ar.felaufernandezbottaro.vinculovial.presentation.components.VvCircleIconButton
@@ -66,6 +67,7 @@ import java.util.concurrent.Executors
  * reporte viven en `ReportChatScreen`, una pantalla aparte -- no un menú flotante sobre la
  * cámara -- a la que el `NavHost` navega apenas el status pasa a `AwaitingAlertType`.
  */
+@ExcludeFromCoverage(reason = "Captura con CameraX: bindea Preview e ImageAnalysis y necesita cámara real; el overlay y los diálogos viven en ScanPlateOverlay, que sí se prueba")
 @Composable
 fun ScanPlateScreen(
     uiState: ScanUiState,
@@ -156,12 +158,50 @@ fun ScanPlateScreen(
         }
     }
 
+    ScanPlateOverlay(
+        uiState = uiState,
+        failure = failure,
+        torchOn = torchOn,
+        onTorchToggle = { torchOn = !torchOn },
+        onPlateConfirmed = onPlateConfirmed,
+        onPlateRejected = onPlateRejected,
+        onRescan = onRescan,
+        onManualEntryOpened = onManualEntryOpened,
+        onManualPlateSubmitted = onManualPlateSubmitted,
+        onManualEntryDismissed = onManualEntryDismissed,
+        onCheckErrorDismissed = onCheckErrorDismissed,
+        onCancel = onCancel,
+        preview = { AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize()) },
+    )
+}
+
+/**
+ * Todo lo que se ve sobre la cámara en el escaneo de patente: el visor, los botones, el texto de
+ * estado y los diálogos. Separado del anfitrión de CameraX ([ScanPlateScreen]) para poder
+ * probarlo sin cámara; [preview] es el único hueco que ocupa el `PreviewView`.
+ */
+@Composable
+internal fun ScanPlateOverlay(
+    uiState: ScanUiState,
+    failure: String?,
+    torchOn: Boolean,
+    onTorchToggle: () -> Unit,
+    onPlateConfirmed: () -> Unit,
+    onPlateRejected: () -> Unit,
+    onRescan: () -> Unit,
+    onManualEntryOpened: () -> Unit,
+    onManualPlateSubmitted: (String) -> Unit,
+    onManualEntryDismissed: () -> Unit,
+    onCheckErrorDismissed: () -> Unit,
+    onCancel: () -> Unit,
+    preview: @Composable () -> Unit,
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black),
     ) {
-        AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+        preview()
 
         PlateViewfinder(status = uiState.status)
 
@@ -181,7 +221,7 @@ fun ScanPlateScreen(
                 VvCircleIconButton(
                     icon = if (torchOn) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
                     contentDescription = if (torchOn) "Apagar la luz" else "Encender la luz",
-                    onClick = { torchOn = !torchOn },
+                    onClick = onTorchToggle,
                 )
             }
         }
@@ -236,13 +276,14 @@ fun ScanPlateScreen(
     }
 }
 
-private fun statusHeadline(status: ScanStatus): String = when (status) {
+internal fun statusHeadline(status: ScanStatus): String = when (status) {
     is ScanStatus.Scanning -> "Encuadrá la patente del vehículo"
     is ScanStatus.Detected -> "¿Es correcta esta patente?"
     ScanStatus.Rejected -> "¿Cómo querés seguir?"
     is ScanStatus.ManualEntry -> "Ingresá la patente"
     ScanStatus.Checking -> "Preparando el reporte…"
     ScanStatus.AwaitingAlertType -> "Elegí qué querés reportar"
+    is ScanStatus.DailyLimitReached -> "Ya enviaste una alerta para esta patente"
     ScanStatus.SendingAlert -> "Enviando el reporte…"
     ScanStatus.AlertSent -> "¡Listo!"
     is ScanStatus.CheckFailed -> "No pudimos preparar el reporte"

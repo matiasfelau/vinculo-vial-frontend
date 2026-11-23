@@ -18,10 +18,20 @@ class RegisterUserUseCase @Inject constructor(
     private val repository: SignUpRepository,
 ) {
 
-    suspend operator fun invoke(form: SignUpForm): SignUpResult {
+    suspend operator fun invoke(form: SignUpForm, emailVerificationToken: String): SignUpResult {
         // Última barrera de validación: la UI ya validó, pero el dominio no confía en ella.
         if (CredentialRules.problems(form).isNotEmpty()) {
             return SignUpResult.Failed(SignUpError.InvalidData)
+        }
+        // US-19: sin la casilla de los Términos no se sigue; el servidor igual rechazaría el alta.
+        if (!form.termsAccepted) {
+            identityVerification.discardCaptures()
+            return SignUpResult.Failed(SignUpError.TermsNotAccepted)
+        }
+        // Sin el token de la verificación del email no se llega a RENAPER: el servidor lo rechazaría.
+        if (emailVerificationToken.isBlank()) {
+            identityVerification.discardCaptures()
+            return SignUpResult.Failed(SignUpError.EmailNotVerified)
         }
 
         return when (val edgeResult = identityVerification.verifyAndDiscard()) {
@@ -43,6 +53,7 @@ class RegisterUserUseCase @Inject constructor(
                         email = form.email.trim(),
                         password = form.password,
                         selfieBase64 = edgeResult.selfieBase64,
+                        emailVerificationToken = emailVerificationToken,
                     ),
                 )
             }

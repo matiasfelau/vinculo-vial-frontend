@@ -9,6 +9,7 @@ import ar.felaufernandezbottaro.vinculovial.domain.session.LoginNotice
 object SessionTexts {
     const val SESSION_EXPIRED = "Tu sesión venció"
     const val BIOMETRICS_CHANGED = "Cambiaron las huellas del dispositivo. Ingresá con tu contraseña"
+    const val PASSWORD_RESET = "Listo. Ingresá con tu nueva contraseña"
 
     const val UNLOCK_TITLE = "Desbloqueá Vínculo Vial"
     const val UNLOCK_SUBTITLE = "Usá tu huella para volver a entrar."
@@ -39,6 +40,7 @@ object SessionTexts {
 fun LoginNotice.message(): String = when (this) {
     LoginNotice.SESSION_EXPIRED -> SessionTexts.SESSION_EXPIRED
     LoginNotice.BIOMETRICS_CHANGED -> SessionTexts.BIOMETRICS_CHANGED
+    LoginNotice.PASSWORD_RESET -> SessionTexts.PASSWORD_RESET
 }
 
 fun UnlockFailure.message(): String = when (this) {

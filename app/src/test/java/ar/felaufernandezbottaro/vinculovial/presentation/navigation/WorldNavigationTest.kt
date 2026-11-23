@@ -3,6 +3,7 @@ package ar.felaufernandezbottaro.vinculovial.presentation.navigation
 import ar.felaufernandezbottaro.vinculovial.data.session.SessionState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** La regla de mundos (#9), sin Compose ni NavController. */
@@ -18,12 +19,20 @@ class WorldNavigationTest {
         Route.SIGN_UP_SUCCESS,
         Route.SIGN_UP_DOCUMENT_SCAN,
         Route.SIGN_UP_LIVENESS,
+        Route.SIGN_UP_VERIFY_EMAIL,
+        Route.RECOVERY_GRAPH,
+        Route.RECOVERY_DNI,
+        Route.RECOVERY_CODE,
+        Route.RECOVERY_PASSWORD,
+        Route.RECOVERY_DOCUMENT_SCAN,
+        Route.RECOVERY_LIVENESS,
+        Route.RECOVERY_DONE,
     )
 
     private val authenticatedRoutes = listOf(
         Route.SETTINGS,
         Route.DELETE_ACCOUNT,
-        Route.LINK_VEHICLE,
+        Route.VEHICLES,
         Route.SCAN_GRAPH,
         Route.SCAN_PLATE,
         Route.REPORT_CHAT,
@@ -32,6 +41,43 @@ class WorldNavigationTest {
         Route.INBOX_DETAIL,
         Route.SENT_CHAT,
     )
+
+    // --- Recuperación de contraseña (US-13) ---
+
+    private val recoveryRoutes = listOf(
+        Route.RECOVERY_GRAPH,
+        Route.RECOVERY_DNI,
+        Route.RECOVERY_CODE,
+        Route.RECOVERY_PASSWORD,
+        Route.RECOVERY_DOCUMENT_SCAN,
+        Route.RECOVERY_LIVENESS,
+        Route.RECOVERY_DONE,
+    )
+
+    @Test
+    fun `las rutas de Recuperacion y de verificacion del email cuelgan de los grafos publicos`() {
+        recoveryRoutes.forEach { assertTrue("$it", it.startsWith(Route.RECOVERY_GRAPH)) }
+        assertTrue(Route.SIGN_UP_VERIFY_EMAIL.startsWith(Route.SIGN_UP_GRAPH))
+    }
+
+    @Test
+    fun `sin sesion la Recuperacion no redirige a ningun lado`() {
+        recoveryRoutes.forEach { assertNull("$it", worldRedirect(SessionState.NONE, it)) }
+        assertNull(worldRedirect(SessionState.NONE, Route.SIGN_UP_VERIFY_EMAIL))
+    }
+
+    @Test
+    fun `con la sesion bloqueada se puede recuperar la contrasena sin pasar por Desbloqueo`() {
+        // "Usar contraseña" lleva a Login con la sesión todavía bloqueada, y de ahí a la recuperación.
+        recoveryRoutes.forEach { assertNull("$it", worldRedirect(SessionState.LOCKED, it)) }
+    }
+
+    @Test
+    fun `con la sesion desbloqueada la Recuperacion no es del mundo autenticado`() {
+        recoveryRoutes.forEach {
+            assertEquals("$it", Route.SETTINGS, worldRedirect(SessionState.UNLOCKED, it))
+        }
+    }
 
     // --- Splash decide ---
 
@@ -48,6 +94,11 @@ class WorldNavigationTest {
     @Test
     fun `el Splash manda al Home si la sesion ya esta desbloqueada`() {
         assertEquals(Route.SETTINGS, splashDestination(SessionState.UNLOCKED))
+    }
+
+    @Test
+    fun `los terminos son de todos los mundos y ningun estado de sesion los redirige`() {
+        SessionState.entries.forEach { assertNull("$it", worldRedirect(it, Route.TERMS)) }
     }
 
     @Test

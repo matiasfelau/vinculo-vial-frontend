@@ -49,6 +49,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ar.felaufernandezbottaro.vinculovial.ExcludeFromCoverage
+import ar.felaufernandezbottaro.vinculovial.domain.signup.model.LivenessProgress
 import ar.felaufernandezbottaro.vinculovial.domain.signup.LivenessSession
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.LivenessChallenge
 import ar.felaufernandezbottaro.vinculovial.domain.signup.model.FramingHint
@@ -68,6 +70,7 @@ import java.util.concurrent.Executors
  * en vivo y la foto se toma **sola** cuando el usuario completa el gesto. Es lo que hace
  * que la foto entregada corresponda al momento en que se probó la presencia.
  */
+@ExcludeFromCoverage(reason = "Captura con CameraX (Preview, ImageAnalysis e ImageCapture) y analizador de ML Kit: necesita cámara real; el overlay vive en LivenessCaptureOverlay, que sí se prueba")
 @Composable
 fun LivenessCaptureScreen(
     livenessSession: LivenessSession,
@@ -189,12 +192,34 @@ fun LivenessCaptureScreen(
         }
     }
 
+    LivenessCaptureOverlay(
+        progress = progress,
+        failure = failure,
+        locked = locked,
+        onCancel = onCancel,
+        preview = { AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize()) },
+    )
+}
+
+/**
+ * Lo que se ve sobre la cámara en la selfie con prueba de vida: el óvalo, la instrucción del
+ * desafío y el botón de cancelar. Separado del anfitrión de CameraX ([LivenessCaptureScreen])
+ * para poder probarlo sin cámara; [preview] es el hueco del `PreviewView`.
+ */
+@Composable
+internal fun LivenessCaptureOverlay(
+    progress: LivenessProgress,
+    failure: String?,
+    locked: Boolean,
+    onCancel: () -> Unit,
+    preview: @Composable () -> Unit,
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black),
     ) {
-        AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+        preview()
 
         FaceOvalOverlay(passed = progress.stage == LivenessStage.PASSED)
 
@@ -241,7 +266,7 @@ fun LivenessCaptureScreen(
 
 /** Óvalo que se pone verde al superar el desafío. */
 @Composable
-private fun FaceOvalOverlay(passed: Boolean) {
+internal fun FaceOvalOverlay(passed: Boolean) {
     val strokeColor by animateFloatAsState(
         targetValue = if (passed) 1f else 0f,
         animationSpec = tween(220),
@@ -271,7 +296,7 @@ private fun FaceOvalOverlay(passed: Boolean) {
 }
 
 /** Qué se le dice al usuario en cada punto del desafío. */
-private fun ar.felaufernandezbottaro.vinculovial.domain.signup.model.LivenessProgress.instructionText(): String =
+internal fun LivenessProgress.instructionText(): String =
     when {
         hint == FramingHint.NO_FACE -> "Poné tu cara dentro del óvalo"
         hint == FramingHint.MULTIPLE_FACES -> "Que sólo se vea tu cara"

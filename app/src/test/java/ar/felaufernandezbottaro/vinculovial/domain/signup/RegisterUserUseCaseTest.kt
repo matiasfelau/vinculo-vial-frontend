@@ -14,16 +14,21 @@ class RegisterUserUseCaseTest {
     private val repository = FakeSignUpRepository()
     private val useCase = RegisterUserUseCase(verification, repository)
 
+    private companion object {
+        const val TOKEN = "token-de-verificacion"
+    }
+
     private val form = SignUpForm(
         dni = "12345678",
         email = "usuario@ejemplo.com",
         password = "Password123!",
         passwordConfirmation = "Password123!",
+        termsAccepted = true,
     )
 
     @Test
     fun `registro exitoso manda los datos del documento, las credenciales y la selfie`() = runTest {
-        val result = useCase(form)
+        val result = useCase(form, TOKEN)
 
         assertEquals(SignUpResult.Registered, result)
         with(repository.received.single()) {
@@ -33,12 +38,29 @@ class RegisterUserUseCaseTest {
             assertEquals("usuario@ejemplo.com", email)
             assertEquals("Password123!", password)
             assertEquals("c2VsZmll", selfieBase64)
+            assertEquals(TOKEN, emailVerificationToken)
         }
     }
 
     @Test
+    fun `sin aceptar los terminos no se llega al edge ni al backend`() = runTest {
+        val result = useCase(form.copy(termsAccepted = false), TOKEN)
+
+        assertEquals(SignUpResult.Failed(SignUpError.TermsNotAccepted), result)
+        assertEquals(0, verification.verifications)
+        assertTrue(repository.received.isEmpty())
+    }
+
+    @Test
+    fun `sin aceptar los terminos se descartan las capturas pendientes`() = runTest {
+        useCase(form.copy(termsAccepted = false), TOKEN)
+
+        assertEquals(1, verification.discards)
+    }
+
+    @Test
     fun `formulario invalido no llega ni al edge`() = runTest {
-        val result = useCase(form.copy(email = "no-es-un-email"))
+        val result = useCase(form.copy(email = "no-es-un-email"), TOKEN)
 
         assertEquals(SignUpResult.Failed(SignUpError.InvalidData), result)
         assertEquals(0, verification.verifications)
@@ -63,7 +85,7 @@ class RegisterUserUseCaseTest {
             assertEquals(
                 "mapeo incorrecto para $reason",
                 SignUpResult.Failed(expectedError),
-                useCase(form),
+                useCase(form, TOKEN),
             )
             assertTrue("$reason llegó al backend", repository.received.isEmpty())
         }
@@ -73,7 +95,7 @@ class RegisterUserUseCaseTest {
     fun `un rechazo del edge nunca sale del dispositivo`() = runTest {
         verification.result = EdgeResult.Rejected(EdgeResult.Reason.LIVENESS_FAILED)
 
-        useCase(form)
+        useCase(form, TOKEN)
 
         assertTrue(repository.received.isEmpty())
     }
@@ -82,7 +104,7 @@ class RegisterUserUseCaseTest {
     fun `el dni del documento distinto al tipeado corta el registro`() = runTest {
         verification.result = verified(number = "87654321")
 
-        val result = useCase(form)
+        val result = useCase(form, TOKEN)
 
         assertEquals(SignUpResult.Failed(SignUpError.DniMismatch), result)
         assertTrue(repository.received.isEmpty())
@@ -93,7 +115,7 @@ class RegisterUserUseCaseTest {
         // El PDF417 suele venir con relleno; el usuario casi nunca lo tipea.
         verification.result = verified(number = "01234567")
 
-        val result = useCase(form.copy(dni = "1234567"))
+        val result = useCase(form.copy(dni = "1234567"), TOKEN)
 
         assertEquals(SignUpResult.Registered, result)
         assertEquals("01234567", repository.received.single().dni)
@@ -101,7 +123,7 @@ class RegisterUserUseCaseTest {
 
     @Test
     fun `el email viaja sin espacios sobrantes`() = runTest {
-        useCase(form.copy(email = "  usuario@ejemplo.com  "))
+        useCase(form.copy(email = "  usuario@ejemplo.com  "), TOKEN)
 
         assertEquals("usuario@ejemplo.com", repository.received.single().email)
     }
@@ -110,14 +132,37 @@ class RegisterUserUseCaseTest {
     fun `el error del backend se propaga tal cual`() = runTest {
         repository.result = SignUpResult.Failed(SignUpError.AlreadyRegistered)
 
-        assertEquals(SignUpResult.Failed(SignUpError.AlreadyRegistered), useCase(form))
+        assertEquals(SignUpResult.Failed(SignUpError.AlreadyRegistered), useCase(form, TOKEN))
     }
 
     @Test
     fun `siempre se corre el edge antes de publicar`() = runTest {
-        useCase(form)
+        useCase(form, TOKEN)
 
         assertEquals(1, verification.verifications)
+    }
+
+    @Test
+    fun `sin token de verificacion no se llega a RENAPER y las capturas se descartan`() = runTest {
+        val result = useCase(form, "")
+
+        assertEquals(SignUpResult.Failed(SignUpError.EmailNotVerified), result)
+        assertEquals(0, verification.verifications)
+        assertEquals(1, verification.discards)
+        assertTrue(repository.received.isEmpty())
+    }
+
+    @Test
+    fun `un token en blanco tampoco cuenta como verificado`() = runTest {
+        assertEquals(SignUpResult.Failed(SignUpError.EmailNotVerified), useCase(form, "   "))
+        assertTrue(repository.received.isEmpty())
+    }
+
+    @Test
+    fun `el rechazo EmailNotVerified del backend se propaga tal cual`() = runTest {
+        repository.result = SignUpResult.Failed(SignUpError.EmailNotVerified)
+
+        assertEquals(SignUpResult.Failed(SignUpError.EmailNotVerified), useCase(form, TOKEN))
     }
 
     private fun verified(number: String) = EdgeResult.Verified(

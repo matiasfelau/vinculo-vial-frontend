@@ -18,6 +18,7 @@ import ar.felaufernandezbottaro.vinculovial.presentation.theme.VinculoVialTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+@ExcludeFromCoverage(reason = "Activity: necesita el framework de Android; la lógica de la push vive en parsePushTarget y el bloqueo en SessionLockCoordinator")
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
