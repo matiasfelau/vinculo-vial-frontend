@@ -19,7 +19,7 @@ jjwt = "0.12.6"
 playIntegrity = "1.6.0"
 # 1.6.x exige compileSdk 36, que a su vez obliga a subir AGP. 1.5.3 es la última que
 # funciona con compileSdk 35 / AGP 8.9.
-camerax = "1.5.3"
+camerax = "1.7.0"
 # ML Kit "unbundled": los modelos los sirve Play Services en vez de ir dentro del APK.
 # Pesa mucho menos y el dispositivo ya necesita Play Services para Play Integrity.
 mlkitBarcode = "18.3.1"
