@@ -233,7 +233,7 @@ jobs:
       # el Release Build (minificado y firmado), no el de debug.
       - name: Publish tagged release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           files: apk-release/*.apk
           generate_release_notes: true
@@ -242,7 +242,7 @@ jobs:
       # APK de debug mas reciente, separado de los releases versionados por tag.
       - name: Publish rolling main build
         if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: latest-main
           name: "Build mas reciente de main"
