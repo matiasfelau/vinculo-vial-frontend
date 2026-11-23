@@ -146,15 +146,21 @@ fun SettingsScreen(
                 )
             }
 
-            TermsRow(onClick = onOpenTerms)
+            // Las tres filas de pie van juntas: cada TextButton ya garantiza 48 dp de área táctil.
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(0.dp),
+            ) {
+                TermsRow(onClick = onOpenTerms)
 
-            LogoutRow(
-                enabled = !state.isLoggingOut,
-                loading = state.isLoggingOut,
-                onClick = { showLogoutConfirmation = true },
-            )
+                LogoutRow(
+                    enabled = !state.isLoggingOut,
+                    loading = state.isLoggingOut,
+                    onClick = { showLogoutConfirmation = true },
+                )
 
-            DeleteAccountRow(enabled = !state.isLoggingOut, onClick = onDeleteAccount)
+                DeleteAccountRow(enabled = !state.isLoggingOut, onClick = onDeleteAccount)
+            }
         }
     }
 
@@ -235,9 +241,7 @@ private fun HomeActionCard(
 @Composable
 private fun TermsRow(onClick: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -295,9 +299,7 @@ private fun BiometricOfferDialog(onAccept: () -> Unit, onDismiss: () -> Unit) {
 @Composable
 private fun LogoutRow(enabled: Boolean, loading: Boolean, onClick: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -324,9 +326,7 @@ private fun LogoutRow(enabled: Boolean, loading: Boolean, onClick: () -> Unit) {
 @Composable
 private fun DeleteAccountRow(enabled: Boolean, onClick: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -22,10 +22,10 @@ object BenefitTexts {
     const val NETWORK = "No pudimos conectarnos. Revisá tu conexión e intentá de nuevo."
     const val UNEXPECTED = "No pudimos obtener el código. Intentá de nuevo en unos minutos."
 
-    /** "Abrir YPF": abre el `open_url` del partner. */
-    fun open(partnerName: String): String = "Abrir $partnerName"
+    /** Abre el `open_url` del partner; el nombre del partner ya está en la pantalla. */
+    const val OPEN = "Abrir"
 
-    fun enterCodeIn(partnerName: String): String = "Ingresá el código en la app de $partnerName"
+    fun enterCodeIn(partnerName: String): String = "Ingresá el código en la aplicación de $partnerName"
 
     /** La vigencia, siempre en hora argentina: "Hasta el 30/11". */
     fun validUntil(endsAt: Instant, zone: ZoneId = BUENOS_AIRES): String =

@@ -21,15 +21,15 @@ class BenefitTextsTest {
     }
 
     @Test
-    fun `los textos con el nombre del partner`() {
-        assertEquals("Abrir Estación de prueba", BenefitTexts.open("Estación de prueba"))
-        assertEquals("Ingresá el código en la app de Estación de prueba", BenefitTexts.enterCodeIn("Estación de prueba"))
+    fun `la indicacion lleva el nombre del partner`() {
+        assertEquals("Ingresá el código en la aplicación de Estación de prueba", BenefitTexts.enterCodeIn("Estación de prueba"))
     }
 
     @Test
     fun `los textos fijos son los del contrato`() {
         assertEquals("Obtener código", BenefitTexts.GET_CODE)
         assertEquals("Copiar", BenefitTexts.COPY)
+        assertEquals("Abrir", BenefitTexts.OPEN)
         assertEquals("Código copiado", BenefitTexts.CODE_COPIED)
     }
 }

@@ -126,7 +126,7 @@ class BenefitDetailScreenTest {
 
         compose.onNodeWithText("Obtener código").assertIsDisplayed()
         compose.onNodeWithText("Copiar").assertDoesNotExist()
-        compose.onNodeWithText("Abrir Estación de prueba").assertDoesNotExist()
+        compose.onNodeWithText("Abrir").assertDoesNotExist()
         compose.onNodeWithTag(CODE_TAG).assertDoesNotExist()
     }
 
@@ -156,8 +156,8 @@ class BenefitDetailScreenTest {
 
         compose.onNodeWithTag(CODE_TAG).assertIsDisplayed().assertTextEquals("ABCD-1234")
         compose.onNodeWithText("Copiar").assertIsDisplayed()
-        compose.onNodeWithText("Abrir Estación de prueba").assertIsDisplayed()
-        compose.onNodeWithText("Ingresá el código en la app de Estación de prueba").assertIsDisplayed()
+        compose.onNodeWithText("Abrir").assertIsDisplayed()
+        compose.onNodeWithText("Ingresá el código en la aplicación de Estación de prueba").assertIsDisplayed()
         compose.onNodeWithText("Obtener código").assertDoesNotExist()
     }
 
@@ -175,7 +175,7 @@ class BenefitDetailScreenTest {
     fun `Abrir entrega el open_url del partner`() {
         show(selected = withCode)
 
-        compose.onNodeWithText("Abrir Estación de prueba").performClick()
+        compose.onNodeWithText("Abrir").performClick()
 
         assertEquals(listOf("https://partner.example/app"), opened)
     }
@@ -184,7 +184,7 @@ class BenefitDetailScreenTest {
     fun `si el open_url no es https no se ofrece Abrir, pero si Copiar`() {
         show(selected = withCode.copy(openUrl = "http://partner.example/app"))
 
-        compose.onNodeWithText("Abrir Estación de prueba").assertDoesNotExist()
+        compose.onNodeWithText("Abrir").assertDoesNotExist()
         compose.onNodeWithText("Copiar").assertIsDisplayed()
     }
 
